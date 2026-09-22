@@ -1,0 +1,75 @@
+[project]
+name = "barnes"
+version = "0.1.0"
+description = "Quantificação do aprendizado espacial no labirinto de Barnes"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+
+# Licenças: apenas BSD / MIT / Apache-2.0 no bloco principal.
+# A auditoria de US-30 exige nenhuma dependência GPL/AGPL na distribuição.
+# Por isso este projeto NÃO usa pingouin (GPL-3) nem ultralytics (AGPL).
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "opencv-python>=4.9",       # vídeo e janelas de ajuste do MVP
+    "shapely>=2.0",             # geometria dos buracos
+    "pyarrow>=15.0",            # trajetoria.parquet
+    "duckdb>=0.10",             # consulta analítica sobre o Parquet
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "scikit-learn>=1.4",        # kappa de Cohen (US-21)
+    "statsmodels>=0.14",        # diagnósticos complementares
+    "pyyaml>=6.0",              # configs/*.yaml
+    "psycopg[binary]>=3.1",     # PostgreSQL — via de distribuição definida em US-27
+    "typer>=0.12",              # CLI
+]
+
+[project.optional-dependencies]
+# Pose — NÃO instalar por aqui sem antes fechar a decisão do Sprint 1.
+# SLEAP depende de CUDA e a versão muda o setup: as clássicas são TensorFlow,
+# as recentes migraram para PyTorch. Confirmar a versão ANTES de instalar.
+# A revisão do Sprint 1 ainda avalia duas alternativas ao treino de modelo:
+#   (a) segmentação por contraste, se bastar no cenário controlado;
+#   (b) YOLO-pose — decisão do CLIENTE, não da equipe: a licença AGPL
+#       obriga a abrir o código de qualquer distribuição e muda o
+#       critério de aceite de US-30.
+pose = [
+    "sleap>=1.3",
+]
+
+# Similaridade de trajetórias (US-24) — contribuição protegida.
+longitudinal = [
+    "dtaidistance>=2.3",
+    "similaritymeasures>=1.1",
+]
+
+# Interface gráfica — não está nos 30 cards.
+# Plano pronto para acionar em PLUGIN-INTERFACE-GRAFICA.md, se D1 exigir.
+# PySide6 é LGPL: reavaliar contra o critério de licenças de US-30 antes de adotar.
+gui = [
+    "PySide6>=6.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+barnes = "barnes.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/barnes"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

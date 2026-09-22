@@ -1,0 +1,53 @@
+# Limiares operacionais padrão
+#
+# ATENÇÃO — todos os valores estão em `null` de propósito.
+#
+# Estes limiares NÃO são constantes de código e NÃO devem ser escolhidos pela
+# equipe. São parâmetros calibrados contra anotação manual, fixados em G3 e
+# aceitos por escrito pelo cliente (marco M1). Ver seção 1 da definição de escopo:
+# limiares escolhidos por conveniência produzem números coerentes, plausíveis,
+# bem formatados — e sem relação com o que o laboratório chama de latência.
+#
+# Preencher somente depois de `docs/definicoes-metricas.md` estar assinado.
+# A pergunta de origem está ao lado de cada chave.
+
+versao_definicoes: null       # versão de docs/definicoes-metricas.md que gerou estes valores
+
+# --- Evento: encontrar (US-11, US-12) -----------------------------------------
+encontrar:
+  distancia_cm: null          # C1 — distância focinho↔buraco
+  angulo_graus: null          # C1 — desvio máximo da orientação da cabeça
+  calibrado_contra_anotacao: false   # US-12: vira true após a calibração
+
+# --- Evento: entrar / checar fisicamente (US-13) ------------------------------
+entrar:
+  focinho_dentro: true        # C2 — critério: focinho dentro do perímetro do buraco
+  duracao_minima_s: null      # C2 — duração mínima para contar como entrada
+
+# --- Evento: dwell (US-14) ----------------------------------------------------
+dwell:
+  duracao_minima_s: null      # C2
+
+# --- Erro (US-17) -------------------------------------------------------------
+erro:
+  criterio: null              # C3 — "qualquer_buraco_incorreto" | "acima_de_duracao"
+  duracao_minima_s: null      # C3 — só se criterio == "acima_de_duracao"
+
+# --- Estratégia de busca (US-20) ----------------------------------------------
+# Regra explícita e calibrável, não modelo treinado (seção 4 da definição).
+estrategia:
+  cruzamentos_centro_min: null      # C4 — limiar para "espacial"
+  adjacencia_angular_graus: null    # C4 — o que conta como buraco adjacente (depende de B2)
+  erros_ate_alvo_max: null          # C4
+  entropia_max_espacial: null       # C4
+
+# --- Trial (US-03, US-16) -----------------------------------------------------
+trial:
+  tempo_limite_s: null        # B5 — define a censura (trial.censura / primary_event)
+  recorte_inicio_s: null      # US-03 — null = detecção automática da soltura
+  recorte_fim_s: null
+
+# --- Qualidade de pose (US-10) ------------------------------------------------
+pose:
+  cobertura_minima: 0.98      # critério de aceite da seção 10 — proposto pelo grupo
+  lacuna_curta_max_quadros: null    # até aqui interpola; acima, marca para revisão

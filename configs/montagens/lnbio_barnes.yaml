@@ -1,0 +1,52 @@
+# Montagem do labirinto de Barnes — LNBio
+#
+# Uma montagem por arranjo físico de labirinto + câmera. Este arquivo é o
+# registro de qual geometria produziu quais números: versionado, legível, e
+# recarregável para reaplicar geometria, alvo e escala (US-04).
+#
+# Valores em `null` dependem de G2 / Bloco B do questionário.
+
+montagem: lnbio_barnes
+descricao: null
+data_calibracao: null
+
+# --- Plataforma (US-04) -------------------------------------------------------
+plataforma:
+  centro_px: [null, null]     # ajustado na janela de geometria
+  raio_px: null
+  diametro_cm: null           # B2
+
+# --- Buracos (US-04) ----------------------------------------------------------
+# Geometria paramétrica: círculo com N buracos igualmente espaçados.
+# São quatro números, não um editor de polígonos (seção 4 da definição).
+buracos:
+  quantidade: null            # B2
+  angulo_inicial_graus: null  # posição do buraco de índice 0
+  raio_buraco_cm: null        # B2
+  indice_alvo: null           # índice do buraco-alvo NESTA montagem
+
+# --- Escala px → cm (US-02) ---------------------------------------------------
+escala:
+  cm_por_px: null             # de dois segmentos de comprimento conhecido
+  orientacao_camera: null     # a escala é reaproveitada entre vídeos de mesma orientação
+  erro_medido: null           # critério de aceite de US-02: < 3%
+
+# --- Referencial da sala (US-05) ----------------------------------------------
+# Se a plataforma é rotacionada entre trials (B4), o índice do buraco muda mas
+# a posição na sala não. Toda análise longitudinal — sequência de visitação,
+# DTW, probe, palpites — acontece no referencial da SALA. Sem esta conversão,
+# a comparação entre sessões compara coisas diferentes e nenhum teste salva.
+referencial_sala:
+  plataforma_rotacionada_entre_trials: null   # B4
+  alvo_fixo_na_sala: null                     # B4
+  angulo_referencia_graus: null               # ângulo da montagem no referencial da sala
+
+# --- Soltura (US-19) ----------------------------------------------------------
+soltura:
+  modo: null                  # B3 — "centro" | "sob_cilindro" | "ponto_fixo" | "variavel"
+  posicao_cm: [null, null]    # só se modo == "ponto_fixo"
+                              # se variavel, é detectada por trial (US-19)
+
+# --- Probe trial (US-26) ------------------------------------------------------
+probe:
+  modo: null                  # B7 — "alvo_fechado" | "alvo_removido" | "plataforma_limpa"
