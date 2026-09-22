@@ -29,4 +29,14 @@ Thumbs.db
 
 # Arquivos temporários
 *.tmp
+<<<<<<< HEAD
 *.log
+=======
+*.log
+
+# uv
+.uv/
+
+# Saídas de processamento fora de data/
+*.parquet
+>>>>>>> a3ca1185333ac84a410bba67e92c28f19ddfef2f
