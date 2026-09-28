@@ -32,6 +32,16 @@ def test_is_fps_variable_true_for_irregular_interval() -> None:
     assert is_fps_variable(timestamps) is True
 
 
+def test_is_fps_variable_false_for_bframe_alternating_pattern() -> None:
+    # Vídeo real (câmera do LNBio, codec com B-frames) mostrou POS_MSEC alternando
+    # ~32ms/~48ms (media 40ms = 25fps) sem que o fps seja de fato variável —
+    # isso não pode voltar a disparar falso positivo.
+    timestamps = [0.0]
+    for i in range(40):
+        timestamps.append(timestamps[-1] + (32.0 if i % 2 == 0 else 48.0))
+    assert is_fps_variable(timestamps) is False
+
+
 def test_load_trial_video_happy_path(make_mp4) -> None:
     video_path = make_mp4(frame_count=15, fps=15.0)
 

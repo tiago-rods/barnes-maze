@@ -92,6 +92,30 @@ uv sync --extra pose          # SLEAP — ler o aviso no pyproject.toml antes
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
 ```
 
+## Uso
+
+Carregar um vídeo de trial e ver os metadados (US-01):
+
+```bash
+uv run barnes video load "data/OF_Animal_22_240919.mp4"
+```
+
+Mostra resolução, fps real medido (não o do cabeçalho do contêiner), duração,
+número de quadros e o hash do arquivo, e abre uma janela navegável entre
+quadros (`n`/`d` = próximo, `p`/`a` = anterior, `q`/Esc = fechar) — útil
+porque o primeiro quadro pode estar obstruído.
+
+Para também persistir o trial em `trials` (exige um `experiment` e um
+`maze_config` já cadastrados):
+
+```bash
+uv run barnes video load "data/OF_Animal_22_240919.mp4" \
+    --experiment-id 1 --maze-config-id 1 \
+    --phase acquisition --day 1 --trial-in-day 1
+```
+
+Use `--no-preview` para rodar sem abrir janela (scripts, CI).
+
 ## Banco de dados
 
 O schema (Postgres puro, sem ORM) mora em `database/migrations/`, gerado a
