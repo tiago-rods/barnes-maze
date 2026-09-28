@@ -92,6 +92,30 @@ uv sync --extra pose          # SLEAP — ler o aviso no pyproject.toml antes
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
 ```
 
+## Banco de dados
+
+O schema (Postgres puro, sem ORM) mora em `database/migrations/`, gerado a
+partir de `docs/DER.md`.
+
+Para desenvolvimento local, suba um Postgres descartável com Docker Compose:
+
+```bash
+docker compose up -d
+export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
+uv run barnes db migrate
+```
+
+(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL`.)
+
+Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
+ordem e registrados em `schema_migrations` — rodar o comando de novo não
+reaplica o que já foi feito. Alterações de schema viram um novo arquivo
+`NNNN_descricao.sql`, nunca uma edição do anterior.
+
+O acesso ao banco em `src/barnes/db/` usa `psycopg` diretamente (sem ORM):
+schema explícito em SQL, consistente com a regra de que geometria e limiares
+são configuração, não abstração escondida em código.
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:
