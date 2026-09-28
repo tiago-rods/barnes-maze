@@ -1,0 +1,74 @@
+# Epico A
+vamos usar postgresql ao invés de SQLite
+## [US-01]
+- Não necessário criar algoritmo para lidar com fps variável, avisar talvez seja interessante porém é um caso específico de erro, deixar para o usuário resolver (fazer outro video ou alguma coisa) podemos fazer ao final do projeto se sobrar tempo
+- Podemos começar com suporte somente para mp4
+
+- Desconsiderar cenário 2 ou mudar a forma que está descrito
+
+#### tarefas
+- [ ] Implementar o leitor de vídeo em `src/barnes/io/` com OpenCV/FFmpeg
+- [ ] Implementar a medição de fps real 
+- [ ] Implementar o cálculo e a persistência do hash de conteúdo do arquivo
+- [ ] Implementar a exibição do primeiro quadro e do resumo de metadados
+- [ ] Escrever testes para fps constante, fps variável e arquivo corrompido
+- [ ] Expor o comando na CLI e documentar seu uso
+
+#### Definição de Pronto (DoD Específica do Card)
+- [ ] Leitor de vídeo implementado em `src/barnes/io/` com medição de fps real
+- [ ] Testes unitários cobrindo fps constante, fps variável e arquivo inválido
+- [ ] Hash do arquivo calculado e persistido
+- [ ] Executável pela CLI com um comando documentado
+- [ ] Revisado por outro integrante e integrado à branch principal
+
+
+### [US-02] Calibração da escala px→cm por dois segmentos conhecidos (ou 4 pontos)
+#### Regras de Negócio & Escopo
+- [RN01] O pesquisador marca dois segmentos sobre um quadro de referência e informa a distância real entre eles, em centímetros.
+- [RN02] O fator de escala (cm/px) é salvo no banco de dados, dessa forma pode ser utilizado para todos os vídeos com a mesma orientação de câmera
+- [RN03] Sem escala calibrada, o sistema recusa o cálculo de qualquer métrica com unidade métrica (distância, velocidade, eficiência de rota).
+- [RN04] O erro de medição aceito é **< 3%** contra uma distância real independente da usada na calibração (critério da seção 10).
+- [RN05] Recalibrar sobrescreve a escala da montagem e invalida as métricas já calculadas com a escala anterior — as execuções antigas permanecem no banco, marcadas com a escala que usaram.
+
+#### Tarefas
+- [ ] Definir o formato do bloco de escala no YAML de montagem
+- [ ] Implementar a marcação interativa de dois segmentos em janela OpenCV
+- [ ] Implementar o cálculo do fator cm/px e sua gravação na montagem
+- [ ] Implementar o bloqueio de métricas métricas quando não há escala calibrada
+- [ ] Escrever teste verificando erro < 3% contra distância independente
+- [ ] Implementar a marcação das execuções antigas com a escala que usaram
+- [ ] Registrar no manual o procedimento de calibração e de recalibração
+
+#### Definição de Pronto (DoD Específica do Card)
+- [ ] Rotina de calibração interativa (janela OpenCV) implementada
+- [ ] Escala persistida no banco de dados
+- [ ] Teste automatizado verificando o erro < 3% em imagem sintética de escala conhecida
+- [ ] Bloqueio de métricas métricas sem escala coberto por teste
+- [ ] Procedimento descrito em `docs/manual-usuario.md`
+
+### [US-03] Recorte do intervalo útil do trial
+#### Regras de Negócio & Escopo
+- [RN01] Início e fim do intervalo são configuráveis por trial, em segundos o
+- [RN02] **Nenhuma** métrica, evento ou ponto de trajetória é calculado fora do intervalo útil.
+- [RN03] O instante de início (evento **S**, soltura) é detectado automaticamente quando possível — por exemplo, pela remoção do cilindro ou pelo primeiro movimento do animal — e sempre pode ser corrigido manualmente.
+- [RN04] O intervalo efetivamente usado é persistido no registro do trial e reportado nas saídas, para auditoria.
+- [RN05] O tempo zero de todas as latências é o início do intervalo útil, não o início do arquivo de vídeo.
+
+# Epico B
+[us-04]
+
+
+Entender o uso do YAML, ver se é possível substituir pelo banco de dados
+
+[US-05]
+Minha preocupação nessa não é necessariamente a rotação da plataforma mas a mudança do ângulo/posição da câmera, como os vídeos são feitos em dias diferentes, as vezes a camera fica deslocada, podendo ter a necessidade de recalibrar o vídeo
+
+# Epico C
+[US-06]
+Ver se realmente é necessário treinar modelo SLEAP, talvez exista forma mais simples de fazer isso, mas vamos deixar assim por enquanto
+podemos ver de usar o YOLO-pose, e adaptamos para a licença AGPL
+
+Existe uma GPU instituicional, porém, ver se há necessidade de usa-la
+
+> não tenho tanto conhecimento do épico C e D, podemos ir alterando detalhes ao decorrer do projeto
+
