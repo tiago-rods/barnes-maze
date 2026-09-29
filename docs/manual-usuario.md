@@ -42,9 +42,53 @@ _A preencher._
 
 ## 3. Configurar uma montagem
 
-Uma vez por arranjo de labirinto + câmera, não por trial.
+Uma vez por arranjo de labirinto + câmera, não por trial. A geometria é
+paramétrica (centro, raio, número de buracos e ângulo inicial — sem editor
+de polígonos) e fica salva no banco (tabelas `maze_configs` e `holes`), não
+em arquivo.
 
-_A preencher — US-02, US-04, US-05._
+**Ainda pendentes nesta seção — não incluídos no procedimento abaixo:**
+escala px→cm (US-02) e rotação/referencial de sala (US-05). Sem eles, uma
+montagem tem geometria e alvo, mas nenhuma métrica em cm.
+
+### 3.1 Criar uma montagem
+
+```
+uv run barnes maze create \
+  --experiment-id <id> --name "<nome da montagem>" \
+  --reference-frame <video ou imagem de referência> \
+  --center-x <px> --center-y <px> --platform-radius-px <px> \
+  --hole-count <N> --start-angle-deg <graus> --target-hole-number <0..N-1> \
+  --hole-radius-px <px> --arena-diameter-cm <cm> --hole-diameter-cm <cm>
+```
+
+Por padrão abre uma janela OpenCV com barras de ajuste (trackbars) para
+centro, raio, N, ângulo inicial e índice do alvo, desenhando os buracos
+sobre o quadro de referência em tempo real — ajuste até os buracos
+desenhados coincidirem com os buracos reais e confirme com `Enter`, `q` ou
+`Esc`. Use `--no-interactive` para pular a janela e persistir direto os
+valores informados (útil em script/teste).
+
+Se algum parâmetro for inválido (N ≤ 2, raio não positivo, ou índice de
+alvo fora de `0..N-1`), o comando recusa a gravação e informa qual
+parâmetro falhou antes de abrir qualquer janela.
+
+**Limitação conhecida:** a barra do índice do alvo tem o limite máximo
+fixado no valor de N no momento em que a janela abre — se você aumentar N
+pela barra, não é possível mover a barra do alvo além do limite antigo
+nesta versão. Se precisar de um alvo em índice alto com N maior, informe um
+`--hole-count` já correto antes de abrir a janela.
+
+### 3.2 Reaproveitar uma montagem existente
+
+```
+uv run barnes maze show <id-da-montagem>
+```
+
+Lê a montagem do banco e imprime centro, raio, buracos e alvo — sem abrir
+nenhuma janela. É o mesmo dado que outros comandos do pipeline vão
+consultar para reaplicar a montagem a um novo trial, sem repetir a
+configuração interativa.
 
 ## 4. Processar um trial
 

@@ -60,6 +60,17 @@ vamos usar postgresql ao invés de SQLite
 
 Entender o uso do YAML, ver se é possível substituir pelo banco de dados
 
+Decisão: substituído por Postgres. Sem YAML de montagem — `maze_configs` +
+`holes` (já existentes desde o schema inicial, US-01) cobrem centro/raio/N
+/ângulo (via `holes[0].angle_deg`)/alvo (via `holes.is_target`); zonas de
+proximidade são derivadas em memória via Shapely quando necessárias, não
+persistidas. `configs/montagens/*.yaml` removido (ver
+`configs/montagens/README.md`). "Ângulo inicial" não ganhou coluna própria:
+é `holes[0].angle_deg`, derivável, não um dado independente. "Montagem real
+do LNBio" agora é `database/seeds/lnbio_barnes.py` (rodar com
+`uv run python -m database.seeds.lnbio_barnes`), ainda com valores
+pendentes de B2 — mesma pendência que já existia no YAML (todo `null`).
+
 [US-05]
 Minha preocupação nessa não é necessariamente a rotação da plataforma mas a mudança do ângulo/posição da câmera, como os vídeos são feitos em dias diferentes, as vezes a camera fica deslocada, podendo ter a necessidade de recalibrar o vídeo
 
