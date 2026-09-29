@@ -53,7 +53,7 @@ erDiagram
     HOLE {
         int id PK
         int maze_config_id FK
-        int hole_number "1..N ao redor da plataforma"
+        int hole_number "0..N-1 ao redor da plataforma (US-04 RN02)"
         float angle_deg "posição fixa, 0-360"
         int x_px
         int y_px
