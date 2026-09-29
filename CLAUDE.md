@@ -37,6 +37,13 @@ uv run ruff check src/ tests/        # lint (line-length 100, py311 target)
 uv run barnes video load PATH [--experiment-id N --maze-config-id N \
     --phase acquisition --day 1 --trial-in-day 1] [--no-preview]
 uv run barnes db migrate             # apply pending database/migrations/*.sql
+
+uv run barnes maze create --experiment-id N --name NAME \
+    --reference-frame PATH --arena-diameter-cm X --hole-diameter-cm Y
+    # interactive OpenCV window: drag = center/radius/angle, right-click =
+    # mark target hole, 'a' = auto-detect platform circle, +/- = N (max 30);
+    # --no-interactive requires --center-x/--center-y/--platform-radius-px
+uv run barnes maze show ID           # reapply a saved montagem, no interaction
 ```
 
 ### Local Postgres for development
@@ -108,20 +115,35 @@ pattern alongside the synthetic-video tests.
 ### Configuration is data, not code
 
 `configs/default.yaml` (behavioral thresholds: discovery distance/angle,
-dwell, error criteria, strategy classification) and
-`configs/montagens/*.yaml` (per-rig geometry/camera calibration) are
-intentionally versioned YAML with most values `null` — they're populated
-from the lab via gate **G3** (see `docs/definicoes-metricas.md`, currently
-DRAFT/unsigned) and calibrated against manual annotation, never hardcoded
-or guessed. Don't fill these in "reasonably" — a value chosen for
-convenience produces plausible, well-formatted numbers with no relationship
-to what the lab actually means by e.g. "discovery latency".
+dwell, error criteria, strategy classification) is intentionally versioned
+YAML with most values `null` — populated from the lab via gate **G3** (see
+`docs/definicoes-metricas.md`, currently DRAFT/unsigned) and calibrated
+against manual annotation, never hardcoded or guessed. Don't fill it in
+"reasonably" — a value chosen for convenience produces plausible,
+well-formatted numbers with no relationship to what the lab actually means
+by e.g. "discovery latency".
+
+Per-rig geometry/camera calibration (center, radius, N holes, target hole,
+px→cm scale) used to live in `configs/montagens/*.yaml`; US-04 moved it to
+Postgres instead (`maze_configs` + `holes`, see Database schema below) —
+`configs/montagens/` now holds only a README pointing here, no YAML.
+Configure a montagem with `barnes maze create` and reload it with
+`barnes maze show <id>`; never hand-edit geometry into a file.
+
+### Seed scripts live outside the installed package
+
+`database/seeds/*.py` (e.g. `lnbio_barnes.py`) import `barnes.db`/
+`barnes.geometry` but are not part of `src/barnes` — the installed `barnes`
+console script does not have the repo root on `sys.path`, so these only run
+via `uv run python -m database.seeds.<name>` from the repo root, never as a
+`barnes` subcommand.
 
 ### Package layout
 
 `src/barnes/{io,geometry,pose,events,metrics,strategy,longitudinal,stats,report,db}/`
-— each corresponds to both a project epic and a pipeline stage; most are
-still empty `__init__.py` stubs pending their user story. `data/` and
+— each corresponds to both a project epic and a pipeline stage. `io`
+(US-01) and `geometry` (US-04) are implemented; the rest are still empty
+`__init__.py` stubs pending their user story. `data/` and
 `models/` are gitignored (raw videos, trained pose weights) — never assume
 their contents are present in a fresh clone or CI; tests must not depend on
 files under `data/`, which is why `tests/conftest.py` generates small
@@ -131,7 +153,8 @@ synthetic `.mp4` fixtures via `cv2.VideoWriter` instead.
 
 - Google-style docstrings, type hints, `pathlib.Path` over raw strings,
   frozen `@dataclass` for value objects, domain-specific exceptions
-  (`VideoLoadError`, `DatabaseConfigError`) instead of bare `Exception`.
+  (`VideoLoadError`, `DatabaseConfigError`, `GeometryValidationError`)
+  instead of bare `Exception`.
 - No GPL/AGPL dependencies anywhere in the main dependency group — this is
   an explicit distribution constraint (see comments in `pyproject.toml`).
   This is why `scipy`/`scikit-learn` are used instead of `pingouin` (GPL-3),
