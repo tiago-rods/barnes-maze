@@ -57,27 +57,50 @@ montagem tem geometria e alvo, mas nenhuma métrica em cm.
 uv run barnes maze create \
   --experiment-id <id> --name "<nome da montagem>" \
   --reference-frame <video ou imagem de referência> \
-  --center-x <px> --center-y <px> --platform-radius-px <px> \
-  --hole-count <N> --start-angle-deg <graus> --target-hole-number <0..N-1> \
-  --hole-radius-px <px> --arena-diameter-cm <cm> --hole-diameter-cm <cm>
+  --arena-diameter-cm <cm> --hole-diameter-cm <cm>
 ```
 
-Por padrão abre uma janela OpenCV com barras de ajuste (trackbars) para
-centro, raio, N, ângulo inicial e índice do alvo, desenhando os buracos
-sobre o quadro de referência em tempo real — ajuste até os buracos
-desenhados coincidirem com os buracos reais e confirme com `Enter`, `q` ou
-`Esc`. Use `--no-interactive` para pular a janela e persistir direto os
-valores informados (útil em script/teste).
+Por padrão abre uma janela OpenCV sobre o quadro de referência, ajustável
+**com o mouse e o teclado**, sem precisar informar centro/raio/N/ângulo/alvo
+na linha de comando (eles têm um valor inicial razoável e são corrigidos na
+janela):
+
+- **Tecla `a`** detecta automaticamente o centro e o raio da plataforma no
+  quadro (maior região clara contígua) e já reposiciona a marca amarela de
+  centro — usar antes de arrastar poupa a parte mais difícil de "achar o
+  meio a olho".
+- **Arraste o botão esquerdo** do centro (o detectado por `a`, ou qualquer
+  ponto) até um buraco real visível — isso (re)define centro, raio **e**
+  ângulo inicial de uma vez, calibrados contra um buraco de verdade (o
+  ângulo vem da direção do arraste).
+- **Clique com o botão direito** perto de um buraco já desenhado para
+  marcá-lo como o buraco-alvo (fica vermelho).
+- **`+` / `-`** aumentam/diminuem N (número de buracos) ao vivo, com teto de
+  **30** (`+` não passa disso).
+- **`Enter`, `q` ou `Esc`** confirma e fecha a janela, salvando a última
+  geometria válida mostrada.
+
+A marca amarela em cruz mostra onde está o centro atual, para conferir
+visualmente se bate com o centro real da plataforma antes de confirmar.
+
+As instruções também aparecem no rodapé da própria janela. Repita o arraste
+quantas vezes quiser até os buracos desenhados coincidirem com os buracos
+reais (Cenário 1) — cada novo arraste substitui centro/raio/ângulo
+anteriores.
+
+Se quiser informar os parâmetros manualmente em vez de usar o mouse (por
+exemplo, reproduzindo uma montagem já medida), as opções `--center-x`,
+`--center-y`, `--platform-radius-px`, `--hole-count`, `--start-angle-deg`,
+`--target-hole-number` e `--hole-radius-px` continuam aceitas e só definem
+o ponto de partida — a janela interativa ainda abre por cima. Use
+`--no-interactive` para pular a janela e persistir direto os valores
+informados (útil em script/teste); nesse caso `--center-x`, `--center-y` e
+`--platform-radius-px` passam a ser obrigatórios.
 
 Se algum parâmetro for inválido (N ≤ 2, raio não positivo, ou índice de
 alvo fora de `0..N-1`), o comando recusa a gravação e informa qual
-parâmetro falhou antes de abrir qualquer janela.
-
-**Limitação conhecida:** a barra do índice do alvo tem o limite máximo
-fixado no valor de N no momento em que a janela abre — se você aumentar N
-pela barra, não é possível mover a barra do alvo além do limite antigo
-nesta versão. Se precisar de um alvo em índice alto com N maior, informe um
-`--hole-count` já correto antes de abrir a janela.
+parâmetro falhou (com `--no-interactive`) ou simplesmente não atualiza o
+desenho até um arraste válido ser feito (no modo interativo).
 
 ### 3.2 Reaproveitar uma montagem existente
 
