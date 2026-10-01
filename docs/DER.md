@@ -49,6 +49,10 @@ erDiagram
         float platform_radius_px
         date calibration_date "US-02 RN02 — data da calibração da escala"
         float measured_error_pct "US-02 RN04 — erro medido, deve ser < 3%"
+        string calibration_reference_video "US-02 — vídeo/quadro usados na calibração"
+        int calibration_reference_frame "US-02"
+        int calibration_width_px "US-02 — resolução de referência da calibração"
+        int calibration_height_px "US-02"
     }
     HOLE {
         int id PK
@@ -98,6 +102,9 @@ erDiagram
         string heatmap_path
         string cox_test
         bool event_ocurred
+        datetime calculated_at "US-02 — quando as métricas foram calculadas"
+        float px_per_10cm_used "US-02 RN05 — escala usada; obsoleta se != maze_configs.px_per_10cm"
+        float route_efficiency "US-02 RN03 — caminho ideal / caminho percorrido"
     }
     HOLE_VISIT {
         int id PK
@@ -120,9 +127,9 @@ retomar quando os cards correspondentes forem abertos:
   Considerar `pose_model_version`, `config_version`, `processed_at`.
 - US-20 (classificação de estratégia): TRIAL_RESULT não tem campo de entropia
   espacial da trajetória, usada como critério ("entropia_max_espacial").
-- US-19 (índice de eficiência de rota): confirmar se `path_tortuosity` cobre
-  o conceito, ou se precisa de um campo `route_efficiency` separado
-  (razão caminho-ideal / caminho-real).
+- US-19 (índice de eficiência de rota): resolvido pela US-02 — `path_tortuosity`
+  fica para outra métrica; `route_efficiency` (caminho-ideal / caminho-real)
+  é campo próprio, adicionado em `0002_us02_calibration.sql`.
 - US-21 / US-29 (kappa entre classificação automática e observador humano):
   falta onde guardar o rótulo manual de estratégia para comparar contra o
   `search_strategy` automático.
