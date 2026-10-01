@@ -70,8 +70,9 @@ erDiagram
         string phase "habituation|acquisition|probe"
         int day_number
         int trial_number_in_day
-        float start_time_seconds
-        float end_time_seconds
+        float start_time_seconds "US-03 RN01/RN04 — início do intervalo útil (null = ainda não recortado)"
+        float end_time_seconds "US-03 RN01/RN04 — fim do intervalo útil"
+        bool interval_manually_adjusted "US-03 RN03/Cenário 2 — true se veio de ajuste manual, não da detecção automática"
         string content_hash "US-01 RN05 — sha256, detecta arquivo movido/alterado (US-27)"
         int width_px
         int height_px

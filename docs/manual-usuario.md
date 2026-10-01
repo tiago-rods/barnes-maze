@@ -117,6 +117,52 @@ configuração interativa.
 
 _A preencher. Este é o procedimento cronometrado no critério de ≤ 10 min._
 
+### 4.1 Recorte do intervalo útil (US-03)
+
+Ao carregar um trial com `barnes video load`, o sistema sempre resolve um
+**intervalo útil** — o trecho do vídeo entre a soltura do animal e o fim do
+trial — antes de persistir. Nenhuma métrica, evento ou ponto de trajetória
+calculado por estágios posteriores do pipeline usa quadros fora desse
+intervalo (RN02); e o tempo zero de qualquer latência reportada é o início
+do intervalo, não o início do arquivo de vídeo (RN05).
+
+```
+uv run barnes video load <video.mp4> \
+  --experiment-id <id> --maze-config-id <id> \
+  [--start-s <segundos> | --start-frame <quadro>] \
+  [--end-s <segundos> | --end-frame <quadro>]
+```
+
+- **Sem nenhuma das opções acima** (fluxo principal, Cenário 1): o início é
+  proposto automaticamente por uma heurística de movimento — compara cada
+  quadro ao anterior e procura o primeiro trecho de movimento sustentado
+  (remoção do cilindro ou o próprio animal se movendo), distinguindo isso
+  do "parado" dos quadros iniciais. O fim é o fim do vídeo, já que este
+  card não detecta automaticamente o momento da fuga (isso depende dos
+  eventos por buraco de um card posterior). O intervalo proposto aparece
+  no terminal antes de ser salvo — rodar o comando sem flags **é** a
+  confirmação do valor proposto.
+- **Com `--start-s`/`--start-frame` e/ou `--end-s`/`--end-frame`** (fluxo
+  alternativo, Cenário 2): os valores informados substituem a proposta
+  automática. O trial fica marcado como **"ajustado manualmente"**
+  (coluna `interval_manually_adjusted`) — use quando a detecção automática
+  errar o instante de soltura. Informe cada limite em segundos **ou** em
+  número de quadro, nunca os dois para o mesmo limite.
+- O comando recusa o recorte (sem salvar nada) se o fim não for maior que
+  o início, ou se algum dos dois cair fora da duração do vídeo.
+
+O intervalo efetivamente usado — início, fim e se foi ajuste manual — fica
+gravado no registro do trial (`trials.start_time_seconds`,
+`trials.end_time_seconds`, `trials.interval_manually_adjusted`) e pode ser
+conferido depois, para auditoria (RN04).
+
+> **Pendente:** a tarefa "validar a heurística nos 3 trials representativos
+> de G1" depende de G1 ter acontecido (receber vídeos reais do LNBio — ver
+> seção 2 da definição do projeto). A heurística acima é um ponto de
+> partida genérico, calibrado só contra vídeo sintético; revisitar o limiar
+> de movimento (`_MOTION_THRESHOLD_STD` em `src/barnes/io/trim.py`) assim
+> que houver trials reais.
+
 ## 5. Saídas
 
 | Arquivo | Conteúdo |
