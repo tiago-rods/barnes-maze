@@ -1,0 +1,21 @@
+# Postgres de desenvolvimento local. Credenciais fixas de propósito — são
+# só para a máquina de cada dev, nunca para o banco real do LNBio.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: barnes
+      POSTGRES_PASSWORD: barnes
+      POSTGRES_DB: barnes
+    ports:
+      - "5432:5432"
+    volumes:
+      - barnes_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barnes"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  barnes_postgres_data:

@@ -82,7 +82,79 @@ calibrações anteriores.
 
 ## 3. Configurar uma montagem
 
-### 3.1 Identificar a orientação da câmera
+Uma vez por arranjo de labirinto + câmera, não por trial. A geometria é
+paramétrica (centro, raio, número de buracos e ângulo inicial — sem editor
+de polígonos) e fica salva no banco (tabelas `maze_configs` e `holes`), não
+em arquivo.
+
+**Ainda pendentes nesta seção:** rotação/referencial de sala (US-05). A
+escala px→cm (US-02) já pode ser calibrada (seções 3.3 a 3.6), mas ainda é
+guardada por orientação de câmera e **não está ligada à montagem** — a
+integração com `maze_configs` está pendente.
+
+### 3.1 Criar uma montagem
+
+```
+uv run barnes maze create \
+  --experiment-id <id> --name "<nome da montagem>" \
+  --reference-frame <video ou imagem de referência> \
+  --arena-diameter-cm <cm> --hole-diameter-cm <cm>
+```
+
+Por padrão abre uma janela OpenCV sobre o quadro de referência, ajustável
+**com o mouse e o teclado**, sem precisar informar centro/raio/N/ângulo/alvo
+na linha de comando (eles têm um valor inicial razoável e são corrigidos na
+janela):
+
+- **Tecla `a`** detecta automaticamente o centro e o raio da plataforma no
+  quadro (maior região clara contígua) e já reposiciona a marca amarela de
+  centro — usar antes de arrastar poupa a parte mais difícil de "achar o
+  meio a olho".
+- **Arraste o botão esquerdo** do centro (o detectado por `a`, ou qualquer
+  ponto) até um buraco real visível — isso (re)define centro, raio **e**
+  ângulo inicial de uma vez, calibrados contra um buraco de verdade (o
+  ângulo vem da direção do arraste).
+- **Clique com o botão direito** perto de um buraco já desenhado para
+  marcá-lo como o buraco-alvo (fica vermelho).
+- **`+` / `-`** aumentam/diminuem N (número de buracos) ao vivo, com teto de
+  **30** (`+` não passa disso).
+- **`Enter`, `q` ou `Esc`** confirma e fecha a janela, salvando a última
+  geometria válida mostrada.
+
+A marca amarela em cruz mostra onde está o centro atual, para conferir
+visualmente se bate com o centro real da plataforma antes de confirmar.
+
+As instruções também aparecem no rodapé da própria janela. Repita o arraste
+quantas vezes quiser até os buracos desenhados coincidirem com os buracos
+reais (Cenário 1) — cada novo arraste substitui centro/raio/ângulo
+anteriores.
+
+Se quiser informar os parâmetros manualmente em vez de usar o mouse (por
+exemplo, reproduzindo uma montagem já medida), as opções `--center-x`,
+`--center-y`, `--platform-radius-px`, `--hole-count`, `--start-angle-deg`,
+`--target-hole-number` e `--hole-radius-px` continuam aceitas e só definem
+o ponto de partida — a janela interativa ainda abre por cima. Use
+`--no-interactive` para pular a janela e persistir direto os valores
+informados (útil em script/teste); nesse caso `--center-x`, `--center-y` e
+`--platform-radius-px` passam a ser obrigatórios.
+
+Se algum parâmetro for inválido (N ≤ 2, raio não positivo, ou índice de
+alvo fora de `0..N-1`), o comando recusa a gravação e informa qual
+parâmetro falhou (com `--no-interactive`) ou simplesmente não atualiza o
+desenho até um arraste válido ser feito (no modo interativo).
+
+### 3.2 Reaproveitar uma montagem existente
+
+```
+uv run barnes maze show <id-da-montagem>
+```
+
+Lê a montagem do banco e imprime centro, raio, buracos e alvo — sem abrir
+nenhuma janela. É o mesmo dado que outros comandos do pipeline vão
+consultar para reaplicar a montagem a um novo trial, sem repetir a
+configuração interativa.
+
+### 3.3 Identificar a orientação da câmera
 
 A escala pertence a uma **orientação de câmera**, identificada por um nome
 fornecido em `--orientation`, por exemplo `camera-dia-01`. Reutilize esse nome
@@ -93,10 +165,10 @@ reconhece automaticamente se a câmera se moveu entre gravações.
 Se a câmera mudou, crie outro identificador e calibre essa nova orientação.
 Mesmo no mesmo estudo, orientações diferentes mantêm escalas independentes.
 Vídeos com resolução diferente da referência são recusados para evitar aplicar
-uma escala de pixels incompatível. O procedimento completo de configuração de
-plataforma, buracos e orientação da sala permanece pendente em US-04/US-05.
+uma escala de pixels incompatível. A configuração de plataforma e buracos está
+nas seções 3.1 e 3.2; a orientação da sala permanece pendente em US-05.
 
-### 3.2 Calibrar com dois segmentos conhecidos
+### 3.4 Calibrar com dois segmentos conhecidos
 
 1. Escolha um vídeo em que os marcadores estejam visíveis e nítidos. Os dois
    comprimentos reais devem ser conhecidos em centímetros e estar no mesmo
@@ -107,7 +179,7 @@ plataforma, buracos e orientação da sala permanece pendente em US-04/US-05.
 3. Execute, substituindo arquivo, orientação e comprimentos pelos seus dados:
 
    ```bash
-   barnes calibrate --video data/raw/trial.mp4 --orientation camera-dia-01 --length-1-cm 20 --length-2-cm 20 --frame 0
+   barnes scale calibrate --video data/raw/trial.mp4 --orientation camera-dia-01 --length-1-cm 20 --length-2-cm 20 --frame 0
    ```
 
    `--frame` é o índice do quadro, começando em zero; o padrão é o primeiro
@@ -149,14 +221,14 @@ RN04. Um fator escalar não corrige perspectiva nem garante a mesma exatidão em
 todos os pontos da imagem. Se a cena apresentar distorção, ajuste a câmera e
 repita a calibração; não compense alterando os comprimentos reais informados.
 
-### 3.3 Verificar a exatidão com uma terceira distância
+### 3.5 Verificar a exatidão com uma terceira distância
 
 Use outra distância real conhecida que **não participou da calibração**, no
 mesmo plano da trajetória. Prefira outra posição e direção da cena para avaliar
 o uso da escala fora dos dois segmentos originais.
 
 ```bash
-barnes verify-scale --video data/raw/trial.mp4 --orientation camera-dia-01 --length-cm 15 --frame 0
+barnes scale verify --video data/raw/trial.mp4 --orientation camera-dia-01 --length-cm 15 --frame 0
 ```
 
 Marque apenas as duas extremidades dessa terceira distância e confirme com
@@ -176,20 +248,20 @@ A verificação não substitui a escala salva. Se reprovar, revise a montagem e
 os marcadores, calibre novamente e repita a medição independente antes de usar
 as métricas no estudo.
 
-### 3.4 Consultar, reaproveitar e recalibrar
+### 3.6 Consultar, reaproveitar e recalibrar
 
 Consulte a escala atual ou todas as versões da orientação:
 
 ```bash
-barnes scale --orientation camera-dia-01
-barnes scale --orientation camera-dia-01 --history
+barnes scale show --orientation camera-dia-01
+barnes scale show --orientation camera-dia-01 --history
 ```
 
 Para processar outro vídeo com a mesma orientação, use o mesmo identificador
 e banco. A escala atual é aplicada automaticamente, sem marcar novos pontos.
 
 Para corrigir a calibração da **mesma orientação**, execute novamente
-`barnes calibrate` com aquele identificador. A operação cria uma versão nova;
+`barnes scale calibrate` com aquele identificador. A operação cria uma versão nova;
 as versões anteriores permanecem no banco. As métricas das execuções anteriores
 daquela orientação ficam **inválidas**, mas cada execução mantém o identificador
 da escala que usou e seus valores originais para auditoria. Execuções de outras
@@ -200,7 +272,7 @@ O sistema não recalcula nem apaga as execuções antigas silenciosamente. Para
 examinar esse histórico:
 
 ```bash
-barnes executions --trial trial-01
+barnes metrics executions --trial trial-01
 ```
 
 Esse comando apresenta as execuções, a escala utilizada, as métricas e sua
@@ -230,7 +302,7 @@ x_px,y_px,time_s
 ```
 
 ```bash
-barnes process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial trial-01 --orientation camera-dia-01
+barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial trial-01 --orientation camera-dia-01
 ```
 
 O programa exige uma escala válida para a orientação, verifica a resolução do
@@ -260,7 +332,7 @@ critério de ≤ 10 min da US-30 ainda precisa de validação com um operador._
 ## 5. Saídas
 
 Na US-02, os resultados são exibidos no terminal e persistidos no banco
-selecionado. Use `barnes scale` e `barnes executions` para consultar os registros.
+selecionado. Use `barnes scale show` e `barnes metrics executions` para consultar os registros.
 As exportações do produto completo abaixo permanecem previstas para suas
 respectivas histórias:
 
@@ -275,7 +347,7 @@ respectivas histórias:
 
 | Situação | Procedimento |
 |---|---|
-| Orientação sem escala | Execute `barnes calibrate` com o mesmo identificador e banco do processamento. |
+| Orientação sem escala | Execute `barnes scale calibrate` com o mesmo identificador e banco do processamento. |
 | Escalas dos segmentos divergem | Confira unidades, cliques, plano dos marcadores e perspectiva; repita a calibração. |
 | Segmentos têm a mesma direção | Escolha uma segunda referência em outra direção, preferencialmente perpendicular. |
 | Erro independente ≥ 3% | Revise a montagem e calibre novamente antes de usar as métricas. |

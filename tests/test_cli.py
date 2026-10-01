@@ -16,12 +16,12 @@ runner = CliRunner()
 
 @pytest.fixture
 def video(tmp_path):
-    path = tmp_path / "reference.avi"
+    path = tmp_path / "reference.mp4"
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     cv2.line(frame, (10, 10), (210, 10), (255, 255, 255), 2)
     cv2.line(frame, (10, 30), (10, 230), (255, 255, 255), 2)
-    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (640, 480))
-    assert writer.isOpened(), "O ambiente deve conseguir gravar o vídeo sintético MJPG."
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (640, 480))
+    assert writer.isOpened(), "O ambiente deve conseguir gravar o vídeo sintético mp4v."
     try:
         for _ in range(3):
             writer.write(frame)
@@ -49,7 +49,7 @@ def args(tmp_path, video, monkeypatch):
 
 def calibrate(args, length="20"):
     result = runner.invoke(
-        cli.app, ["calibrate", *args, "--length-1-cm", length, "--length-2-cm", length]
+        cli.app, ["scale", "calibrate", *args, "--length-1-cm", length, "--length-2-cm", length]
     )
     assert result.exit_code == 0, result.output + repr(result.exception)
     return result
@@ -65,6 +65,7 @@ def test_cli_full_calibration_reuse_validation_and_recalibration(args, tmp_path,
         result = runner.invoke(
             cli.app,
             [
+                "metrics",
                 "process",
                 *args,
                 "--trial",
@@ -84,7 +85,7 @@ def test_cli_full_calibration_reuse_validation_and_recalibration(args, tmp_path,
 
     with monkeypatch.context() as scoped:
         scoped.setattr(cli, "collect_segments", lambda *a, **k: (((300, 100), (450, 100)),))
-        checked = runner.invoke(cli.app, ["verify-scale", *args, "--length-cm", "15"])
+        checked = runner.invoke(cli.app, ["scale", "verify", *args, "--length-cm", "15"])
         assert checked.exit_code == 0, checked.output
         assert "Verificação aceita" in checked.output
 
@@ -95,7 +96,8 @@ def test_cli_full_calibration_reuse_validation_and_recalibration(args, tmp_path,
         assert old.metrics["distance_cm"] == pytest.approx(10)
         assert old.calibration_id == executions[0]["calibration_id"]
     result = runner.invoke(
-        cli.app, ["process", *args, "--trial", "trial-1", "--trajectory", str(trajectory)]
+        cli.app,
+        ["metrics", "process", *args, "--trial", "trial-1", "--trajectory", str(trajectory)],
     )
     assert result.exit_code == 0
     updated = json.loads(result.output)
@@ -103,12 +105,15 @@ def test_cli_full_calibration_reuse_validation_and_recalibration(args, tmp_path,
     assert updated["is_valid"]
     assert updated["calibration_id"] != executions[0]["calibration_id"]
     history = runner.invoke(
-        cli.app, ["scale", "--database", args[1], "--orientation", "camera-day-1", "--history"]
+        cli.app,
+        ["scale", "show", "--database", args[1], "--orientation", "camera-day-1", "--history"],
     )
     assert history.exit_code == 0
     assert "versão=1" in history.output and "substituída" in history.output
     assert "versão=2" in history.output and "ativa" in history.output
-    result = runner.invoke(cli.app, ["executions", "--database", args[1], "--trial", "trial-1"])
+    result = runner.invoke(
+        cli.app, ["metrics", "executions", "--database", args[1], "--trial", "trial-1"]
+    )
     assert result.exit_code == 0
     assert len(json.loads(result.output)) == 2
 
@@ -117,10 +122,11 @@ def test_process_without_scale_fails_before_opening_inputs(tmp_path, monkeypatch
     def forbidden(*args, **kwargs):
         pytest.fail("Sem calibração não deve abrir o vídeo.")
 
-    monkeypatch.setattr(cli, "read_reference_frame", forbidden)
+    monkeypatch.setattr(cli, "read_frame", forbidden)
     result = runner.invoke(
         cli.app,
         [
+            "metrics",
             "process",
             "--database",
             str(tmp_path / "empty.sqlite3"),
@@ -144,7 +150,7 @@ def test_failed_calibration_preserves_previous_scale_and_valid_runs(args):
         old = repository.require_calibration("camera-day-1")
         run = repository.record_execution("trial", old.id, {"distance_cm": 10})
     result = runner.invoke(
-        cli.app, ["calibrate", *args, "--length-1-cm", "20", "--length-2-cm", "30"]
+        cli.app, ["scale", "calibrate", *args, "--length-1-cm", "20", "--length-2-cm", "30"]
     )
     assert result.exit_code == 1
     assert "perspectiva" in result.output
@@ -159,7 +165,7 @@ def test_cancelled_calibration_creates_no_scale(args, monkeypatch):
 
     monkeypatch.setattr(cli, "collect_segments", cancel)
     result = runner.invoke(
-        cli.app, ["calibrate", *args, "--length-1-cm", "20", "--length-2-cm", "20"]
+        cli.app, ["scale", "calibrate", *args, "--length-1-cm", "20", "--length-2-cm", "20"]
     )
     assert result.exit_code == 130
     with CalibrationRepository(args[1]) as repository:
@@ -169,14 +175,14 @@ def test_cancelled_calibration_creates_no_scale(args, monkeypatch):
 def test_verification_at_exactly_three_percent_fails(args, monkeypatch):
     calibrate(args)
     monkeypatch.setattr(cli, "collect_segments", lambda *a, **k: (((300, 100), (403, 100)),))
-    result = runner.invoke(cli.app, ["verify-scale", *args, "--length-cm", "10"])
+    result = runner.invoke(cli.app, ["scale", "verify", *args, "--length-cm", "10"])
     assert result.exit_code == 1
     assert "Reprovado" in result.output
 
 
 def test_length_prompts_and_database_environment(args, monkeypatch):
     monkeypatch.setenv("BARNES_DATABASE", args[1])
-    result = runner.invoke(cli.app, ["calibrate", *args[2:]], input="20\n20\n")
+    result = runner.invoke(cli.app, ["scale", "calibrate", *args[2:]], input="20\n20\n")
     assert result.exit_code == 0, result.output
     with CalibrationRepository(args[1]) as repository:
         assert repository.require_calibration("camera-day-1").cm_per_px == pytest.approx(0.1)
@@ -188,7 +194,7 @@ def test_invalid_csv_is_reported_and_no_execution_saved(args, tmp_path, content)
     path = tmp_path / "bad.csv"
     path.write_text(content, encoding="utf-8")
     result = runner.invoke(
-        cli.app, ["process", *args, "--trajectory", str(path), "--trial", "trial"]
+        cli.app, ["metrics", "process", *args, "--trajectory", str(path), "--trial", "trial"]
     )
     assert result.exit_code == 1
     assert "Erro:" in result.output

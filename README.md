@@ -92,6 +92,54 @@ uv sync --extra pose          # SLEAP — ler o aviso no pyproject.toml antes
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
 ```
 
+## Uso
+
+Carregar um vídeo de trial e ver os metadados (US-01):
+
+```bash
+uv run barnes video load "data/OF_Animal_22_240919.mp4"
+```
+
+Mostra resolução, fps real medido (não o do cabeçalho do contêiner), duração,
+número de quadros e o hash do arquivo, e abre uma janela navegável entre
+quadros (`n`/`d` = próximo, `p`/`a` = anterior, `q`/Esc = fechar) — útil
+porque o primeiro quadro pode estar obstruído.
+
+Para também persistir o trial em `trials` (exige um `experiment` e um
+`maze_config` já cadastrados):
+
+```bash
+uv run barnes video load "data/OF_Animal_22_240919.mp4" \
+    --experiment-id 1 --maze-config-id 1 \
+    --phase acquisition --day 1 --trial-in-day 1
+```
+
+Use `--no-preview` para rodar sem abrir janela (scripts, CI).
+
+## Banco de dados
+
+O schema (Postgres puro, sem ORM) mora em `database/migrations/`, gerado a
+partir de `docs/DER.md`.
+
+Para desenvolvimento local, suba um Postgres descartável com Docker Compose:
+
+```bash
+docker compose up -d
+export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
+uv run barnes db migrate
+```
+
+(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL`.)
+
+Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
+ordem e registrados em `schema_migrations` — rodar o comando de novo não
+reaplica o que já foi feito. Alterações de schema viram um novo arquivo
+`NNNN_descricao.sql`, nunca uma edição do anterior.
+
+O acesso ao banco em `src/barnes/db/` usa `psycopg` diretamente (sem ORM):
+schema explícito em SQL, consistente com a regra de que geometria e limiares
+são configuração, não abstração escondida em código.
+
 ## Calibração px → cm (US-02)
 
 A calibração usa dois segmentos conhecidos, marcados em uma janela OpenCV, e
@@ -100,9 +148,9 @@ em `data/barnes.sqlite3`; use `--database` ou `BARNES_DATABASE` para selecionar
 outro arquivo ou uma conexão PostgreSQL.
 
 ```bash
-uv run barnes calibrate --video data/raw/trial.mp4 --orientation camera-dia-01 --length-1-cm 20 --length-2-cm 20
-uv run barnes verify-scale --video data/raw/trial.mp4 --orientation camera-dia-01 --length-cm 15
-uv run barnes scale --orientation camera-dia-01 --history
+uv run barnes scale calibrate --video data/raw/trial.mp4 --orientation camera-dia-01 --length-1-cm 20 --length-2-cm 20
+uv run barnes scale verify --video data/raw/trial.mp4 --orientation camera-dia-01 --length-cm 15
+uv run barnes scale show --orientation camera-dia-01 --history
 ```
 
 Clique nas quatro extremidades em ordem, dois pontos por segmento, e confirme
@@ -116,8 +164,8 @@ colunas `x_px,y_px,time_s`. A inferência automática de trajetória a partir do
 vídeo permanece nas demais histórias do projeto.
 
 ```bash
-uv run barnes process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial trial-01 --orientation camera-dia-01
-uv run barnes executions --trial trial-01
+uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial trial-01 --orientation camera-dia-01
+uv run barnes metrics executions --trial trial-01
 ```
 
 Sem escala para a orientação, o cálculo é bloqueado. O procedimento completo,
