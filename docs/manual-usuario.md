@@ -47,9 +47,14 @@ paramétrica (centro, raio, número de buracos e ângulo inicial — sem editor
 de polígonos) e fica salva no banco (tabelas `maze_configs` e `holes`), não
 em arquivo.
 
-**Ainda pendentes nesta seção — não incluídos no procedimento abaixo:**
-escala px→cm (US-02) e rotação/referencial de sala (US-05). Sem eles, uma
-montagem tem geometria e alvo, mas nenhuma métrica em cm.
+**Ainda pendente nesta seção — não incluída no procedimento abaixo:**
+escala px→cm (US-02). Sem ela, uma montagem tem geometria e alvo, mas
+nenhuma métrica em cm.
+
+O **buraco 0** de toda montagem é o **buraco físico de referência**
+combinado com o laboratório (ver `docs/definicoes-metricas.md`, seção 6). É
+ele que ancora o referencial da sala (US-05): posições comparadas entre
+trials e entre dias são medidas a partir dele, não a partir da câmera.
 
 ### 3.1 Criar uma montagem
 
@@ -70,9 +75,12 @@ janela):
   centro — usar antes de arrastar poupa a parte mais difícil de "achar o
   meio a olho".
 - **Arraste o botão esquerdo** do centro (o detectado por `a`, ou qualquer
-  ponto) até um buraco real visível — isso (re)define centro, raio **e**
-  ângulo inicial de uma vez, calibrados contra um buraco de verdade (o
-  ângulo vem da direção do arraste).
+  ponto) até o **buraco físico de referência** — isso (re)define centro,
+  raio **e** ângulo inicial de uma vez, calibrados contra um buraco de
+  verdade (o ângulo vem da direção do arraste). Esse buraco vira o buraco 0
+  e aparece com anel magenta, uma linha a partir do centro e o rótulo
+  `ref`. **Confira que o `ref` caiu no buraco certo antes de confirmar:**
+  arrastar até outro buraco desloca todos os ângulos de sala da montagem.
 - **Clique com o botão direito** perto de um buraco já desenhado para
   marcá-lo como o buraco-alvo (fica vermelho).
 - **`+` / `-`** aumentam/diminuem N (número de buracos) ao vivo, com teto de
@@ -113,9 +121,64 @@ nenhuma janela. É o mesmo dado que outros comandos do pipeline vão
 consultar para reaplicar a montagem a um novo trial, sem repetir a
 configuração interativa.
 
+Cada buraco é listado com dois ângulos: `[imagem]`, a posição no quadro do
+vídeo, e `[sala]`, a posição fixa na sala contada a partir do buraco de
+referência, marcado com `(REF)`.
+
+### 3.3 Câmera deslocada entre dias
+
+Se a câmera foi movida, girada ou reposicionada desde a montagem anterior,
+**crie uma montagem nova** (seção 3.1) sobre um quadro do vídeo novo,
+arrastando de novo até o **mesmo buraco físico de referência**. Os trials
+gravados com a câmera nova usam a montagem nova (`--maze-config-id`).
+
+Os ângulos de sala das duas montagens continuam comparáveis: eles são
+contados a partir do buraco de referência, que não muda de lugar na sala,
+e não a partir da posição da câmera.
+
 ## 4. Processar um trial
 
 _A preencher. Este é o procedimento cronometrado no critério de ≤ 10 min._
+
+### Rotação da plataforma (US-05)
+
+Ao carregar o vídeo de um trial com `barnes video load`, a rotação da
+plataforma é gravada junto. O padrão é `--rotation-deg 0`, porque o LNBio
+não rotaciona a plataforma (resposta B4). Se o protocolo mudar, informe a
+rotação real de cada trial:
+
+```
+uv run barnes video load <video.mp4> --experiment-id <id> \
+  --maze-config-id <id> --rotation-deg 90
+```
+
+Trials carregados antes desse campo existir ficam **sem rotação** e são
+recusados pelas análises que comparam trials. Para registrar ou corrigir a
+rotação de um trial já carregado:
+
+```
+uv run barnes trial set-rotation <id-do-trial> <graus>
+```
+
+Para valores negativos, use `--` antes dos argumentos
+(`barnes trial set-rotation -- 12 -90`).
+
+Para conferir o buraco-alvo do trial nos dois referenciais:
+
+```
+uv run barnes trial show <id-do-trial>
+```
+
+```
+Trial #12 (montagem #3)
+Rotação da plataforma: 0°
+Alvo [plataforma] target_hole_platform: buraco #3
+Alvo [sala] target_angle_deg_room: 54.0°
+```
+
+Trials do mesmo animal devem mostrar o **mesmo** ângulo de sala para o
+alvo, mesmo que tenham usado montagens diferentes (câmera deslocada) ou
+rotações diferentes.
 
 ## 5. Saídas
 
@@ -125,6 +188,12 @@ _A preencher. Este é o procedimento cronometrado no critério de ≤ 10 min._
 | CSV consolidado | todos os trials |
 | `trials.csv` / `probes.csv` | formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |
 | Curvas e trajetória desenhada | |
+
+Colunas com posição trazem no nome o referencial em que estão expressas
+(US-05 RN05): `_platform` para índice de buraco, `_room` para ângulo fixo
+na sala e `_image` para ângulo no quadro do vídeo. Por exemplo,
+`target_hole_platform` e `target_angle_deg_room`. Para comparar trials,
+use sempre as colunas `_room`.
 
 ## 6. Problemas comuns
 

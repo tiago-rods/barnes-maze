@@ -1,6 +1,8 @@
-"""Persistência de trials no banco de dados (US-01 RN05)."""
+"""Persistência de trials no banco de dados (US-01 RN05, US-05 RN01)."""
 
 from __future__ import annotations
+
+from collections.abc import Iterable
 
 import psycopg
 
@@ -16,6 +18,7 @@ def insert_trial(
     phase: str,
     day_number: int,
     trial_number_in_day: int,
+    rotation_deg: float | None,
 ) -> int:
     """Insere um trial com os metadados de vídeo extraídos pela US-01.
 
@@ -31,6 +34,10 @@ def insert_trial(
         phase: Um de "habituation", "acquisition" ou "probe".
         day_number: Dia do trial dentro do experimento (1-based).
         trial_number_in_day: Ordem do trial dentro do dia (1-based).
+        rotation_deg: Rotação da plataforma no trial, em graus (US-05). Sem
+            valor padrão de propósito: quem chama decide explicitamente;
+            `None` grava NULL ("não registrada"), nunca 0° implícito (RN01).
+            Normalizada para 0 <= x < 360 antes de gravar.
 
     Returns:
         O id do trial recém-criado.
@@ -42,9 +49,9 @@ def insert_trial(
                 experiment_id, maze_config_id, filename, filepath, phase,
                 day_number, trial_number_in_day, content_hash, width_px,
                 height_px, fps_declared, fps_real, fps_is_variable,
-                frame_count, duration_s
+                frame_count, duration_s, rotation_deg
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -63,6 +70,82 @@ def insert_trial(
                 video.fps_is_variable,
                 video.frame_count,
                 video.duration_s,
+                _normalize_rotation(rotation_deg),
             ),
         )
         return cur.fetchone()[0]
+
+
+def set_trial_rotation(conn: psycopg.Connection, trial_id: int, rotation_deg: float) -> None:
+    """Registra (ou corrige) a rotação da plataforma de um trial existente (US-05 RN01).
+
+    Não comita a transação.
+
+    Args:
+        conn: Conexão psycopg aberta.
+        trial_id: Id do trial.
+        rotation_deg: Rotação em graus; normalizada para 0 <= x < 360.
+
+    Raises:
+        ValueError: Se o trial não existir.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE trials SET rotation_deg = %s WHERE id = %s",
+            (_normalize_rotation(rotation_deg), trial_id),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(f"Trial {trial_id} não encontrado.")
+
+
+def get_trial_rotations(
+    conn: psycopg.Connection, trial_ids: Iterable[int]
+) -> dict[int, float | None]:
+    """Lê a rotação registrada de cada trial (US-05).
+
+    Devolve `None` para trial sem rotação (NULL) — a decisão de recusar a
+    análise fica com `barnes.geometry.reference_frame.require_rotations`.
+
+    Args:
+        conn: Conexão psycopg aberta.
+        trial_ids: Ids dos trials a consultar.
+
+    Returns:
+        Rotação de cada trial, por id.
+
+    Raises:
+        ValueError: Se algum id não existir — trial inexistente não pode
+            ser confundido com trial sem rotação.
+    """
+    ids = list(trial_ids)
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, rotation_deg FROM trials WHERE id = ANY(%s)", (ids,))
+        rotations = dict(cur.fetchall())
+
+    missing = sorted(set(ids) - rotations.keys())
+    if missing:
+        raise ValueError(f"Trial(s) não encontrado(s): {', '.join(map(str, missing))}.")
+    return rotations
+
+
+def get_trial_maze_config_id(conn: psycopg.Connection, trial_id: int) -> int:
+    """Id da montagem (`maze_configs`) usada por um trial.
+
+    Raises:
+        ValueError: Se o trial não existir.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT maze_config_id FROM trials WHERE id = %s", (trial_id,))
+        row = cur.fetchone()
+    if row is None:
+        raise ValueError(f"Trial {trial_id} não encontrado.")
+    return row[0]
+
+
+def _normalize_rotation(rotation_deg: float | None) -> float | None:
+    # Respeita o CHECK 0 <= rotation_deg < 360 de trials (migração 0002); um
+    # negativo minúsculo (ex.: -1e-20) daria exatamente 360.0 após o módulo.
+    if rotation_deg is None:
+        return None
+    normalized = rotation_deg % 360.0
+    return 0.0 if normalized == 360.0 else normalized

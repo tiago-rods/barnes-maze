@@ -53,7 +53,7 @@ erDiagram
     HOLE {
         int id PK
         int maze_config_id FK
-        int hole_number "0..N-1 ao redor da plataforma (US-04 RN02)"
+        int hole_number "0..N-1 ao redor da plataforma (US-04 RN02); 0 = buraco físico de referência (US-05)"
         float angle_deg "posição fixa, 0-360"
         int x_px
         int y_px
@@ -82,6 +82,7 @@ erDiagram
         float duration_s
         datetime loaded_at "US-01 — quando a carga do vídeo foi feita"
         string trajectory_path "caminho do .parquet de pose/eventos gerado para o trial"
+        float rotation_deg "US-05 RN01 — rotação da plataforma, 0-360, sem default (NULL = não registrada)"
     }
     TRIAL_RESULT {
         int id PK

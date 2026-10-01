@@ -11,8 +11,19 @@ import typer
 
 from barnes.db.connection import apply_migrations, get_connection
 from barnes.db.maze_configs import get_maze_config, insert_maze_config
-from barnes.db.trials import insert_trial
+from barnes.db.trials import (
+    get_trial_maze_config_id,
+    get_trial_rotations,
+    insert_trial,
+    set_trial_rotation,
+)
 from barnes.geometry.holes import MazeGeometry, generate_holes
+from barnes.geometry.reference_frame import (
+    ReferenceFrame,
+    hole_to_room_angle,
+    require_rotations,
+    target_hole_for_trial,
+)
 from barnes.geometry.validation import GeometryValidationError
 from barnes.io.video import VideoLoadError, VideoMetadata, load_trial_video, read_frame
 
@@ -23,6 +34,9 @@ app.add_typer(db_app, name="db")
 
 video_app = typer.Typer(help="Comandos de vídeo.")
 app.add_typer(video_app, name="video")
+
+trial_app = typer.Typer(help="Comandos de trial: rotação e referencial da sala (US-05).")
+app.add_typer(trial_app, name="trial")
 
 maze_app = typer.Typer(help="Comandos de geometria do labirinto.")
 app.add_typer(maze_app, name="maze")
@@ -90,6 +104,11 @@ def load_video(
     phase: str = typer.Option("acquisition", help="habituation | acquisition | probe"),
     day: int = typer.Option(1, help="Número do dia do trial dentro do experimento."),
     trial_in_day: int = typer.Option(1, help="Ordem do trial dentro do dia."),
+    rotation_deg: float = typer.Option(
+        0.0,
+        help="Rotação da plataforma no trial, em graus (US-05). Padrão 0 porque o LNBio "
+        "não rotaciona a plataforma (resposta B4, RN04); o valor é gravado explicitamente.",
+    ),
     frame_index: int = typer.Option(0, help="Quadro inicial da pré-visualização."),
     preview: bool = typer.Option(True, help="Abrir janela de pré-visualização navegável."),
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
@@ -113,19 +132,102 @@ def load_video(
                 phase=phase,
                 day_number=day,
                 trial_number_in_day=trial_in_day,
+                rotation_deg=rotation_deg,
             )
-        typer.echo(f"Trial #{trial_id} salvo no banco.")
+        typer.echo(
+            f"Trial #{trial_id} salvo no banco (rotação da plataforma: {rotation_deg % 360:g}°)."
+        )
 
     if preview:
         _interactive_preview(video.path, frame_index)
 
 
+@trial_app.command("set-rotation")
+def set_rotation(
+    trial_id: int = typer.Argument(..., help="Id do trial."),
+    rotation_deg: float = typer.Argument(
+        ..., help="Rotação da plataforma, em graus (para negativos, use `--` antes do valor)."
+    ),
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Registra ou corrige a rotação da plataforma de um trial já carregado (US-05 RN01)."""
+    try:
+        with get_connection(dsn) as conn:
+            set_trial_rotation(conn, trial_id, rotation_deg)
+    except ValueError as exc:
+        typer.echo(f"Erro: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Trial #{trial_id}: rotação da plataforma registrada em {rotation_deg % 360:g}°.")
+
+
+@trial_app.command("show")
+def show_trial(
+    trial_id: int = typer.Argument(..., help="Id do trial."),
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Mostra o buraco-alvo do trial nos referenciais da plataforma e da sala (US-05).
+
+    Recusa o trial sem rotação registrada em vez de assumir 0° (Cenário 3).
+    """
+    try:
+        with get_connection(dsn) as conn:
+            rotation_deg = require_rotations(get_trial_rotations(conn, [trial_id]))[trial_id]
+            maze_config_id = get_trial_maze_config_id(conn, trial_id)
+            geometry = get_maze_config(conn, maze_config_id)
+    except ValueError as exc:
+        typer.echo(f"Erro: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    target_hole = target_hole_for_trial(geometry, rotation_deg=rotation_deg)
+    target_angle = hole_to_room_angle(geometry, target_hole, rotation_deg=rotation_deg)
+
+    # RN05: cada valor identifica o referencial em que está expresso.
+    typer.echo(f"Trial #{trial_id} (montagem #{maze_config_id})")
+    typer.echo(f"Rotação da plataforma: {rotation_deg:g}°")
+    typer.echo(
+        f"Alvo [plataforma] {ReferenceFrame.PLATFORM.column('target_hole')}: buraco #{target_hole}"
+    )
+    typer.echo(f"Alvo [sala] {ReferenceFrame.ROOM.column('target_angle_deg')}: {target_angle:.1f}°")
+
+
+REFERENCE_HOLE_COLOR = (255, 0, 255)  # BGR magenta: buraco 0 = referência física (US-05)
+
+
 def _draw_geometry_overlay(frame: np.ndarray, geometry: MazeGeometry) -> np.ndarray:
-    """Desenha o círculo da plataforma, uma marca no centro e os buracos sobre uma cópia do quadro."""
+    """Desenha o círculo da plataforma, uma marca no centro e os buracos sobre uma cópia do quadro.
+
+    O buraco 0 ganha um anel, uma linha a partir do centro e o rótulo "ref":
+    ele precisa coincidir com o buraco físico de referência combinado com o
+    laboratório, que ancora o referencial da sala (US-05).
+    """
     canvas = frame.copy()
     center = (int(geometry.center_x_px), int(geometry.center_y_px))
     cv2.circle(canvas, center, int(geometry.platform_radius_px), (0, 255, 0), 1)
     cv2.drawMarker(canvas, center, (0, 255, 255), cv2.MARKER_CROSS, 16, 2)
+
+    reference = geometry.holes[0]
+    reference_center = (int(reference.x_px), int(reference.y_px))
+    cv2.line(canvas, center, reference_center, REFERENCE_HOLE_COLOR, 1)
+    cv2.circle(
+        canvas, reference_center, max(int(reference.radius_px), 1) + 4, REFERENCE_HOLE_COLOR, 2
+    )
+    # Rótulo para fora da plataforma, na direção radial, longe do número "0".
+    label_distance = geometry.platform_radius_px + reference.radius_px + 22
+    label_angle = math.radians(reference.angle_deg)
+    cv2.putText(
+        canvas,
+        "ref",
+        (
+            int(geometry.center_x_px + label_distance * math.cos(label_angle)) - 12,
+            int(geometry.center_y_px + label_distance * math.sin(label_angle)) + 5,
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        REFERENCE_HOLE_COLOR,
+        1,
+    )
+
     for hole in geometry.holes:
         color = (0, 0, 255) if hole.is_target else (255, 0, 0)
         cv2.circle(canvas, (int(hole.x_px), int(hole.y_px)), max(int(hole.radius_px), 1), color, -1)
@@ -143,9 +245,14 @@ def _draw_geometry_overlay(frame: np.ndarray, geometry: MazeGeometry) -> np.ndar
 
 MAX_INTERACTIVE_HOLE_COUNT = 30
 
+# Duas linhas: em uma só, o texto não cabe num quadro de 640 px. Sem acentos
+# porque as fontes Hershey do OpenCV não os desenham.
 _INSTRUCTIONS = (
-    "arraste = centro/raio/angulo | botao direito = marca alvo | "
-    "a = auto-detectar plataforma | +/- = N (agora {n}, max 30) | Enter/q confirma"
+    "arraste do centro ate o buraco de REFERENCIA fisica (vira o buraco 0 / ref)",
+    (
+        "botao direito = marca alvo | a = auto-detectar plataforma | "
+        "+/- = N (agora {n}, max 30) | Enter/q confirma"
+    ),
 )
 
 
@@ -211,9 +318,9 @@ def _adjust_geometry_interactively(
 ) -> MazeGeometry:
     """Janela OpenCV para ajustar a geometria com o mouse (Cenário 1).
 
-    Arrastar o botão esquerdo do centro real até um buraco visível define
-    centro, raio e ângulo inicial de uma vez (o ângulo vem da direção do
-    arraste). Clicar com o botão direito perto de um buraco já desenhado
+    Arrastar o botão esquerdo do centro real até o buraco físico de
+    referência (US-05) define centro, raio e ângulo inicial de uma vez (o
+    ângulo vem da direção do arraste) — esse buraco vira o buraco 0. Clicar com o botão direito perto de um buraco já desenhado
     marca aquele buraco como alvo. Teclas '+'/'-' mudam N ao vivo. Tecla
     'q'/Esc/Enter confirma e fecha a janela, retornando a última geometria
     válida exibida — combinações inválidas (ex.: N <= 2 durante o ajuste)
@@ -274,15 +381,16 @@ def _adjust_geometry_interactively(
             geometry = candidate
 
         canvas = _draw_geometry_overlay(frame, geometry) if geometry is not None else frame.copy()
-        cv2.putText(
-            canvas,
-            _INSTRUCTIONS.format(n=state["hole_count"]),
-            (10, canvas.shape[0] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            (0, 255, 255),
-            1,
-        )
+        for line_index, line in enumerate(reversed(_INSTRUCTIONS)):
+            cv2.putText(
+                canvas,
+                line.format(n=state["hole_count"]),
+                (10, canvas.shape[0] - 10 - 18 * line_index),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 255, 255),
+                1,
+            )
         cv2.imshow(window, canvas)
 
     cv2.destroyWindow(window)
@@ -316,7 +424,11 @@ def create_maze(
     hole_count: int = typer.Option(
         20, help="Número de buracos, N (> 2). Ajustável com +/- no modo interativo."
     ),
-    start_angle_deg: float = typer.Option(0.0, help="Ângulo do buraco de índice 0, em graus."),
+    start_angle_deg: float = typer.Option(
+        0.0,
+        help="Ângulo do buraco de índice 0, em graus. O buraco 0 deve ser o buraco físico de "
+        "referência combinado com o laboratório (US-05) — ele ancora o referencial da sala.",
+    ),
     target_hole_number: int = typer.Option(
         0, help="Índice do buraco-alvo, 0..N-1. Ajustável clicando com o botão direito."
     ),
@@ -397,11 +509,13 @@ def show_maze(
     typer.echo(f"Raio da plataforma: {geometry.platform_radius_px} px")
     typer.echo(f"N buracos: {geometry.hole_count}")
     typer.echo(f"Alvo: buraco #{geometry.target_hole.hole_number}")
+    typer.echo("Buraco 0 = buraco físico de referência; ângulos de sala com rotação 0° (US-05).")
     for hole in geometry.holes:
-        marker = " (ALVO)" if hole.is_target else ""
+        markers = (" (REF)" if hole.hole_number == 0 else "") + (" (ALVO)" if hole.is_target else "")
+        room_angle = hole_to_room_angle(geometry, hole.hole_number, rotation_deg=0.0)
         typer.echo(
-            f"  #{hole.hole_number}: angulo={hole.angle_deg:.1f} "
-            f"pos=({hole.x_px:.1f}, {hole.y_px:.1f}){marker}"
+            f"  #{hole.hole_number}: angulo [imagem]={hole.angle_deg:.1f} "
+            f"[sala]={room_angle:.1f} pos=({hole.x_px:.1f}, {hole.y_px:.1f}){markers}"
         )
 
 

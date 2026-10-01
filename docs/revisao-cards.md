@@ -74,6 +74,21 @@ pendentes de B2 — mesma pendência que já existia no YAML (todo `null`).
 [US-05]
 Minha preocupação nessa não é necessariamente a rotação da plataforma mas a mudança do ângulo/posição da câmera, como os vídeos são feitos em dias diferentes, as vezes a camera fica deslocada, podendo ter a necessidade de recalibrar o vídeo
 
+Decisão: B4 respondida como "o LNBio não rotaciona a plataforma". Pela RN04,
+a rotação é gravada como 0° em todo trial (`video load --rotation-deg`,
+padrão 0, gravado explicitamente) e a conversão vira identidade. A coluna
+`trials.rotation_deg` (migração `0002`, sem DEFAULT; NULL = não registrada =
+análise recusada) e o código permanecem. Para a câmera deslocada: como a
+câmera só vê a plataforma de cima, não há marco de parede; como a
+plataforma não gira, a âncora do referencial da sala é um **buraco físico
+de referência** combinado com o lab, que é sempre o buraco 0 da montagem.
+Câmera mexeu = nova montagem arrastando até o mesmo buraco; os ângulos de
+sala continuam comparáveis. Sem coluna nova em `maze_configs`. Conversões em
+`src/barnes/geometry/reference_frame.py`; comandos `barnes trial
+set-rotation` e `barnes trial show`. Referenciais documentados em
+`docs/definicoes-metricas.md`, seção 6. Pendente com o lab: qual é o buraco
+de referência.
+
 # Epico C
 [US-06]
 Ver se realmente é necessário treinar modelo SLEAP, talvez exista forma mais simples de fazer isso, mas vamos deixar assim por enquanto
