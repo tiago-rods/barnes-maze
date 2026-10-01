@@ -26,6 +26,9 @@ buracos:
   indice_alvo: null           # índice do buraco-alvo NESTA montagem
 
 # --- Escala px → cm (US-02) ---------------------------------------------------
+# A fonte de verdade é o banco (barnes calibrate / barnes scale): cada orientação
+# possui versões, e cada execução referencia a versão usada. Os campos abaixo
+# são apenas metadados da montagem; preenchê-los não libera métricas sem banco.
 escala:
   cm_por_px: null             # de dois segmentos de comprimento conhecido
   orientacao_camera: null     # a escala é reaproveitada entre vídeos de mesma orientação

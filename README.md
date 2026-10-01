@@ -92,6 +92,45 @@ uv sync --extra pose          # SLEAP — ler o aviso no pyproject.toml antes
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
 ```
 
+## Calibração px → cm (US-02)
+
+A calibração usa dois segmentos conhecidos, marcados em uma janela OpenCV, e
+salva uma escala versionada por orientação de câmera. O padrão é SQLite local
+em `data/barnes.sqlite3`; use `--database` ou `BARNES_DATABASE` para selecionar
+outro arquivo ou uma conexão PostgreSQL.
+
+```bash
+uv run barnes calibrate --video data/raw/trial.mp4 --orientation camera-dia-01 --length-1-cm 20 --length-2-cm 20
+uv run barnes verify-scale --video data/raw/trial.mp4 --orientation camera-dia-01 --length-cm 15
+uv run barnes scale --orientation camera-dia-01 --history
+```
+
+Clique nas quatro extremidades em ordem, dois pontos por segmento, e confirme
+com Enter. Para verificar a exatidão, marque uma terceira distância independente;
+o erro aceito é estritamente menor que 3%. Cada orientação mantém sua escala:
+vídeos gravados sem mudar a câmera podem reutilizá-la. Uma recalibração preserva
+as versões anteriores e marca como inválidas as métricas que as utilizaram.
+
+O processamento disponível recebe uma trajetória existente em CSV com as
+colunas `x_px,y_px,time_s`. A inferência automática de trajetória a partir do
+vídeo permanece nas demais histórias do projeto.
+
+```bash
+uv run barnes process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial trial-01 --orientation camera-dia-01
+uv run barnes executions --trial trial-01
+```
+
+Sem escala para a orientação, o cálculo é bloqueado. O procedimento completo,
+os controles da janela, a API sem interface gráfica e a recalibração estão no
+[manual do usuário](docs/manual-usuario.md).
+
+Para verificar a implementação:
+
+```bash
+uv run python -m pytest
+uv run python -m ruff check .
+```
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:
