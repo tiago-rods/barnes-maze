@@ -89,6 +89,7 @@ Extras opcionais:
 
 ```bash
 uv sync --extra pose          # SLEAP — ler o aviso no pyproject.toml antes
+uv sync --extra anotacao      # leitor do .slp do SLEAP (sleap-io), sem CUDA (US-06)
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
 ```
 
@@ -171,6 +172,25 @@ uv run barnes metrics executions --trial 1
 Sem escala para a montagem, o cálculo é bloqueado. O procedimento completo,
 os controles da janela, a API sem interface gráfica e a recalibração estão no
 [manual do usuário](docs/manual-usuario.md).
+
+## Anotação de pose (US-06)
+
+Prepara o conjunto de treino do modelo de pose: escolhe quadros com o animal
+no centro, na borda e perto dos buracos, converte as anotações feitas no
+SLEAP, divide em treino/validação/teste **por trial** e verifica que nenhum
+trial vazou entre conjuntos.
+
+```bash
+uv run barnes pose sample --video data/raw/trial.mp4 --maze-config-id 1   # exporta PNGs
+# ... anotar no SLEAP (focinho, centro_corpo, base_cauda) ...
+uv run barnes pose import-slp data/annotations/projeto.slp
+uv run barnes pose split
+uv run barnes pose check-split
+uv run barnes pose report   # montagem de cada trial, registrada pelo sample
+```
+
+Parâmetros do protocolo na seção `anotacao` de `configs/default.yaml`; passo a
+passo completo em [docs/protocolo-anotacao.md](docs/protocolo-anotacao.md).
 
 Para verificar a implementação:
 

@@ -51,3 +51,24 @@ trial:
 pose:
   cobertura_minima: 0.98      # critério de aceite da seção 10 — proposto pelo grupo
   lacuna_curta_max_quadros: null    # até aqui interpola; acima, marca para revisão
+
+# --- Anotação de pose (US-06) -------------------------------------------------
+# Diferente das seções acima, NÃO são limiares de métrica do G3: são parâmetros
+# do protocolo de anotação, decisão da equipe registrada em
+# docs/protocolo-anotacao.md. Definem só quais quadros são sorteados para
+# anotar e como a contagem por região é reportada (e, em US-08, em que região
+# o erro do modelo é medido). Valores propostos pelo grupo.
+anotacao:
+  regioes:
+    centro_raio_frac: 0.5       # até esta fração do raio da circunferência dos buracos = "centro"
+    buraco_margem_raios: 1.0    # margem além do buraco, em raios de buraco = "proximidade de buraco"
+  quadros_por_regiao:           # meta por trial; ~100 por trial × 3 trials de G1 ≈ 300 quadros
+    centro: 30
+    borda: 30
+    buraco: 40
+  intervalo_minimo_quadros: 25  # 1 s a 25 fps entre quadros sorteados do mesmo trial
+  divisao:                      # proporção de TRIALS, nunca de quadros (RN03)
+    treino: 0.7
+    validacao: 0.15
+    teste: 0.15
+  semente: 0                    # mesma semente = mesma amostragem e mesma divisão

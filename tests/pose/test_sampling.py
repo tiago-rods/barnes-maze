@@ -1,0 +1,200 @@
+import csv
+import math
+from dataclasses import replace
+from itertools import pairwise
+
+import cv2
+import pytest
+
+from barnes.io.video import VideoLoadError, load_trial_video, read_frame
+from barnes.pose.annotations import frame_filename, trial_key
+from barnes.pose.regions import Region
+from barnes.pose.sampling import (
+    SampledFrame,
+    _scan,
+    build_background,
+    estimate_animal_position,
+    export_frames,
+    read_sampled_maze_config,
+    sample_frames,
+)
+
+
+def _sample(trial_video, geometry, protocol, **kwargs):
+    metadata = load_trial_video(trial_video)
+    return sample_frames(
+        trial_video, geometry, protocol, frame_count=metadata.frame_count, scan_step=1, **kwargs
+    )
+
+
+def test_estimated_position_matches_drawn_animal(
+    trial_video, geometry, animal_positions, segment_frames
+) -> None:
+    background = build_background(trial_video, 0, 3 * segment_frames - 1)
+    expected = animal_positions
+    # Junto ao buraco (quadro 100) a parte do animal sobre o buraco escuro quase
+    # não contrasta e o centróide desvia alguns pixels — tolerado: a estimativa
+    # só escolhe quadros, e a região continua correta (ver testes de amostragem).
+    for index, tolerance_px in ((5, 3.0), (50, 3.0), (100, 5.0)):
+        position = estimate_animal_position(read_frame(trial_video, index), background, geometry)
+        assert position is not None
+        assert math.dist(position, expected[index]) < tolerance_px
+
+
+def test_no_animal_returns_none(trial_video, geometry, segment_frames) -> None:
+    background = build_background(trial_video, 0, 3 * segment_frames - 1)
+    assert estimate_animal_position(background, background, geometry) is None
+
+
+def test_sampling_covers_three_regions(trial_video, geometry, protocol) -> None:
+    result = _sample(trial_video, geometry, protocol)
+    regions = [frame.region for frame in result.frames]
+    for region in Region:
+        assert regions.count(region) == 3
+    assert result.shortfall == dict.fromkeys(Region, 0)
+    assert result.detected == result.scanned
+
+
+def test_sampled_frames_respect_minimum_gap(trial_video, geometry, protocol) -> None:
+    result = _sample(trial_video, geometry, protocol)
+    indices = [frame.frame_index for frame in result.frames]
+    assert all(b - a >= protocol.min_gap_frames for a, b in pairwise(indices))
+
+
+def test_same_seed_same_sample(trial_video, geometry, protocol) -> None:
+    first = _sample(trial_video, geometry, protocol)
+    second = _sample(trial_video, geometry, protocol)
+    assert first.frames == second.frames
+
+
+def test_shortfall_reported_when_region_absent(
+    trial_video, geometry, protocol, segment_frames
+) -> None:
+    # Só o trecho do centro: borda e buraco ficam sem candidatos.
+    result = _sample(trial_video, geometry, protocol, end_frame=segment_frames - 1)
+    assert result.shortfall[Region.CENTRO] == 0
+    assert result.shortfall[Region.BORDA] == 3
+    assert result.shortfall[Region.BURACO] == 3
+
+
+def test_sampling_stays_inside_interval(trial_video, geometry, protocol, segment_frames) -> None:
+    result = _sample(trial_video, geometry, protocol, start_frame=segment_frames)
+    assert all(frame.frame_index >= segment_frames for frame in result.frames)
+
+
+def test_invalid_interval_rejected(trial_video, geometry, protocol) -> None:
+    with pytest.raises(ValueError, match="Intervalo"):
+        _sample(trial_video, geometry, protocol, start_frame=50, end_frame=10)
+
+
+def test_export_writes_pngs_and_sampling_csv(trial_video, geometry, protocol, tmp_path) -> None:
+    metadata = load_trial_video(trial_video)
+    result = _sample(trial_video, geometry, replace(protocol, seed=1))
+    trial_dir = export_frames(
+        trial_video, metadata.content_hash, result.frames, tmp_path / "annotations",
+        maze_config_id=7,
+    )  # fmt: skip
+
+    assert trial_dir.name == trial_key(metadata.content_hash)
+    pngs = sorted((trial_dir / "quadros").glob("quadro_*.png"))
+    assert len(pngs) == len(result.frames)
+    assert cv2.imread(str(pngs[0])).shape[:2] == (240, 320)
+
+    with (trial_dir / "amostragem.csv").open(encoding="utf-8") as file:
+        rows = list(csv.DictReader(file))
+    assert [int(row["quadro"]) for row in rows] == [f.frame_index for f in result.frames]
+    assert {row["regiao_estimada"] for row in rows} == {r.value for r in Region}
+    assert rows[0]["hash_video"] == metadata.content_hash
+    assert {row["maze_config_id"] for row in rows} == {"7"}
+    assert read_sampled_maze_config(trial_dir) == 7
+
+
+def test_resampling_refuses_previous_pngs_unless_overwrite(
+    trial_video, geometry, protocol, tmp_path
+) -> None:
+    content_hash = load_trial_video(trial_video).content_hash
+    out_dir = tmp_path / "annotations"
+    first = _sample(trial_video, geometry, replace(protocol, seed=1)).frames
+    trial_dir = export_frames(trial_video, content_hash, first, out_dir, maze_config_id=1)
+
+    second = _sample(trial_video, geometry, replace(protocol, seed=2)).frames
+    assert {f.frame_index for f in second} != {f.frame_index for f in first}
+    with pytest.raises(FileExistsError, match="--overwrite"):
+        export_frames(trial_video, content_hash, second, out_dir, maze_config_id=1)
+
+    export_frames(trial_video, content_hash, second, out_dir, maze_config_id=1, overwrite=True)
+    # Só os quadros da rodada atual: nenhum PNG órfão da anterior.
+    pngs = sorted(p.name for p in (trial_dir / "quadros").glob("quadro_*.png"))
+    assert pngs == sorted(frame_filename(f.frame_index) for f in second)
+
+
+_REAL_CAPTURE = cv2.VideoCapture
+
+
+class _NoSeekCapture:
+    """`cv2.VideoCapture` que falha se alguém posicionar por número de quadro."""
+
+    def __init__(self, path: str) -> None:
+        self._capture = _REAL_CAPTURE(path)
+
+    def set(self, prop: int, value: float) -> bool:
+        assert prop != cv2.CAP_PROP_POS_FRAMES, "seek por quadro (impreciso com B-frames)"
+        return self._capture.set(prop, value)
+
+    def __getattr__(self, name: str):
+        return getattr(self._capture, name)
+
+
+def test_scan_and_export_read_sequentially_without_seek(
+    trial_video, geometry, protocol, tmp_path, monkeypatch
+) -> None:
+    metadata = load_trial_video(trial_video)
+    background = build_background(trial_video, 0, metadata.frame_count - 1)
+    monkeypatch.setattr(cv2, "VideoCapture", _NoSeekCapture)
+
+    candidates, _ = _scan(trial_video, geometry, protocol, background, 10, 60, 5)
+    assert [c.frame_index for c in candidates][:2] == [10, 15]
+
+    chosen = [c for c in candidates if c.frame_index in (20, 55)]
+    assert len(chosen) == 2
+    trial_dir = export_frames(
+        trial_video, metadata.content_hash, chosen, tmp_path, maze_config_id=1
+    )
+    monkeypatch.undo()
+    for sampled in chosen:
+        png = cv2.imread(str(trial_dir / "quadros" / frame_filename(sampled.frame_index)))
+        # O PNG é exatamente o quadro sequencial de mesmo índice.
+        assert (png == _sequential_frame(trial_video, sampled.frame_index)).all()
+
+
+def _sequential_frame(path, index):
+    capture = cv2.VideoCapture(str(path))
+    try:
+        for _ in range(index):
+            capture.grab()
+        ok, frame = capture.read()
+        assert ok
+        return frame
+    finally:
+        capture.release()
+
+
+def test_export_fails_if_video_ends_before_chosen_frame(trial_video, tmp_path) -> None:
+    content_hash = load_trial_video(trial_video).content_hash
+    beyond = SampledFrame(frame_index=10_000, region=Region.CENTRO, x_px=0.0, y_px=0.0)
+    with pytest.raises(VideoLoadError, match="10000"):
+        export_frames(trial_video, content_hash, [beyond], tmp_path, maze_config_id=1)
+
+
+def test_sampled_maze_config_absent_or_legacy(tmp_path) -> None:
+    assert read_sampled_maze_config(tmp_path) is None  # sem amostragem.csv
+    (tmp_path / "amostragem.csv").write_text("trial,quadro\nabc,0\n", encoding="utf-8")
+    assert read_sampled_maze_config(tmp_path) is None  # CSV anterior à coluna
+
+
+def test_sampled_maze_config_rejects_two_montagens(tmp_path) -> None:
+    (tmp_path / "amostragem.csv").write_text(
+        "trial,maze_config_id,quadro\nabc,1,0\nabc,2,25\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="mais de uma montagem"):
+        read_sampled_maze_config(tmp_path)

@@ -26,6 +26,7 @@ certificate error, add `--native-tls`.
 ```bash
 uv sync                              # install deps
 uv sync --extra pose                 # + SLEAP (read pyproject.toml warning first)
+uv sync --extra anotacao             # + sleap-io, reads SLEAP .slp files, no CUDA (US-06)
 uv sync --extra longitudinal         # + DTW/Fréchet (US-24)
 
 uv run pytest                        # full suite
@@ -51,6 +52,13 @@ uv run barnes scale calibrate --video PATH --maze-config-id N [--length-1-cm X -
 uv run barnes scale verify --video PATH --maze-config-id N [--length-cm Z]   # error must be < 3%
 uv run barnes scale show --maze-config-id N
 uv run barnes metrics process --video PATH --trajectory CSV --trial N --maze-config-id N
+
+# US-06 (pose annotation set; files under data/annotations/, nothing in the DB)
+uv run barnes pose sample --video PATH --maze-config-id N [--start-frame F --end-frame F] [--overwrite]
+uv run barnes pose import-slp FILE.slp [FILE2.slp ...]   # -> data/annotations/anotacoes.csv
+uv run barnes pose split                 # by trial -> data/annotations/divisao.csv
+uv run barnes pose check-split           # fails naming any trial in >1 set
+uv run barnes pose report [--maze-config-id N]   # per-trial montagem from amostragem.csv
 uv run barnes metrics executions [--trial N]
 ```
 
@@ -150,6 +158,12 @@ Postgres instead (`maze_configs` + `holes`, see Database schema below) —
 Configure a montagem with `barnes maze create` and reload it with
 `barnes maze show <id>`; never hand-edit geometry into a file.
 
+The `anotacao:` section (US-06) is the one deliberate exception to "null until
+G3": its values are **annotation-protocol** parameters owned by the team
+(which frames get sampled, region boundaries, split proportions, seed), not
+lab metric thresholds. They are read via `barnes.pose.protocol` and documented
+in `docs/protocolo-anotacao.md` — keep the two in sync.
+
 ### Seed scripts live outside the installed package
 
 `database/seeds/*.py` (e.g. `lnbio_barnes.py`) import `barnes.db`/
@@ -164,8 +178,28 @@ via `uv run python -m database.seeds.<name>` from the repo root, never as a
 — each corresponds to both a project epic and a pipeline stage. `io`
 (US-01), `geometry` (US-04) and `io/calibration.py`/`metrics` (US-02, scale
 and the distance/speed/route-efficiency conversions it gates) are
-implemented; `pose`/`events`/`strategy`/`longitudinal`/`stats`/`report` are
-still empty `__init__.py` stubs pending their user story. `data/` and
+implemented; `pose` has only the US-06 annotation tooling (no model or
+inference yet — that is US-07+); `events`/`strategy`/`longitudinal`/`stats`/
+`report` are still empty `__init__.py` stubs pending their user story.
+
+`pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
+tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because
+RN07 may still swap SLEAP for YOLO-pose. Trials are keyed by
+`trial_key(content_hash)` (first 12 hex chars), same identity rule as
+`trials.content_hash`, so a renamed copy can't leak across train/test.
+`pose/regions.py` (centro/borda/buraco) is meant to be reused by US-08's
+per-region error report. Region during *sampling* comes from contrast
+segmentation (no model exists yet); the *reported* count uses the annotated
+`centro_corpo`, classified with each trial's **own** montagem (`maze_config_id`
+recorded in `<trial>/amostragem.csv` by `pose sample`) — never one montagem for
+all trials, since the camera can shift between recording days. `from_slp`
+rejects `.pkg.slp` (embedded images): its "video" is the .slp itself, which
+would turn into a fake trial key and defeat the leakage check. Sampling scan
+and PNG export both decode **sequentially from frame 0** (`_iter_frames`), never
+via `CAP_PROP_POS_FRAMES` seek — with LNBio's B-frames a seek can land on a
+neighbor frame, so the exported PNG/`quadro` index wouldn't be the frame whose
+region was estimated. Re-sampling a trial refuses to touch existing PNGs
+(possibly already annotated) unless `--overwrite`. `data/` and
 `models/` are gitignored (raw videos, trained pose weights) — never assume
 their contents are present in a fresh clone or CI; tests must not depend on
 files under `data/`, which is why `tests/conftest.py` generates small
