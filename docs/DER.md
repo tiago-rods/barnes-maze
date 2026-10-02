@@ -44,8 +44,8 @@ erDiagram
         float px_per_10cm
         int threshold
         int min_area
-        int center_x_px
-        int center_y_px
+        float center_x_px "float desde a 0005 (era int)"
+        float center_y_px
         float platform_radius_px
         date calibration_date "US-02 RN02 — data da calibração da escala"
         float measured_error_pct "US-02 RN04 — erro medido, deve ser < 3%"
@@ -60,9 +60,9 @@ erDiagram
         int maze_config_id FK
         int hole_number "0..N-1 ao redor da plataforma (US-04 RN02); 0 = buraco físico de referência (US-05)"
         float angle_deg "posição fixa, 0-360"
-        int x_px
-        int y_px
-        int radius_px
+        float x_px "float desde a 0005 (era int)"
+        float y_px
+        float radius_px "US-04 RN06 — base das zonas de proximidade; ajustado na janela de maze create"
         bool is_target "alvo fixo para o subject durante toda a aquisição"
     }
     TRIAL {

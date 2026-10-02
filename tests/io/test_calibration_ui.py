@@ -35,6 +35,11 @@ class FakeWindow:
         self.shapes.append(image.shape)
 
     def wait(self, delay):
+        if self.callback is None:
+            # waitKey(1) que "realiza" a janela antes de registrar o callback do
+            # mouse (ajuste para o backend win32 em collect_segments): não é uma
+            # interação do operador, então não consome ação do roteiro.
+            return -1
         assert self.actions, "Point collection did not finish after the scripted actions"
         action = self.actions.popleft()
         if isinstance(action, int):

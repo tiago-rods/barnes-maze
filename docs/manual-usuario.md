@@ -122,6 +122,12 @@ janela):
   marcá-lo como o buraco-alvo (fica vermelho).
 - **`+` / `-`** aumentam/diminuem N (número de buracos) ao vivo, com teto de
   **30** (`+` não passa disso).
+- **`[` / `]`** diminuem/aumentam o **raio do buraco** em meio pixel (o valor
+  atual aparece no rodapé). Ajuste até o círculo desenhado cobrir o buraco
+  real: as zonas de proximidade dos eventos e a região "buraco" da anotação
+  de pose são medidas em múltiplos desse raio. `--hole-radius-px` só define
+  o valor inicial; ele não sai de `--hole-diameter-cm`, porque a escala px→cm
+  só é calibrada depois, sobre a montagem já criada.
 - **`Enter`, `q` ou `Esc`** confirma e fecha a janela, salvando a última
   geometria válida mostrada.
 
@@ -315,9 +321,10 @@ O processamento desta entrega recebe uma trajetória já extraída, em CSV. A
 extração automática da trajetória a partir do vídeo pertence às outras
 histórias do projeto e ainda precisa ser integrada. O CSV deve conter as
 colunas `x_px`, `y_px` e `time_s`, com ao menos duas amostras, números finitos e
-tempos não negativos e estritamente crescentes, em segundos. As coordenadas
-devem ficar dentro do quadro e usar os pixels do vídeo original. Amostras
-ausentes precisam ser tratadas antes de fornecer a trajetória.
+tempos não negativos e estritamente crescentes, em segundos **desde o início
+do arquivo de vídeo** (a mesma referência do intervalo útil, seção 4.3). As
+coordenadas devem ficar dentro do quadro e usar os pixels do vídeo original.
+Amostras ausentes precisam ser tratadas antes de fornecer a trajetória.
 
 Exemplo de `data/interim/trial.csv`:
 
@@ -329,14 +336,25 @@ x_px,y_px,time_s
 ```
 
 ```bash
-barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1 --maze-config-id 1
+barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1
 ```
 
-`--trial` é o id do trial já carregado no banco (`barnes video load`); `--frame`
-(padrão 0) escolhe o quadro usado para confirmar a resolução, igual a `scale
-calibrate`/`scale verify`. O programa exige uma escala válida para a
-montagem, verifica se a resolução do vídeo bate com a da calibração, e
-calcula a distância percorrida em centímetros e a velocidade média em cm/s.
+`--trial` é o id do trial já carregado no banco (`barnes video load`); a
+**montagem vem do próprio trial** — `--maze-config-id` é opcional e, se
+informado, precisa ser a montagem do trial (a escala de outra montagem não
+vale para ele, e o comando recusa). `--frame` (padrão 0) escolhe o quadro
+usado para confirmar a resolução, igual a `scale calibrate`/`scale verify`;
+o vídeo informado precisa ter a resolução do trial. O programa exige uma
+escala válida para a montagem, verifica se a resolução do vídeo bate com a
+da calibração, e calcula a distância percorrida em centímetros e a
+velocidade média em cm/s.
+
+**Só entram no cálculo as amostras dentro do intervalo útil do trial**
+(US-03 RN02, seção 4.3): as de antes da soltura e as de depois do fim são
+descartadas, e um trecho que cruza a fronteira não conta. O resultado
+informa o intervalo usado (`interval_start_s`/`interval_end_s`) e quantas
+amostras ficaram de fora (`samples_outside_interval`). Trial sem intervalo
+registrado (carregado antes da US-03) é recusado — recarregue o vídeo.
 Sem escala, o cálculo é bloqueado — antes mesmo de abrir o vídeo — com uma
 mensagem solicitando a calibração daquela montagem. O resultado salvo
 registra a escala exata usada (`px_per_10cm_used`), para detectar se fica
@@ -366,8 +384,10 @@ Ao carregar um trial com `barnes video load`, o sistema sempre resolve um
 **intervalo útil** — o trecho do vídeo entre a soltura do animal e o fim do
 trial — antes de persistir. Nenhuma métrica, evento ou ponto de trajetória
 calculado por estágios posteriores do pipeline usa quadros fora desse
-intervalo (RN02); e o tempo zero de qualquer latência reportada é o início
-do intervalo, não o início do arquivo de vídeo (RN05).
+intervalo (RN02) — hoje isso vale para `barnes metrics process` (seção 4.1),
+que lê o intervalo gravado no trial e descarta as amostras de fora; e o
+tempo zero de qualquer latência reportada é o início do intervalo, não o
+início do arquivo de vídeo (RN05).
 
 ```
 uv run barnes video load <video.mp4> \
@@ -393,6 +413,11 @@ uv run barnes video load <video.mp4> \
   número de quadro, nunca os dois para o mesmo limite.
 - O comando recusa o recorte (sem salvar nada) se o fim não for maior que
   o início, ou se algum dos dois cair fora da duração do vídeo.
+- Para salvar o trial, `--experiment-id` e `--maze-config-id` vão **juntos**:
+  sem nenhum dos dois o vídeo só é inspecionado; com só um, o comando recusa
+  em vez de deixar de salvar sem avisar. O mesmo vídeo (mesmo conteúdo,
+  mesmo com outro nome de arquivo) não é carregado duas vezes — o comando
+  explica, em vez de mostrar um erro de banco.
 
 O intervalo efetivamente usado — início, fim e se foi ajuste manual — fica
 gravado no registro do trial (`trials.start_time_seconds`,

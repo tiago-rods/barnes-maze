@@ -14,6 +14,7 @@ import pytest
 
 from barnes.db.connection import get_connection
 from barnes.db.trials import (
+    get_trial,
     get_trial_maze_config_id,
     get_trial_rotations,
     insert_trial,
@@ -122,6 +123,51 @@ def test_insert_trial_persists_interval(conn, experiment_and_maze_config, make_m
         row = cur.fetchone()
 
     assert row == (0.2, 0.8, True)
+
+
+def test_get_trial_reads_back_montagem_and_interval(
+    conn, experiment_and_maze_config, make_mp4
+) -> None:
+    """US-03 RN02 — o intervalo gravado volta com os mesmos quadros com que foi resolvido."""
+    experiment_id, maze_config_id = experiment_and_maze_config
+    video = load_trial_video(make_mp4(frame_count=10, fps=10.0))
+    interval = build_trial_interval(video, start_s=0.2, end_s=0.8)
+    trial_id = insert_trial(
+        conn,
+        experiment_id=experiment_id,
+        maze_config_id=maze_config_id,
+        video=video,
+        phase="acquisition",
+        day_number=1,
+        trial_number_in_day=1,
+        rotation_deg=0.0,
+        interval=interval,
+    )
+
+    stored = get_trial(conn, trial_id)
+
+    assert stored.maze_config_id == maze_config_id
+    assert (stored.width_px, stored.height_px) == (video.width, video.height)
+    assert stored.interval == interval
+
+
+def test_get_trial_without_interval_and_unknown_trial(
+    conn, experiment_and_maze_config, make_mp4
+) -> None:
+    experiment_id, maze_config_id = experiment_and_maze_config
+    trial_id = insert_trial(
+        conn,
+        experiment_id=experiment_id,
+        maze_config_id=maze_config_id,
+        video=load_trial_video(make_mp4(frame_count=10, fps=10.0)),
+        phase="acquisition",
+        day_number=1,
+        trial_number_in_day=1,
+        rotation_deg=0.0,
+    )
+    assert get_trial(conn, trial_id).interval is None
+    with pytest.raises(ValueError, match="não encontrado"):
+        get_trial(conn, trial_id + 100_000)
 
 
 def test_insert_trial_without_interval_defaults_to_not_manually_adjusted(

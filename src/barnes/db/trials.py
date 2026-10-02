@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import psycopg
 
-from barnes.io.trim import TrialInterval
+from barnes.io.trim import TrialInterval, interval_from_seconds
 from barnes.io.video import VideoMetadata
 
 
@@ -137,6 +138,57 @@ def get_trial_rotations(
     if missing:
         raise ValueError(f"Trial(s) não encontrado(s): {', '.join(map(str, missing))}.")
     return rotations
+
+
+@dataclass(frozen=True)
+class StoredTrial:
+    """O que os estágios do pipeline precisam saber de um trial já carregado.
+
+    Attributes:
+        id: Id do trial.
+        maze_config_id: Montagem do trial — a única cuja escala e geometria
+            valem para ele.
+        width_px: Largura do vídeo, em pixels.
+        height_px: Altura do vídeo, em pixels.
+        interval: Intervalo útil gravado (US-03 RN04), ou `None` se o trial
+            foi carregado sem recorte (anterior à US-03).
+    """
+
+    id: int
+    maze_config_id: int
+    width_px: int
+    height_px: int
+    interval: TrialInterval | None
+
+
+def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
+    """Lê um trial com sua montagem e seu intervalo útil (US-03 RN02/RN04).
+
+    Os quadros do intervalo são derivados do `fps_real` gravado pela mesma
+    conversão usada ao resolvê-lo (`barnes.io.trim.interval_from_seconds`).
+
+    Raises:
+        ValueError: Se o trial não existir.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT maze_config_id, width_px, height_px, fps_real,
+                   start_time_seconds, end_time_seconds, interval_manually_adjusted
+            FROM trials WHERE id = %s
+            """,
+            (trial_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise ValueError(f"Trial {trial_id} não encontrado.")
+    maze_config_id, width, height, fps_real, start_s, end_s, manual = row
+    interval = (
+        None
+        if start_s is None or end_s is None
+        else interval_from_seconds(start_s, end_s, fps_real, manually_adjusted=manual)
+    )
+    return StoredTrial(trial_id, maze_config_id, width, height, interval)
 
 
 def get_trial_maze_config_id(conn: psycopg.Connection, trial_id: int) -> int:

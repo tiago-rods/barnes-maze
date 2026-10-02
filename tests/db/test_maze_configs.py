@@ -70,20 +70,19 @@ def test_insert_and_get_maze_config_roundtrip(conn, experiment_id) -> None:
 
     loaded = get_maze_config(conn, maze_config_id)
 
-    # center_x_px/center_y_px (maze_configs) e x_px/y_px/radius_px (holes) são
-    # INTEGER no schema (0001_create_schema.sql) — o round-trip arredonda para
-    # o pixel mais próximo. angle_deg e platform_radius_px são DOUBLE
-    # PRECISION e voltam com precisão total.
-    assert loaded.center_x_px == pytest.approx(geometry.center_x_px, abs=1)
-    assert loaded.center_y_px == pytest.approx(geometry.center_y_px, abs=1)
+    # Desde a migração 0005 todas as coordenadas em pixel são DOUBLE PRECISION:
+    # o round-trip é exato, sem o arredondamento ao pixel que a 0001 fazia
+    # (x_px/y_px dos buracos saem de cos/sin e têm parte fracionária).
+    assert loaded.center_x_px == pytest.approx(geometry.center_x_px)
+    assert loaded.center_y_px == pytest.approx(geometry.center_y_px)
     assert loaded.platform_radius_px == pytest.approx(geometry.platform_radius_px)
     assert loaded.hole_count == geometry.hole_count
     for expected, actual in zip(geometry.holes, loaded.holes):
         assert actual.hole_number == expected.hole_number
         assert actual.angle_deg == pytest.approx(expected.angle_deg)
-        assert actual.x_px == pytest.approx(expected.x_px, abs=1)
-        assert actual.y_px == pytest.approx(expected.y_px, abs=1)
-        assert actual.radius_px == pytest.approx(expected.radius_px, abs=1)
+        assert actual.x_px == pytest.approx(expected.x_px)
+        assert actual.y_px == pytest.approx(expected.y_px)
+        assert actual.radius_px == pytest.approx(expected.radius_px)
         assert actual.is_target == expected.is_target
 
 
