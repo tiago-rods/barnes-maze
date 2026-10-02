@@ -47,6 +47,14 @@ uv run barnes maze create --experiment-id N --name NAME \
     # mark target hole, 'a' = auto-detect platform circle, +/- = N (max 30);
     # --no-interactive requires --center-x/--center-y/--platform-radius-px
 uv run barnes maze show ID           # reapply a saved montagem, no interaction
+
+# US-02 (px->cm scale; stored on the maze_configs row itself, see Database
+# schema below — --maze-config-id, not a separate camera/orientation entity)
+uv run barnes scale calibrate --video PATH --maze-config-id N [--length-1-cm X --length-2-cm Y]
+uv run barnes scale verify --video PATH --maze-config-id N [--length-cm Z]   # error must be < 3%
+uv run barnes scale show --maze-config-id N
+uv run barnes metrics process --video PATH --trajectory CSV --trial N --maze-config-id N
+uv run barnes metrics executions [--trial N]
 ```
 
 ### Local Postgres for development
@@ -101,7 +109,7 @@ under it) — deliberate, not an oversight. Enumerated fields (`phase`,
 by the application, not the database. `trials.content_hash` is `UNIQUE` —
 a trial is identified by file content, not by path, so the same recording
 can't be loaded twice under a different name (see US-01/US-27 below).
-`trials.rotation_deg` (US-05, migration `0002`) is nullable with **no
+`trials.rotation_deg` (US-05, migration `0004`) is nullable with **no
 DEFAULT** on purpose: NULL means "not registered" and longitudinal
 analysis must refuse the trial, never assume 0°.
 
@@ -120,6 +128,18 @@ cross-trial visit sequences) must work in the room frame and go through
 `require_rotations()` first, which raises `MissingRotationError` listing
 every trial without rotation. Output columns carrying a position must end
 in `ReferenceFrame` suffixes (`_image`/`_platform`/`_room`, RN05).
+
+US-02's px->cm scale (`maze_configs.px_per_10cm`/`calibration_date`/
+`measured_error_pct`/`calibration_segments`/`calibration_reference_*`) and
+its RN05 "recalibrating invalidates old results" rule
+(`trial_results.calculated_at`/`px_per_10cm_used`) are both columns added by
+later migrations on the already-existing tables, not a new entity —
+`trial_results` stays 1:1 per trial (`UNIQUE(trial_id)`); recomputing a
+trial's metrics overwrites that row rather than appending a history table.
+Staleness is derived when read (`calculated_at`/`px_per_10cm_used` vs. the
+montagem's current values), never stored as a boolean — same philosophy as
+`measured_error_pct` above. See `src/barnes/db/calibration.py` and
+`src/barnes/db/trial_results.py`.
 
 ### Video metadata quirk (US-01)
 
@@ -164,7 +184,10 @@ via `uv run python -m database.seeds.<name>` from the repo root, never as a
 
 `src/barnes/{io,geometry,pose,events,metrics,strategy,longitudinal,stats,report,db}/`
 — each corresponds to both a project epic and a pipeline stage. `io`
-(US-01) and `geometry` (US-04, plus US-05 reference frames) are implemented; the rest are still empty
+(US-01), `geometry` (US-04, plus US-05 reference frames) and
+`io/calibration.py`/`metrics` (US-02, scale and the
+distance/speed/route-efficiency conversions it gates) are implemented;
+`pose`/`events`/`strategy`/`longitudinal`/`stats`/`report` are still empty
 `__init__.py` stubs pending their user story. `data/` and
 `models/` are gitignored (raw videos, trained pose weights) — never assume
 their contents are present in a fresh clone or CI; tests must not depend on

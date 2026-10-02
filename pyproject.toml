@@ -69,6 +69,11 @@ packages = ["src/barnes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
+# tests/io/test_calibration.py e tests/db/test_calibration.py (US-02) têm o
+# mesmo nome de módulo em diretórios sem __init__.py; importlib resolve pelo
+# caminho do arquivo em vez de inserir tudo num namespace de módulos só.
+addopts = "--import-mode=importlib"
 
 [tool.ruff]
 line-length = 100

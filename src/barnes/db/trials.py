@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 import psycopg
 
+from barnes.io.trim import TrialInterval
 from barnes.io.video import VideoMetadata
 
 
@@ -19,6 +20,7 @@ def insert_trial(
     day_number: int,
     trial_number_in_day: int,
     rotation_deg: float | None,
+    interval: TrialInterval | None = None,
 ) -> int:
     """Insere um trial com os metadados de vídeo extraídos pela US-01.
 
@@ -38,6 +40,11 @@ def insert_trial(
             valor padrão de propósito: quem chama decide explicitamente;
             `None` grava NULL ("não registrada"), nunca 0° implícito (RN01).
             Normalizada para 0 <= x < 360 antes de gravar.
+        interval: Intervalo útil resolvido por
+            `barnes.io.trim.build_trial_interval` (US-03 RN04 — persistido
+            para auditoria). Se omitido, `start_time_seconds` e
+            `end_time_seconds` ficam nulos e `interval_manually_adjusted`
+            fica no padrão (`False`).
 
     Returns:
         O id do trial recém-criado.
@@ -49,9 +56,10 @@ def insert_trial(
                 experiment_id, maze_config_id, filename, filepath, phase,
                 day_number, trial_number_in_day, content_hash, width_px,
                 height_px, fps_declared, fps_real, fps_is_variable,
-                frame_count, duration_s, rotation_deg
+                frame_count, duration_s, rotation_deg, start_time_seconds,
+                end_time_seconds, interval_manually_adjusted
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -71,6 +79,9 @@ def insert_trial(
                 video.frame_count,
                 video.duration_s,
                 _normalize_rotation(rotation_deg),
+                interval.start_s if interval is not None else None,
+                interval.end_s if interval is not None else None,
+                interval.manually_adjusted if interval is not None else False,
             ),
         )
         return cur.fetchone()[0]
@@ -143,7 +154,7 @@ def get_trial_maze_config_id(conn: psycopg.Connection, trial_id: int) -> int:
 
 
 def _normalize_rotation(rotation_deg: float | None) -> float | None:
-    # Respeita o CHECK 0 <= rotation_deg < 360 de trials (migração 0002); um
+    # Respeita o CHECK 0 <= rotation_deg < 360 de trials (migração 0004); um
     # negativo minúsculo (ex.: -1e-20) daria exatamente 360.0 após o módulo.
     if rotation_deg is None:
         return None

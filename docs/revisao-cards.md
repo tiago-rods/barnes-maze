@@ -77,7 +77,7 @@ Minha preocupação nessa não é necessariamente a rotação da plataforma mas 
 Decisão: B4 respondida como "o LNBio não rotaciona a plataforma". Pela RN04,
 a rotação é gravada como 0° em todo trial (`video load --rotation-deg`,
 padrão 0, gravado explicitamente) e a conversão vira identidade. A coluna
-`trials.rotation_deg` (migração `0002`, sem DEFAULT; NULL = não registrada =
+`trials.rotation_deg` (migração `0004`, sem DEFAULT; NULL = não registrada =
 análise recusada) e o código permanecem. Para a câmera deslocada: como a
 câmera só vê a plataforma de cima, não há marco de parede; como a
 plataforma não gira, a âncora do referencial da sala é um **buraco físico
