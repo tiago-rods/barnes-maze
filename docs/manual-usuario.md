@@ -137,8 +137,15 @@ janela):
   de pose são medidas em múltiplos desse raio. `--hole-radius-px` só define
   o valor inicial; ele não sai de `--hole-diameter-cm`, porque a escala px→cm
   só é calibrada depois, sobre a montagem já criada.
-- **`Enter`, `q` ou `Esc`** confirma e fecha a janela, salvando a última
-  geometria válida mostrada.
+- **`Enter`, `q` ou `Esc`** confirma e fecha a janela — mas antes de salvar, o
+  sistema ainda corrige cada buraco individualmente para o buraco real mais
+  próximo encontrado no quadro (dentro de duas vezes o raio do buraco
+  ajustado), e informa quantos dos N foram corrigidos dessa forma. Os que não
+  tiverem um buraco real próximo o bastante (sombra, animal, baixo contraste)
+  ficam na posição estimada pelo círculo, como antes. Por isso os ângulos de
+  cada buraco no `maze show` deixam de ser um passo perfeitamente uniforme de
+  `360°/N` — é esperado, e é justamente o ponto: refletem a posição real, não
+  mais só a aproximação teórica.
 
 A marca amarela em cruz mostra onde está o centro atual, para conferir
 visualmente se bate com o centro real da plataforma antes de confirmar.

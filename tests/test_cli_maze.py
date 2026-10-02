@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from barnes import cli
+from barnes.geometry.holes import generate_holes
 
 FRAME = np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -124,3 +125,64 @@ def test_h_key_keeps_previous_geometry_when_too_few_holes_are_found(state) -> No
     cli._apply_geometry_key(state, ord("h"), frame)
     assert state["center"] == (320.0, 240.0)
     assert state["radius"] == 200.0
+
+
+@pytest.fixture
+def octagon() -> object:
+    return generate_holes(
+        center_x_px=250.0,
+        center_y_px=250.0,
+        platform_radius_px=150.0,
+        hole_count=8,
+        start_angle_deg=0.0,
+        target_hole_number=0,
+        hole_radius_px=10.0,
+    )
+
+
+def test_snap_moves_holes_with_a_nearby_candidate_and_recomputes_angle(octagon) -> None:
+    # Buracos 0..5 têm um candidato "real" a 15 px de distância; 6 e 7, nenhum.
+    offset_candidates = [
+        (hole.x_px + 9.0, hole.y_px + 12.0) for hole in octagon.holes[:6]
+    ]
+    snapped, count = cli._snap_holes_to_detected_centers(
+        octagon, offset_candidates, max_offset_px=20.0
+    )
+    assert count == 6
+    for original, corrected in zip(octagon.holes[:6], snapped.holes[:6], strict=True):
+        assert corrected.x_px == pytest.approx(original.x_px + 9.0)
+        assert corrected.y_px == pytest.approx(original.y_px + 12.0)
+        expected_angle = math.degrees(
+            math.atan2(
+                corrected.y_px - snapped.center_y_px, corrected.x_px - snapped.center_x_px
+            )
+        ) % 360.0
+        assert corrected.angle_deg == pytest.approx(expected_angle)
+    # Sem candidato por perto, 6 e 7 ficam exatamente como `generate_holes` os colocou.
+    for original, corrected in zip(octagon.holes[6:], snapped.holes[6:], strict=True):
+        assert corrected == original
+
+
+def test_snap_ignores_candidates_beyond_max_offset(octagon) -> None:
+    far_away = [(octagon.holes[0].x_px + 500.0, octagon.holes[0].y_px + 500.0)]
+    snapped, count = cli._snap_holes_to_detected_centers(octagon, far_away, max_offset_px=20.0)
+    assert count == 0
+    assert snapped.holes == octagon.holes
+
+
+def test_snap_assigns_each_candidate_to_only_the_nearest_hole(octagon) -> None:
+    hole0, hole1 = octagon.holes[0], octagon.holes[1]
+    # Um único candidato, mais perto do buraco 0 que do buraco 1, mas dentro
+    # da tolerância dos dois: não pode "roubar" a correção do buraco 1.
+    midpoint_closer_to_0 = (
+        hole0.x_px + 0.4 * (hole1.x_px - hole0.x_px),
+        hole0.y_px + 0.4 * (hole1.y_px - hole0.y_px),
+    )
+    tolerance = math.hypot(hole1.x_px - hole0.x_px, hole1.y_px - hole0.y_px)
+    snapped, count = cli._snap_holes_to_detected_centers(
+        octagon, [midpoint_closer_to_0], max_offset_px=tolerance
+    )
+    assert count == 1
+    assert snapped.holes[0].x_px == pytest.approx(midpoint_closer_to_0[0])
+    assert snapped.holes[0].y_px == pytest.approx(midpoint_closer_to_0[1])
+    assert snapped.holes[1] == hole1

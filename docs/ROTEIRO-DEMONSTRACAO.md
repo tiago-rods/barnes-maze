@@ -209,6 +209,12 @@ O que mostrar: os buracos desenhados coincidem com os buracos reais do vídeo,
 **inclusive no tamanho**. As zonas de proximidade dos eventos e a região
 "buraco" da anotação (US-06) são medidas em múltiplos desse raio.
 
+Depois do `Enter`, o terminal mostra quantos dos N buracos foram corrigidos
+automaticamente para o buraco real detectado (ex. `16 de 20 buracos ajustados
+automaticamente...`) — os que não tiverem um buraco real próximo o bastante
+ficam na posição estimada pelo círculo, e exigiriam reabrir a janela e
+arrastar à mão para corrigir.
+
 ```powershell
 uv run barnes maze create --experiment-id $exp --name "montagem demo" --reference-frame $v1 --arena-diameter-cm $arena_cm --hole-diameter-cm $buraco_cm
 ```
