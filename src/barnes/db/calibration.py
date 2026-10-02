@@ -16,12 +16,13 @@ várias partes do código.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date
 
 import psycopg
 
-from barnes.io.calibration import CalibrationResult
+from barnes.io.calibration import CalibrationResult, Segment
 
 
 class CalibrationRequiredError(ValueError):
@@ -33,10 +34,27 @@ class StoredCalibration:
     cm_per_px: float
     calibration_date: date
     measured_error_pct: float | None
+    segments: tuple[Segment, Segment]
     reference_video: str | None
     reference_frame: int | None
     reference_width: int | None
     reference_height: int | None
+
+
+def _segments_json(segments: tuple[Segment, Segment]) -> str:
+    return json.dumps(
+        [{"start": s.start, "end": s.end, "length_cm": s.length_cm} for s in segments]
+    )
+
+
+def _segments_from_json(raw: str | None) -> tuple[Segment, Segment]:
+    if raw is None:
+        raise ValueError("Dado de calibração incompleto: segmentos não encontrados.")
+    first, second = json.loads(raw)
+    return (
+        Segment(tuple(first["start"]), tuple(first["end"]), first["length_cm"]),
+        Segment(tuple(second["start"]), tuple(second["end"]), second["length_cm"]),
+    )
 
 
 def save_calibration(
@@ -79,13 +97,22 @@ def save_calibration(
             SET px_per_10cm = %s,
                 calibration_date = CURRENT_DATE,
                 measured_error_pct = NULL,
+                calibration_segments = %s,
                 calibration_reference_video = %s,
                 calibration_reference_frame = %s,
                 calibration_width_px = %s,
                 calibration_height_px = %s
             WHERE id = %s
             """,
-            (px_per_10cm, reference_video, reference_frame, width, height, maze_config_id),
+            (
+                px_per_10cm,
+                _segments_json(result.segments),
+                reference_video,
+                reference_frame,
+                width,
+                height,
+                maze_config_id,
+            ),
         )
 
 
@@ -128,7 +155,7 @@ def get_calibration(conn: psycopg.Connection, maze_config_id: int) -> StoredCali
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT px_per_10cm, calibration_date, measured_error_pct,
+            SELECT px_per_10cm, calibration_date, measured_error_pct, calibration_segments,
                    calibration_reference_video, calibration_reference_frame,
                    calibration_width_px, calibration_height_px
             FROM maze_configs WHERE id = %s
@@ -138,13 +165,14 @@ def get_calibration(conn: psycopg.Connection, maze_config_id: int) -> StoredCali
         row = cur.fetchone()
     if row is None:
         raise ValueError(f"maze_config {maze_config_id} não encontrada.")
-    px_per_10cm, calibration_date, measured_error_pct, video, frame, width, height = row
+    px_per_10cm, calibration_date, measured_error_pct, segments_json, video, frame, width, height = row
     if px_per_10cm is None:
         return None
     return StoredCalibration(
         cm_per_px=10 / px_per_10cm,
         calibration_date=calibration_date,
         measured_error_pct=measured_error_pct,
+        segments=_segments_from_json(segments_json),
         reference_video=video,
         reference_frame=frame,
         reference_width=width,

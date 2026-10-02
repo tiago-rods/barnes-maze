@@ -53,6 +53,7 @@ erDiagram
         int calibration_reference_frame "US-02"
         int calibration_width_px "US-02 — resolução de referência da calibração"
         int calibration_height_px "US-02"
+        string calibration_segments "US-02 RN04 — JSON dos 2 segmentos usados, para scale verify recusar reuso"
     }
     HOLE {
         int id PK

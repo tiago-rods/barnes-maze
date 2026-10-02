@@ -5,9 +5,9 @@ from __future__ import annotations
 import csv
 import json
 import math
-import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -16,21 +16,30 @@ import numpy as np
 import psycopg
 import typer
 
-from barnes.db import CalibrationRepository
+from barnes.db.calibration import (
+    CalibrationRequiredError,
+    get_calibration,
+    require_calibration,
+    save_calibration,
+    save_verification,
+    validate_frame_size,
+)
 from barnes.db.connection import apply_migrations, get_connection
 from barnes.db.maze_configs import get_maze_config, insert_maze_config
+from barnes.db.trial_results import get_trial_result, list_trial_results, upsert_trial_result
 from barnes.db.trials import insert_trial
 from barnes.geometry.holes import MazeGeometry, generate_holes
 from barnes.geometry.validation import GeometryValidationError
 from barnes.io.calibration import (
+    CalibrationResult,
     Segment,
-    calibrate_orientation,
+    calculate_calibration,
     positive_number,
     verify_distance,
 )
 from barnes.io.calibration_ui import CalibrationCancelled, collect_segments
 from barnes.io.video import VideoLoadError, VideoMetadata, load_trial_video, read_frame
-from barnes.metrics import process_trial, validate_frame_size
+from barnes.metrics import process_trial
 
 app = typer.Typer()
 
@@ -428,23 +437,12 @@ def show_maze(
 
 
 # --- Calibração px→cm e métricas (US-02) --------------------------------------
-# TODO(Tiago): `--database`/BARNES_DATABASE e o default SQLite abaixo ainda vêm do
-# CalibrationRepository da US-02; falta unificar com `--dsn`/BARNES_DATABASE_URL.
 
-Database = Annotated[
-    str,
-    typer.Option(
-        "--database",
-        envvar="BARNES_DATABASE",
-        help="DSN PostgreSQL ou arquivo SQLite. Também aceita BARNES_DATABASE.",
-    ),
-]
-Orientation = Annotated[
-    str, typer.Option("--orientation", help="Identificador da câmera e posição.")
-]
 Video = Annotated[Path, typer.Option("--video", help="Vídeo original do trial (.mp4).")]
 Frame = Annotated[int, typer.Option("--frame", min=0, help="Índice do quadro, começando em zero.")]
-DEFAULT_DATABASE = "data/barnes.sqlite3"
+MazeConfigId = Annotated[
+    int, typer.Option("--maze-config-id", help="Id da montagem (maze_configs) a calibrar/usar.")
+]
 
 
 @contextmanager
@@ -456,7 +454,10 @@ def _command_errors():
     except CalibrationCancelled as exc:
         typer.echo(f"Cancelado: {exc}", err=True)
         raise typer.Exit(code=130) from exc
-    except (sqlite3.Error, psycopg.Error) as exc:
+    except CalibrationRequiredError as exc:
+        typer.echo(f"Erro: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except psycopg.Error as exc:
         # Do not print a connection string, which may contain the database password.
         typer.echo("Erro no banco de dados. Confira a configuração e a disponibilidade.", err=True)
         raise typer.Exit(code=1) from exc
@@ -474,62 +475,71 @@ def _length(value: float | None, prompt: str) -> float:
 @scale_app.command("calibrate")
 def calibrate(
     video: Video,
-    orientation: Orientation,
+    maze_config_id: MazeConfigId,
     length_1_cm: Annotated[float | None, typer.Option("--length-1-cm")] = None,
     length_2_cm: Annotated[float | None, typer.Option("--length-2-cm")] = None,
     frame: Frame = 0,
-    database: Database = DEFAULT_DATABASE,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Marcar dois segmentos, calcular e salvar uma nova versão da escala."""
+    """Marcar dois segmentos, calcular e salvar a escala da montagem (RN01/RN02/RN05)."""
     with _command_errors():
-        if not orientation.strip():
-            raise ValueError("Informe o identificador da orientação de câmera.")
+        with get_connection(dsn) as conn:
+            # Valida que a montagem existe antes de abrir a janela e pedir os cliques.
+            get_calibration(conn, maze_config_id)
         reference = read_frame(video, frame)
         length_a = _length(length_1_cm, "Comprimento real do segmento 1 (cm)")
         length_b = _length(length_2_cm, "Comprimento real do segmento 2 (cm)")
         first, second = collect_segments(reference)
-        with CalibrationRepository(database) as repository:
-            calibration = calibrate_orientation(
-                repository,
-                orientation,
-                [Segment(*first, length_a), Segment(*second, length_b)],
+        result = calculate_calibration([Segment(*first, length_a), Segment(*second, length_b)])
+        with get_connection(dsn) as conn:
+            save_calibration(
+                conn,
+                maze_config_id,
+                result,
                 reference_video=str(video.resolve()),
                 reference_frame=frame,
                 reference_size=(reference.shape[1], reference.shape[0]),
             )
+        typer.echo(f"Escala salva: {result.cm_per_px:.10g} cm/px (montagem #{maze_config_id}).")
+        typer.echo(f"Divergência entre segmentos: {result.relative_disagreement:.4%}")
         typer.echo(
-            f"Escala salva: {calibration.result.cm_per_px:.10g} cm/px | "
-            f"orientação={calibration.orientation_id} | versão={calibration.version} | "
-            f"id={calibration.id}"
+            "Recalibrar sobrescreve a escala anterior da montagem; resultados já calculados "
+            "com a escala anterior ficam marcados como obsoletos (barnes metrics executions)."
         )
-        typer.echo(f"Divergência entre segmentos: {calibration.result.relative_disagreement:.4%}")
-        if calibration.version > 1:
-            typer.echo("Métricas das escalas anteriores foram invalidadas; histórico preservado.")
         typer.echo("Confira a exatidão em uma terceira distância com barnes scale verify.")
 
 
 @scale_app.command("verify")
 def verify_scale(
     video: Video,
-    orientation: Orientation,
+    maze_config_id: MazeConfigId,
     length_cm: Annotated[float | None, typer.Option("--length-cm")] = None,
     frame: Frame = 0,
-    database: Database = DEFAULT_DATABASE,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Conferir a escala com uma terceira distância; aceita somente erro < 3%."""
+    """Conferir a escala com uma terceira distância; aceita somente erro < 3% (RN04)."""
     with _command_errors():
-        with CalibrationRepository(database) as repository:
-            calibration = repository.require_calibration(orientation)
-            reference = read_frame(video, frame)
-            validate_frame_size(calibration, (reference.shape[1], reference.shape[0]))
-            length = _length(length_cm, "Comprimento real da terceira distância (cm)")
-            (points,) = collect_segments(
-                reference, window_name="Barnes - verificacao independente", segment_count=1
-            )
-            verification = verify_distance(calibration.result, Segment(*points, length))
+        reference = read_frame(video, frame)
+        with get_connection(dsn) as conn:
+            calibration = require_calibration(conn, maze_config_id)
+        validate_frame_size(calibration, (reference.shape[1], reference.shape[0]))
+        length = _length(length_cm, "Comprimento real da terceira distância (cm)")
+        (points,) = collect_segments(
+            reference, window_name="Barnes - verificacao independente", segment_count=1
+        )
+        # calculate_calibration() já validou segments/cm_per_px na calibração; os dois
+        # campos abaixo não são usados por verify_distance, só o reuso de ponto e a escala.
+        reconstructed = CalibrationResult(
+            segments=calibration.segments,
+            cm_per_px=calibration.cm_per_px,
+            relative_disagreement=0.0,
+            angle_degrees=0.0,
+        )
+        verification = verify_distance(reconstructed, Segment(*points, length))
+        with get_connection(dsn) as conn:
+            save_verification(conn, maze_config_id, verification.relative_error)
         typer.echo(
-            f"Escala {calibration.id} (versão {calibration.version}): "
-            f"medido={verification.measured_cm:.6g} cm | "
+            f"Montagem #{maze_config_id}: medido={verification.measured_cm:.6g} cm | "
             f"real={verification.known_cm:.6g} cm | erro={verification.relative_error:.4%}"
         )
         if not verification.accepted:
@@ -540,21 +550,20 @@ def verify_scale(
 
 @scale_app.command("show")
 def show_scale(
-    orientation: Orientation,
-    history: Annotated[bool, typer.Option("--history", help="Incluir versões anteriores.")] = False,
-    database: Database = DEFAULT_DATABASE,
+    maze_config_id: MazeConfigId,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Consultar a escala ativa ou todo o histórico de uma orientação."""
+    """Consultar a escala atual da montagem."""
     with _command_errors():
-        with CalibrationRepository(database) as repository:
-            active = repository.require_calibration(orientation)
-            calibrations = repository.list_calibrations(orientation) if history else [active]
-        for calibration in calibrations:
-            state = "ativa" if calibration.id == active.id else "substituída"
-            typer.echo(
-                f"versão={calibration.version} | {calibration.result.cm_per_px:.10g} cm/px | "
-                f"{state} | id={calibration.id} | {calibration.created_at}"
-            )
+        with get_connection(dsn) as conn:
+            calibration = require_calibration(conn, maze_config_id)
+        typer.echo(
+            f"{calibration.cm_per_px:.10g} cm/px | calibrada em {calibration.calibration_date}"
+        )
+        if calibration.measured_error_pct is not None:
+            typer.echo(f"Última verificação independente: erro={calibration.measured_error_pct:.4g}%")
+        else:
+            typer.echo("Ainda sem verificação independente (barnes scale verify).")
 
 
 def _read_trajectory(path: Path) -> tuple[list[tuple[float, float]], list[float]]:
@@ -578,45 +587,58 @@ def _read_trajectory(path: Path) -> tuple[list[tuple[float, float]], list[float]
 def process(
     video: Video,
     trajectory: Annotated[Path, typer.Option("--trajectory", help="CSV com x_px,y_px,time_s.")],
-    trial: Annotated[str, typer.Option("--trial", help="Identificador do trial.")],
-    orientation: Orientation,
+    trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
+    maze_config_id: MazeConfigId,
+    frame: Frame = 0,
     ideal_distance_px: Annotated[
         float | None,
         typer.Option(
             "--ideal-distance-px", help="Distância ideal em pixels para eficiência de rota."
         ),
     ] = None,
-    database: Database = DEFAULT_DATABASE,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Calcular métricas de uma trajetória já extraída e registrar a escala usada."""
+    """Calcular métricas de uma trajetória já extraída e registrar a escala usada (RN03/RN05)."""
     with _command_errors():
-        with CalibrationRepository(database) as repository:
-            # Fail before decoding video or reading trajectory when the scale is missing.
-            repository.require_calibration(orientation)
-            reference = read_frame(video)
+        reference = read_frame(video, frame)
+        with get_connection(dsn) as conn:
+            calibration = require_calibration(conn, maze_config_id)
+            # Falha na resolução antes de ler o CSV da trajetória inteiro.
+            validate_frame_size(calibration, (reference.shape[1], reference.shape[0]))
             points, times = _read_trajectory(trajectory)
-            execution = process_trial(
-                repository,
-                trial,
-                orientation,
+            metrics = process_trial(
+                calibration.cm_per_px,
                 points,
                 times,
                 frame_size=(reference.shape[1], reference.shape[0]),
                 ideal_distance_px=ideal_distance_px,
             )
-        typer.echo(json.dumps(asdict(execution), ensure_ascii=False, indent=2))
+            upsert_trial_result(
+                conn,
+                trial,
+                distance_cm=metrics["distance_cm"],
+                speed_mean_cm=metrics["mean_speed_cm_s"],
+                route_efficiency=metrics.get("route_efficiency"),
+                px_per_10cm_used=10 / calibration.cm_per_px,
+                calculated_at=datetime.now(UTC),
+            )
+        typer.echo(json.dumps(metrics, ensure_ascii=False, indent=2))
 
 
 @metrics_app.command("executions")
 def executions(
-    trial: Annotated[str | None, typer.Option("--trial", help="Filtrar pelo trial.")] = None,
-    database: Database = DEFAULT_DATABASE,
+    trial: Annotated[int | None, typer.Option("--trial", help="Filtrar por id do trial.")] = None,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Consultar resultados, escala usada e validade após recalibrações."""
+    """Consultar resultados calculados e se ficaram obsoletos após recalibração (RN05)."""
     with _command_errors():
-        with CalibrationRepository(database) as repository:
-            rows = repository.list_executions(trial)
-        typer.echo(json.dumps([asdict(row) for row in rows], ensure_ascii=False, indent=2))
+        with get_connection(dsn) as conn:
+            if trial is not None:
+                result = get_trial_result(conn, trial)
+                rows = [] if result is None else [result]
+            else:
+                rows = list_trial_results(conn)
+        typer.echo(json.dumps([asdict(row) for row in rows], ensure_ascii=False, indent=2, default=str))
 
 
 if __name__ == "__main__":
