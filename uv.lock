@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.11.*"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -222,6 +222,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+anotacao = [
+    { name = "sleap-io" },
+]
 gui = [
     { name = "pyside6" },
 ]
@@ -257,10 +260,11 @@ requires-dist = [
     { name = "shapely", specifier = ">=2.0" },
     { name = "similaritymeasures", marker = "extra == 'longitudinal'", specifier = ">=1.1" },
     { name = "sleap", marker = "extra == 'pose'", specifier = ">=1.3" },
+    { name = "sleap-io", marker = "extra == 'anotacao'", specifier = ">=0.9" },
     { name = "statsmodels", specifier = ">=0.14" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["pose", "longitudinal", "gui"]
+provides-extras = ["pose", "anotacao", "longitudinal", "gui"]
 
 [package.metadata.requires-dev]
 dev = [
