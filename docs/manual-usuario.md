@@ -107,13 +107,22 @@ Por padrão abre uma janela OpenCV sobre o quadro de referência, ajustável
 na linha de comando (eles têm um valor inicial razoável e são corrigidos na
 janela):
 
-- **Tecla `a`** detecta automaticamente o centro e o raio da plataforma no
-  quadro (maior região clara contígua) e já reposiciona a marca amarela de
-  centro — usar antes de arrastar poupa a parte mais difícil de "achar o
-  meio a olho".
-- **Arraste o botão esquerdo** do centro (o detectado por `a`, ou qualquer
-  ponto) até o **buraco físico de referência** — isso (re)define centro,
-  raio **e** ângulo inicial de uma vez, calibrados contra um buraco de
+- **Tecla `a`** detecta automaticamente o centro e o raio **da borda física
+  da plataforma** no quadro (maior região clara contígua) e já reposiciona a
+  marca amarela de centro — usar antes de arrastar poupa a parte mais difícil
+  de "achar o meio a olho". Como os buracos costumam ficar recuados da borda
+  (e mais ainda se a câmera não for perfeitamente zenital), o círculo que `a`
+  posiciona é só um ponto de partida: ele não é o raio dos buracos.
+- **Tecla `h`** detecta automaticamente o centro e o raio **da circunferência
+  dos buracos** (é essa a medida que `--platform-radius-px` representa):
+  procura as regiões escuras e aproximadamente circulares dentro da
+  plataforma e ajusta um círculo aos centros encontrados. Precisa achar pelo
+  menos 3 buracos plausíveis para funcionar — se sombra, reflexo ou o animal
+  estiverem cobrindo buracos demais, a tecla não faz nada e o ajuste manual
+  continua necessário.
+- **Arraste o botão esquerdo** do centro (o detectado por `a`/`h`, ou
+  qualquer ponto) até o **buraco físico de referência** — isso (re)define
+  centro, raio **e** ângulo inicial de uma vez, calibrados contra um buraco de
   verdade (o ângulo vem da direção do arraste). Esse buraco vira o buraco 0
   e aparece com anel magenta, uma linha a partir do centro e o rótulo
   `ref`. **Confira que o `ref` caiu no buraco certo antes de confirmar:**

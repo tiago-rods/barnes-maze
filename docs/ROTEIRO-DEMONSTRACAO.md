@@ -188,14 +188,18 @@ $exp = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -
 **Cenário 1 — criar e salvar uma montagem.**
 
 🖱️ Na janela:
-1. tecla **`a`**: detecta a plataforma automaticamente;
-2. **arraste** do centro até o **buraco físico de referência**; ele vira o
+1. tecla **`a`**: detecta a borda física da plataforma automaticamente (ponto
+   de partida; não é o raio dos buracos);
+2. tecla **`h`**: detecta a circunferência dos próprios buracos (precisa de
+   pelo menos 3 buracos visíveis) — normalmente mais perto do raio certo que
+   o `a`, principalmente se a câmera não estiver perfeitamente perpendicular;
+3. **arraste** do centro até o **buraco físico de referência**; ele vira o
    buraco 0, marcado como `ref`;
-3. **botão direito** no buraco-alvo, que fica vermelho;
-4. **`+`/`-`** ajusta o número de buracos (N);
-5. **`[`/`]`** ajusta o raio do buraco, de meio em meio pixel, até o círculo
+4. **botão direito** no buraco-alvo, que fica vermelho;
+5. **`+`/`-`** ajusta o número de buracos (N);
+6. **`[`/`]`** ajusta o raio do buraco, de meio em meio pixel, até o círculo
    desenhado cobrir o buraco real (o valor aparece no rodapé);
-6. **`Enter`** confirma.
+7. **`Enter`** confirma.
 
 Atenção: **`Esc` e `q` também confirmam e salvam**, não cancelam. Fechar a
 janela "para refazer" grava uma montagem a mais. Se isso acontecer, não tem

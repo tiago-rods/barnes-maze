@@ -362,8 +362,8 @@ MIN_HOLE_RADIUS_PX = 1.0
 # porque as fontes Hershey do OpenCV não os desenham.
 _INSTRUCTIONS = (
     "arraste do centro ate o buraco de REFERENCIA fisica (vira o buraco 0 / ref)",
-    "botao direito = marca alvo | a = auto-detectar plataforma | Enter/q confirma",
-    "+/- = N (agora {n}, max 30) | [ ] = raio do buraco ({r:.1f} px)",
+    "botao direito = marca alvo | a = detectar BORDA | h = detectar BURACOS",
+    "+/- = N (agora {n}, max 30) | [ ] = raio do buraco ({r:.1f} px) | Enter/q confirma",
 )
 
 
@@ -397,6 +397,87 @@ def _detect_platform_circle(frame: np.ndarray) -> tuple[float, float, float] | N
     largest = max(contours, key=cv2.contourArea)
     (x, y), radius = cv2.minEnclosingCircle(largest)
     return float(x), float(y), float(radius)
+
+
+def _fit_circle_to_points(points: list[tuple[float, float]]) -> tuple[float, float, float]:
+    """Círculo de mínimos quadrados (método algébrico de Kása) por um conjunto de pontos."""
+    xs = np.array([p[0] for p in points], dtype=np.float64)
+    ys = np.array([p[1] for p in points], dtype=np.float64)
+    design = np.column_stack((2 * xs, 2 * ys, np.ones_like(xs)))
+    target = xs**2 + ys**2
+    (center_x, center_y, c), *_ = np.linalg.lstsq(design, target, rcond=None)
+    radius = math.sqrt(max(c + center_x**2 + center_y**2, 0.0))
+    return float(center_x), float(center_y), float(radius)
+
+
+def _detect_holes_ring(
+    frame: np.ndarray, expected_hole_area_fraction: float
+) -> tuple[float, float, float] | None:
+    """Estima centro e raio da circunferência dos buracos a partir dos próprios buracos.
+
+    `_detect_platform_circle` mede a borda física do disco; aqui o alvo é
+    outro: `platform_radius_px` é o raio da circunferência *dos buracos*
+    (é nela que `generate_holes` distribui os N buracos, RN06), e as duas
+    circunferências só coincidem se a câmera for perfeitamente zenital e os
+    buracos chegarem até a borda. Em geral não é o caso, e é por isso que o
+    anel desenhado por `a` não cobre os buracos reais.
+
+    Localiza as regiões escuras e aproximadamente circulares dentro do disco
+    da plataforma (os buracos) e ajusta um círculo (mínimos quadrados) aos
+    seus centros. `expected_hole_area_fraction` — (diâmetro do buraco /
+    diâmetro da arena)², já derivável dos dois `--*-diameter-cm` informados
+    na criação da montagem — delimita a faixa de área aceita para um
+    contorno contar como buraco, e não ruído, sombra alongada ou o próprio
+    animal; não é um valor arbitrário.
+
+    Precisa de ao menos 3 buracos detectados para ajustar um círculo (o
+    mesmo mínimo geométrico de N em `generate_holes`). Serve só como ponto
+    de partida: sombra, reflexo ou o animal cobrindo um buraco reduzem a
+    contagem detectada, e o operador ainda corrige arrastando o mouse.
+
+    Returns:
+        `(center_x_px, center_y_px, radius_px)`, ou `None` se menos de 3
+        buracos plausíveis forem encontrados.
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    platform_contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not platform_contours:
+        return None
+    platform = max(platform_contours, key=cv2.contourArea)
+    platform_area = cv2.contourArea(platform)
+    if platform_area <= 0:
+        return None
+
+    mask = np.zeros(thresh.shape, dtype=np.uint8)
+    cv2.drawContours(mask, [platform], -1, 255, -1)
+    dark_inside = cv2.bitwise_and(cv2.bitwise_not(thresh), mask)
+
+    # Margem generosa (0.2x a 6x da área esperada): o buraco no vídeo pode
+    # parecer menor que o diâmetro físico (sombra parcial) ou maior
+    # (penumbra ao redor), mas um ruído de poucos pixels ou o corpo do
+    # animal ficam bem fora dessa faixa.
+    min_area = 0.2 * expected_hole_area_fraction * platform_area
+    max_area = 6.0 * expected_hole_area_fraction * platform_area
+
+    centers: list[tuple[float, float]] = []
+    hole_contours, _ = cv2.findContours(dark_inside, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in hole_contours:
+        area = cv2.contourArea(contour)
+        if not (min_area < area < max_area):
+            continue
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter <= 0 or 4 * math.pi * area / perimeter**2 < 0.5:
+            continue  # descarta contornos alongados (sombra, pata, cauda)
+        moments = cv2.moments(contour)
+        if moments["m00"] == 0:
+            continue
+        centers.append((moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]))
+
+    if len(centers) < 3:
+        return None
+    return _fit_circle_to_points(centers)
 
 
 def _try_generate_geometry(state: dict) -> MazeGeometry | None:
@@ -439,6 +520,12 @@ def _apply_geometry_key(state: dict, key: int, frame: np.ndarray) -> bool:
             center_x, center_y, radius = detected
             state["center"] = (center_x, center_y)
             state["radius"] = radius
+    elif key == ord("h"):
+        detected = _detect_holes_ring(frame, state["expected_hole_area_fraction"])
+        if detected is not None:
+            center_x, center_y, radius = detected
+            state["center"] = (center_x, center_y)
+            state["radius"] = radius
     elif key in (13, ord("q"), 27):  # 13 = Enter, 27 = Esc
         return True
     state["target"] = min(state["target"], state["hole_count"] - 1)
@@ -455,6 +542,8 @@ def _adjust_geometry_interactively(
     start_angle_deg: float,
     target_hole_number: int,
     hole_radius_px: float,
+    arena_diameter_cm: float,
+    hole_diameter_cm: float,
 ) -> MazeGeometry:
     """Janela OpenCV para ajustar a geometria com o mouse (Cenário 1).
 
@@ -478,6 +567,7 @@ def _adjust_geometry_interactively(
         "target": target_hole_number,
         "hole_radius": max(hole_radius_px, MIN_HOLE_RADIUS_PX),
         "dragging": False,
+        "expected_hole_area_fraction": (hole_diameter_cm / arena_diameter_cm) ** 2,
     }
 
     # No backend win32 do OpenCV, registrar o mouse callback antes do
@@ -628,6 +718,8 @@ def create_maze(
                 start_angle_deg=start_angle_deg,
                 target_hole_number=target_hole_number,
                 hole_radius_px=hole_radius_px,
+                arena_diameter_cm=arena_diameter_cm,
+                hole_diameter_cm=hole_diameter_cm,
             )
 
         try:
