@@ -19,7 +19,7 @@ Manual de instalação e operação para o laboratório.
 | Python | 3.11 |
 | GPU | Não obrigatória para inferência |
 | Interface de calibração | Ambiente gráfico com teclado, mouse e OpenCV |
-| Banco de dados | SQLite local ou PostgreSQL — ver seção 2 |
+| Banco de dados | PostgreSQL — ver seção 2 |
 
 ## 2. Instalação
 
@@ -43,9 +43,10 @@ barnes --help
 ```
 
 A instalação inicial exige acesso aos pacotes. Depois de instalados, a
-calibração e o processamento descritos aqui funcionam com arquivos locais e
-SQLite, sem acesso à internet. A janela exige `opencv-python` com suporte a
-interface gráfica; a variante `opencv-python-headless` não atende esse fluxo.
+calibração e o processamento descritos aqui funcionam sem acesso à internet,
+desde que o Postgres do estudo (seção 2.2) já esteja acessível na rede local.
+A janela exige `opencv-python` com suporte a interface gráfica; a variante
+`opencv-python-headless` não atende esse fluxo.
 
 ### 2.2 Banco de dados
 
@@ -59,26 +60,23 @@ interface gráfica; a variante `opencv-python-headless` não atende esse fluxo.
 > Se a distribuição se mostrar inviável para o perfil do operador, **SQLite é a
 > alternativa adequada** ao volume real do estudo (alguns milhões de linhas).
 
-Para a US-02, o padrão é o arquivo local `data/barnes.sqlite3`. As tabelas são
-criadas automaticamente ao usar os comandos; não é necessário instalar um
-servidor para experimentar a calibração. Guarde uma cópia desse arquivo junto
-ao estudo, pois contém as escalas, suas versões e o histórico das execuções.
+A calibração da US-02 usa o **mesmo** Postgres das demais tabelas do projeto
+(`maze_configs`, `holes`, `trials`, ...) — não há um banco separado para a
+escala. Aplique as migrações antes de calibrar (`barnes db migrate`, ver
+`CLAUDE.md`). Para um servidor PostgreSQL já disponível, use uma conexão no
+formato `postgresql://usuario:senha@localhost:5432/barnes`; o banco e o
+usuário precisam existir, com permissão para criar as tabelas.
 
-Cada comando aceita `--database` para selecionar outro arquivo ou uma conexão
-PostgreSQL. Como alternativa, configure `BARNES_DATABASE` uma vez no terminal:
+Cada comando aceita `--dsn` para essa conexão. Como alternativa, configure
+`BARNES_DATABASE_URL` uma vez no terminal:
 
 ```powershell
-$env:BARNES_DATABASE = "data/estudo-01.sqlite3"
+$env:BARNES_DATABASE_URL = "postgresql://usuario:senha@localhost:5432/barnes"
 ```
 
-Para um servidor PostgreSQL já disponível, use uma conexão no formato
-`postgresql://usuario:senha@localhost:5432/barnes`. O banco e o usuário precisam
-existir, com permissão para criar as tabelas. A implantação do servidor e a
-distribuição do aplicativo completo continuam pertencendo à US-27/US-30.
-
-Use sempre o mesmo banco nos comandos do estudo. A opção `--database` tem
-precedência sobre a variável de ambiente. Trocar de banco não transfere as
-calibrações anteriores.
+A opção `--dsn` tem precedência sobre a variável de ambiente. A implantação do
+servidor e a distribuição do aplicativo completo continuam pertencendo à
+US-27/US-30.
 
 ## 3. Configurar uma montagem
 
@@ -87,10 +85,9 @@ paramétrica (centro, raio, número de buracos e ângulo inicial — sem editor
 de polígonos) e fica salva no banco (tabelas `maze_configs` e `holes`), não
 em arquivo.
 
-**Ainda pendentes nesta seção:** rotação/referencial de sala (US-05). A
-escala px→cm (US-02) já pode ser calibrada (seções 3.3 a 3.6), mas ainda é
-guardada por orientação de câmera e **não está ligada à montagem** — a
-integração com `maze_configs` está pendente.
+**Ainda pendente nesta seção:** rotação/referencial de sala (US-05). A escala
+px→cm (US-02) já pode ser calibrada (seções 3.3 a 3.6) e fica gravada na
+própria montagem (`maze_configs`, mesma linha criada em 3.1).
 
 ### 3.1 Criar uma montagem
 
@@ -154,19 +151,20 @@ nenhuma janela. É o mesmo dado que outros comandos do pipeline vão
 consultar para reaplicar a montagem a um novo trial, sem repetir a
 configuração interativa.
 
-### 3.3 Identificar a orientação da câmera
+### 3.3 A escala pertence à montagem
 
-A escala pertence a uma **orientação de câmera**, identificada por um nome
-fornecido em `--orientation`, por exemplo `camera-dia-01`. Reutilize esse nome
-somente em vídeos com a mesma posição, inclinação, zoom, enquadramento e
-resolução. A identificação é responsabilidade do operador: o programa não
-reconhece automaticamente se a câmera se moveu entre gravações.
+A escala px→cm é calibrada para a **montagem** criada na seção 3.1
+(`--maze-config-id`, o mesmo id usado em `barnes maze show`). Use-a somente
+com vídeos gravados na mesma posição, inclinação, zoom, enquadramento e
+resolução de câmera da montagem — o programa não reconhece automaticamente
+se a câmera se moveu entre gravações; essa identificação é responsabilidade
+do operador.
 
-Se a câmera mudou, crie outro identificador e calibre essa nova orientação.
-Mesmo no mesmo estudo, orientações diferentes mantêm escalas independentes.
-Vídeos com resolução diferente da referência são recusados para evitar aplicar
-uma escala de pixels incompatível. A configuração de plataforma e buracos está
-nas seções 3.1 e 3.2; a orientação da sala permanece pendente em US-05.
+Se a câmera mudou, crie uma **nova montagem** (`barnes maze create`) e
+calibre-a separadamente; não reutilize o id de uma montagem com câmera
+diferente. Vídeos com resolução diferente da referência usada na calibração
+são recusados, para evitar aplicar uma escala de pixels incompatível. A
+orientação da sala (rotação do referencial) permanece pendente em US-05.
 
 ### 3.4 Calibrar com dois segmentos conhecidos
 
@@ -176,10 +174,10 @@ nas seções 3.1 e 3.2; a orientação da sala permanece pendente em US-05.
 2. Escolha segmentos em direções diferentes, de preferência próximos de
    perpendiculares. Segmentos longos e bem definidos reduzem o efeito do erro
    de clique. Não use a terceira distância de verificação nesta etapa.
-3. Execute, substituindo arquivo, orientação e comprimentos pelos seus dados:
+3. Execute, substituindo arquivo, id da montagem e comprimentos pelos seus dados:
 
    ```bash
-   barnes scale calibrate --video data/raw/trial.mp4 --orientation camera-dia-01 --length-1-cm 20 --length-2-cm 20 --frame 0
+   barnes scale calibrate --video data/raw/trial.mp4 --maze-config-id 1 --length-1-cm 20 --length-2-cm 20 --frame 0
    ```
 
    `--frame` é o índice do quadro, começando em zero; o padrão é o primeiro
@@ -228,7 +226,7 @@ mesmo plano da trajetória. Prefira outra posição e direção da cena para ava
 o uso da escala fora dos dois segmentos originais.
 
 ```bash
-barnes scale verify --video data/raw/trial.mp4 --orientation camera-dia-01 --length-cm 15 --frame 0
+barnes scale verify --video data/raw/trial.mp4 --maze-config-id 1 --length-cm 15 --frame 0
 ```
 
 Marque apenas as duas extremidades dessa terceira distância e confirme com
@@ -244,41 +242,45 @@ Não reutilize um dos segmentos de calibração, mesmo invertendo suas
 extremidades: o sistema rejeita essa repetição. Essa proteção não substitui a
 escolha de uma referência fisicamente independente pelo pesquisador.
 
-A verificação não substitui a escala salva. Se reprovar, revise a montagem e
-os marcadores, calibre novamente e repita a medição independente antes de usar
-as métricas no estudo.
+A verificação não substitui a escala salva; ela só grava o erro medido
+(`measured_error_pct`, aprovado ou não) na própria montagem, para consulta em
+`barnes scale show`. Se reprovar, revise a montagem e os marcadores, calibre
+novamente e repita a medição independente antes de usar as métricas no
+estudo. Uma recalibração zera essa verificação — refaça-a contra a escala
+nova.
 
 ### 3.6 Consultar, reaproveitar e recalibrar
 
-Consulte a escala atual ou todas as versões da orientação:
+Consulte a escala atual da montagem:
 
 ```bash
-barnes scale show --orientation camera-dia-01
-barnes scale show --orientation camera-dia-01 --history
+barnes scale show --maze-config-id 1
 ```
 
-Para processar outro vídeo com a mesma orientação, use o mesmo identificador
-e banco. A escala atual é aplicada automaticamente, sem marcar novos pontos.
+Para processar outro vídeo com a mesma montagem, use o mesmo
+`--maze-config-id`. A escala atual é aplicada automaticamente, sem marcar
+novos pontos.
 
-Para corrigir a calibração da **mesma orientação**, execute novamente
-`barnes scale calibrate` com aquele identificador. A operação cria uma versão nova;
-as versões anteriores permanecem no banco. As métricas das execuções anteriores
-daquela orientação ficam **inválidas**, mas cada execução mantém o identificador
-da escala que usou e seus valores originais para auditoria. Execuções de outras
-orientações continuam válidas.
+Para corrigir a calibração, execute novamente `barnes scale calibrate` com o
+mesmo `--maze-config-id`. A operação **sobrescreve** a escala da montagem
+(RN05) — não existe histórico de versões anteriores. Os resultados já
+calculados (`barnes metrics process`) para trials dessa montagem ficam
+**obsoletos**: o valor calculado com a escala anterior continua no banco,
+mas `barnes metrics executions` passa a marcá-lo como tal.
 
-Reprocesse os trials afetados para gerar novas execuções usando a escala atual.
-O sistema não recalcula nem apaga as execuções antigas silenciosamente. Para
-examinar esse histórico:
+Reprocesse os trials afetados para atualizar o resultado com a escala atual.
+O sistema não recalcula nem apaga resultados antigos silenciosamente. Para
+examinar o estado de um trial:
 
 ```bash
-barnes metrics executions --trial trial-01
+barnes metrics executions --trial 1
 ```
 
-Esse comando apresenta as execuções, a escala utilizada, as métricas e sua
-validade. Ao comparar resultados, considere somente execuções válidas. Se a
-câmera mudou fisicamente, use uma **nova orientação** em vez de recalibrar a
-anterior: os vídeos antigos ainda pertencem à montagem em que foram gravados.
+Esse comando apresenta o resultado, as métricas e se ficou obsoleto. Ao
+comparar resultados entre trials, considere somente os que não estão
+obsoletos. Se a câmera mudou fisicamente, crie uma **nova montagem**
+(`barnes maze create`) em vez de recalibrar a mesma: os vídeos antigos ainda
+pertencem à montagem em que foram gravados.
 
 ## 4. Processar um trial
 
@@ -302,14 +304,18 @@ x_px,y_px,time_s
 ```
 
 ```bash
-barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial trial-01 --orientation camera-dia-01
+barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1 --maze-config-id 1
 ```
 
-O programa exige uma escala válida para a orientação, verifica a resolução do
-vídeo e calcula a distância percorrida em centímetros e a velocidade média em
-cm/s. Sem escala, a execução é bloqueada com uma mensagem solicitando a
-calibração daquela orientação. Cada execução salva referencia a versão exata
-da escala aplicada.
+`--trial` é o id do trial já carregado no banco (`barnes video load`); `--frame`
+(padrão 0) escolhe o quadro usado para confirmar a resolução, igual a `scale
+calibrate`/`scale verify`. O programa exige uma escala válida para a
+montagem, verifica se a resolução do vídeo bate com a da calibração, e
+calcula a distância percorrida em centímetros e a velocidade média em cm/s.
+Sem escala, o cálculo é bloqueado — antes mesmo de abrir o vídeo — com uma
+mensagem solicitando a calibração daquela montagem. O resultado salvo
+registra a escala exata usada (`px_per_10cm_used`), para detectar se fica
+obsoleto numa recalibração futura.
 
 A distância é a soma dos deslocamentos entre amostras. A velocidade média é
 essa distância dividida pelo tempo entre a primeira e a última amostra. No CSV
@@ -331,8 +337,9 @@ critério de ≤ 10 min da US-30 ainda precisa de validação com um operador._
 
 ## 5. Saídas
 
-Na US-02, os resultados são exibidos no terminal e persistidos no banco
-selecionado. Use `barnes scale show` e `barnes metrics executions` para consultar os registros.
+Na US-02, os resultados são exibidos no terminal e persistidos no mesmo
+Postgres do projeto. Use `barnes scale show` e `barnes metrics executions`
+para consultar os registros.
 As exportações do produto completo abaixo permanecem previstas para suas
 respectivas histórias:
 
@@ -347,15 +354,15 @@ respectivas histórias:
 
 | Situação | Procedimento |
 |---|---|
-| Orientação sem escala | Execute `barnes scale calibrate` com o mesmo identificador e banco do processamento. |
+| Montagem sem escala | Execute `barnes scale calibrate` com o mesmo `--maze-config-id` do processamento. |
 | Escalas dos segmentos divergem | Confira unidades, cliques, plano dos marcadores e perspectiva; repita a calibração. |
 | Segmentos têm a mesma direção | Escolha uma segunda referência em outra direção, preferencialmente perpendicular. |
 | Erro independente ≥ 3% | Revise a montagem e calibre novamente antes de usar as métricas. |
-| Resolução diferente da referência | Use os vídeos originais da orientação correta ou crie outra orientação e calibre. |
+| Resolução diferente da referência | Use os vídeos originais dessa montagem, ou crie outra montagem (`maze create`) e calibre-a. |
 | Janela não abre | Execute em sessão gráfica com `opencv-python` e acesso ao monitor; a interface interativa exige janela. |
 | Vídeo/quadro não pode ser lido | Confira caminho, formato e índice do quadro; o primeiro quadro é o 0. |
-| Histórico parece vazio | Confira `--database`, `BARNES_DATABASE`, nome do trial e da orientação. |
-| Execução marcada inválida | Reprocesse o trial para aplicar a versão atual; mantenha a execução antiga para auditoria. |
+| Resultado parece ausente | Confira `--dsn`/`BARNES_DATABASE_URL` e o id do trial/da montagem. |
+| Resultado marcado obsoleto | Reprocesse o trial (`metrics process`) para aplicar a escala atual; o valor anterior fica até reprocessar. |
 
 _Outros problemas serão acrescentados nas demais histórias, especialmente o
 aviso de fps variável (US-01), que não é corrigido automaticamente._
@@ -364,39 +371,44 @@ aviso de fps variável (US-01), que não é corrigido automaticamente._
 
 ### 7.1 Calibração sem janela
 
-A coleta de cliques é separada do cálculo e da persistência. Um programa pode
-fornecer os pontos diretamente, sem importar ou abrir a interface OpenCV:
+A coleta de cliques (`barnes.io.calibration_ui`), o cálculo
+(`barnes.io.calibration`) e a persistência (`barnes.db.calibration`) são
+módulos independentes. Um programa pode fornecer os pontos diretamente, sem
+importar ou abrir a interface OpenCV:
 
 ```python
-from barnes.db import CalibrationRepository
-from barnes.io.calibration import Segment, calibrate_orientation, verify_distance
+from barnes.db.calibration import save_calibration, require_calibration
+from barnes.db.connection import get_connection
+from barnes.io.calibration import Segment, calculate_calibration, verify_distance
 
-with CalibrationRepository("data/barnes.sqlite3") as repository:
-    calibration = calibrate_orientation(
-        repository,
-        "camera-dia-01",
-        [
-            Segment((10, 10), (210, 10), 20),
-            Segment((10, 30), (10, 230), 20),
-        ],
+result = calculate_calibration(
+    [
+        Segment((10, 10), (210, 10), 20),
+        Segment((10, 30), (10, 230), 20),
+    ]
+)
+print(result.cm_per_px)  # 0.1
+
+with get_connection() as conn:  # usa BARNES_DATABASE_URL se omitido
+    save_calibration(
+        conn,
+        maze_config_id=1,
+        result=result,
         reference_video="data/raw/trial.mp4",
         reference_frame=0,
         reference_size=(640, 480),  # largura, altura do quadro original
     )
+    calibration = require_calibration(conn, 1)
 
-print(calibration.result.cm_per_px)  # 0.1
-check = verify_distance(
-    calibration.result,
-    Segment((300, 100), (450, 100), 15),
-)
+check = verify_distance(result, Segment((300, 100), (450, 100), 15))
 print(check.accepted, check.relative_error)  # True, 0.0
 ```
 
-Esse exemplo grava uma versão e tem os mesmos efeitos de recalibração do CLI;
-execute com um identificador e banco de testes ao experimentar. Para apenas
-calcular em memória, use `calculate_calibration(segments)`, do mesmo módulo.
-`collect_segments(frame)`, em `barnes.io.calibration_ui`, cuida exclusivamente
-da seleção interativa e retorna pares de pontos no referencial original.
+Esse exemplo sobrescreve a escala da montagem (RN05) e tem os mesmos efeitos
+de recalibração do CLI; use um `maze_config_id` e banco de testes ao
+experimentar. `collect_segments(frame)`, em `barnes.io.calibration_ui`, cuida
+exclusivamente da seleção interativa e retorna pares de pontos no
+referencial original — não calcula nem persiste nada.
 
 ### 7.2 Testes
 
@@ -406,7 +418,9 @@ python -m ruff check .
 ```
 
 Os testes incluem imagem sintética com escala conhecida e uma terceira
-distância independente, bloqueio sem escala, reutilização por orientação e
-histórico após recalibração. Os testes da janela simulam os eventos do OpenCV;
-não substituem uma sessão manual com vídeo real. Os testes opcionais de
-PostgreSQL usam `BARNES_TEST_POSTGRES_DSN` apontando para um banco de testes.
+distância independente, bloqueio sem escala, reutilização pela montagem e
+obsolescência após recalibração. Os testes da janela simulam os eventos do
+OpenCV; não substituem uma sessão manual com vídeo real. Os testes de
+persistência (`tests/db/`, `tests/test_cli.py`) exigem `BARNES_DATABASE_URL`
+apontando para um Postgres de teste com o schema aplicado (`barnes db
+migrate`) — são pulados automaticamente se a variável não estiver definida.

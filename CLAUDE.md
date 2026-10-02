@@ -45,13 +45,13 @@ uv run barnes maze create --experiment-id N --name NAME \
     # --no-interactive requires --center-x/--center-y/--platform-radius-px
 uv run barnes maze show ID           # reapply a saved montagem, no interaction
 
-# US-02 (px→cm scale per camera orientation; still on its own SQLite/Postgres
-# repository via --database/BARNES_DATABASE — pending unification with db/)
-uv run barnes scale calibrate --video PATH --orientation ID [--length-1-cm X --length-2-cm Y]
-uv run barnes scale verify --video PATH --orientation ID [--length-cm Z]   # error must be < 3%
-uv run barnes scale show --orientation ID [--history]
-uv run barnes metrics process --video PATH --trajectory CSV --trial ID --orientation ID
-uv run barnes metrics executions [--trial ID]
+# US-02 (px->cm scale; stored on the maze_configs row itself, see Database
+# schema below — --maze-config-id, not a separate camera/orientation entity)
+uv run barnes scale calibrate --video PATH --maze-config-id N [--length-1-cm X --length-2-cm Y]
+uv run barnes scale verify --video PATH --maze-config-id N [--length-cm Z]   # error must be < 3%
+uv run barnes scale show --maze-config-id N
+uv run barnes metrics process --video PATH --trajectory CSV --trial N --maze-config-id N
+uv run barnes metrics executions [--trial N]
 ```
 
 ### Local Postgres for development
@@ -107,6 +107,18 @@ by the application, not the database. `trials.content_hash` is `UNIQUE` —
 a trial is identified by file content, not by path, so the same recording
 can't be loaded twice under a different name (see US-01/US-27 below).
 
+US-02's px->cm scale (`maze_configs.px_per_10cm`/`calibration_date`/
+`measured_error_pct`/`calibration_segments`/`calibration_reference_*`) and
+its RN05 "recalibrating invalidates old results" rule
+(`trial_results.calculated_at`/`px_per_10cm_used`) are both columns added by
+later migrations on the already-existing tables, not a new entity —
+`trial_results` stays 1:1 per trial (`UNIQUE(trial_id)`); recomputing a
+trial's metrics overwrites that row rather than appending a history table.
+Staleness is derived when read (`calculated_at`/`px_per_10cm_used` vs. the
+montagem's current values), never stored as a boolean — same philosophy as
+`measured_error_pct` above. See `src/barnes/db/calibration.py` and
+`src/barnes/db/trial_results.py`.
+
 ### Video metadata quirk (US-01)
 
 `is_fps_variable()` compares each inter-frame interval to the **median**
@@ -150,8 +162,10 @@ via `uv run python -m database.seeds.<name>` from the repo root, never as a
 
 `src/barnes/{io,geometry,pose,events,metrics,strategy,longitudinal,stats,report,db}/`
 — each corresponds to both a project epic and a pipeline stage. `io`
-(US-01) and `geometry` (US-04) are implemented; the rest are still empty
-`__init__.py` stubs pending their user story. `data/` and
+(US-01), `geometry` (US-04) and `io/calibration.py`/`metrics` (US-02, scale
+and the distance/speed/route-efficiency conversions it gates) are
+implemented; `pose`/`events`/`strategy`/`longitudinal`/`stats`/`report` are
+still empty `__init__.py` stubs pending their user story. `data/` and
 `models/` are gitignored (raw videos, trained pose weights) — never assume
 their contents are present in a fresh clone or CI; tests must not depend on
 files under `data/`, which is why `tests/conftest.py` generates small
