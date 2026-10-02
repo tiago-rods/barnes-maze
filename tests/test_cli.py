@@ -161,8 +161,11 @@ def test_cli_full_flow_reuse_verification_and_recalibration(args, maze_config_id
     with get_connection() as conn:
         assert not get_trial_result(conn, trial_id).is_stale
 
-    monkeypatch.setattr(cli, "collect_segments", lambda *a, **k: (((300, 100), (450, 100)),))
-    checked = runner.invoke(cli.app, ["scale", "verify", *args, "--length-cm", "15"])
+    with monkeypatch.context() as scoped:
+        # Só para esta chamada: scale verify pede 1 segmento, calibrate pede 2 (o mock
+        # da fixture `args`) — sem escopar, o monkeypatch vazaria para a recalibração abaixo.
+        scoped.setattr(cli, "collect_segments", lambda *a, **k: (((300, 100), (450, 100)),))
+        checked = runner.invoke(cli.app, ["scale", "verify", *args, "--length-cm", "15"])
     assert checked.exit_code == 0, checked.output
     assert "Verificação aceita" in checked.output
     with get_connection() as conn:
