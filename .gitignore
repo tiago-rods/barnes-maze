@@ -36,3 +36,7 @@ Thumbs.db
 
 # Saídas de processamento fora de data/
 *.parquet
+
+# Testes e análise estática
+.pytest_cache/
+.ruff_cache/

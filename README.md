@@ -140,6 +140,45 @@ O acesso ao banco em `src/barnes/db/` usa `psycopg` diretamente (sem ORM):
 schema explícito em SQL, consistente com a regra de que geometria e limiares
 são configuração, não abstração escondida em código.
 
+## Calibração px → cm (US-02)
+
+A calibração usa dois segmentos conhecidos, marcados em uma janela OpenCV, e
+salva a escala direto na montagem (`maze_configs`, no mesmo Postgres do
+resto do projeto — sem banco separado). Use `--maze-config-id` com o id de
+uma montagem já criada por `barnes maze create`.
+
+```bash
+uv run barnes scale calibrate --video data/raw/trial.mp4 --maze-config-id 1 --length-1-cm 20 --length-2-cm 20
+uv run barnes scale verify --video data/raw/trial.mp4 --maze-config-id 1 --length-cm 15
+uv run barnes scale show --maze-config-id 1
+```
+
+Clique nas quatro extremidades em ordem, dois pontos por segmento, e confirme
+com Enter. Para verificar a exatidão, marque uma terceira distância independente;
+o erro aceito é estritamente menor que 3%. Uma recalibração sobrescreve a
+escala da montagem (RN05) e invalida os resultados calculados com a escala
+anterior — eles ficam no banco, mas marcados como obsoletos até reprocessar.
+
+O processamento disponível recebe uma trajetória existente em CSV com as
+colunas `x_px,y_px,time_s`. A inferência automática de trajetória a partir do
+vídeo permanece nas demais histórias do projeto.
+
+```bash
+uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1 --maze-config-id 1
+uv run barnes metrics executions --trial 1
+```
+
+Sem escala para a montagem, o cálculo é bloqueado. O procedimento completo,
+os controles da janela, a API sem interface gráfica e a recalibração estão no
+[manual do usuário](docs/manual-usuario.md).
+
+Para verificar a implementação:
+
+```bash
+uv run python -m pytest
+uv run python -m ruff check .
+```
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:

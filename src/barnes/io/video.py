@@ -197,9 +197,13 @@ def read_frame(path: str | Path, frame_index: int = 0) -> np.ndarray:
         O quadro como array BGR (formato padrão do OpenCV).
 
     Raises:
-        VideoLoadError: Se o vídeo não abrir ou o quadro não puder ser lido
-            (ex.: índice além do fim do vídeo).
+        VideoLoadError: Se o índice não for um inteiro >= 0, se o vídeo não
+            abrir, se o posicionamento no quadro falhar (para nunca devolver
+            outro quadro em silêncio) ou se o quadro não puder ser lido (ex.:
+            índice além do fim do vídeo).
     """
+    if isinstance(frame_index, bool) or not isinstance(frame_index, int) or frame_index < 0:
+        raise VideoLoadError("O índice do quadro deve ser um inteiro maior ou igual a zero.")
     path = Path(path)
     _validate_path(path)
 
@@ -207,10 +211,13 @@ def read_frame(path: str | Path, frame_index: int = 0) -> np.ndarray:
     try:
         if not capture.isOpened():
             raise VideoLoadError(f"Não foi possível abrir o vídeo: {path}")
-        capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        if frame_index and not capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index):
+            raise VideoLoadError(f"Não foi possível acessar o quadro {frame_index} de {path}")
         ok, frame = capture.read()
-        if not ok:
+        if not ok or frame is None or frame.size == 0:
             raise VideoLoadError(f"Não foi possível ler o quadro {frame_index} de {path}")
         return frame
+    except cv2.error as exc:
+        raise VideoLoadError(f"Erro ao decodificar o vídeo {path}: {exc}") from exc
     finally:
         capture.release()
