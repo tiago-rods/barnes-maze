@@ -24,11 +24,23 @@ from barnes.db.calibration import (
     save_verification,
     validate_frame_size,
 )
-from barnes.db.connection import apply_migrations, get_connection
+from barnes.db.connection import DatabaseConfigError, apply_migrations, get_connection
 from barnes.db.maze_configs import get_maze_config, insert_maze_config
 from barnes.db.trial_results import get_trial_result, list_trial_results, upsert_trial_result
-from barnes.db.trials import insert_trial
+from barnes.db.trials import (
+    get_trial,
+    get_trial_maze_config_id,
+    get_trial_rotations,
+    insert_trial,
+    set_trial_rotation,
+)
 from barnes.geometry.holes import MazeGeometry, generate_holes
+from barnes.geometry.reference_frame import (
+    ReferenceFrame,
+    hole_to_room_angle,
+    require_rotations,
+    target_hole_for_trial,
+)
 from barnes.geometry.validation import GeometryValidationError
 from barnes.io.calibration import (
     CalibrationResult,
@@ -74,6 +86,9 @@ app.add_typer(db_app, name="db")
 video_app = typer.Typer(help="Comandos de vídeo.")
 app.add_typer(video_app, name="video")
 
+trial_app = typer.Typer(help="Comandos de trial: rotação e referencial da sala (US-05).")
+app.add_typer(trial_app, name="trial")
+
 maze_app = typer.Typer(help="Comandos de geometria do labirinto.")
 app.add_typer(maze_app, name="maze")
 
@@ -94,7 +109,7 @@ def migrate(
     ),
 ) -> None:
     """Aplica as migrações pendentes em database/migrations/."""
-    with get_connection(dsn) as conn:
+    with _command_errors(), get_connection(dsn) as conn:
         applied = apply_migrations(conn)
 
     if applied:
@@ -147,6 +162,9 @@ def _interactive_preview(path: Path, start_index: int) -> None:
     cv2.destroyWindow(window)
 
 
+TRIAL_PHASES = ("habituation", "acquisition", "probe")  # mesmo CHECK de trials.phase
+
+
 @video_app.command("load")
 def load_video(
     path: str = typer.Argument(..., help="Caminho do arquivo .mp4 do trial."),
@@ -157,6 +175,11 @@ def load_video(
     phase: str = typer.Option("acquisition", help="habituation | acquisition | probe"),
     day: int = typer.Option(1, help="Número do dia do trial dentro do experimento."),
     trial_in_day: int = typer.Option(1, help="Ordem do trial dentro do dia."),
+    rotation_deg: float = typer.Option(
+        0.0,
+        help="Rotação da plataforma no trial, em graus (US-05). Padrão 0 porque o LNBio "
+        "não rotaciona a plataforma (resposta B4, RN04); o valor é gravado explicitamente.",
+    ),
     start_s: float = typer.Option(
         None,
         help="Início do intervalo útil, em segundos (US-03). Omitido: detecção automática "
@@ -178,49 +201,141 @@ def load_video(
     preview: bool = typer.Option(True, help="Abrir janela de pré-visualização navegável."),
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Carrega um vídeo de trial, mostra os metadados e, se pedido, persiste (US-01, US-03)."""
-    try:
-        video = load_trial_video(path)
-    except VideoLoadError as exc:
-        typer.echo(f"Erro: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    _print_metadata(video)
-
-    try:
-        interval = build_trial_interval(
-            video, start_s=start_s, end_s=end_s, start_frame=start_frame, end_frame=end_frame
-        )
-    except TrialIntervalError as exc:
-        typer.echo(f"Erro no intervalo útil: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-
-    _print_interval(interval)
-
-    if experiment_id is not None and maze_config_id is not None:
-        with get_connection(dsn) as conn:
-            trial_id = insert_trial(
-                conn,
-                experiment_id=experiment_id,
-                maze_config_id=maze_config_id,
-                video=video,
-                phase=phase,
-                day_number=day,
-                trial_number_in_day=trial_in_day,
-                interval=interval,
+    """Carrega um vídeo de trial, mostra os metadados e, se pedido, persiste (US-01, US-03, US-05)."""
+    with _command_errors():
+        # Falhas de uso antes de ler o vídeo inteiro (Cenário 3: nada parcial no banco).
+        persist = experiment_id is not None or maze_config_id is not None
+        if persist and (experiment_id is None or maze_config_id is None):
+            raise ValueError(
+                "Para salvar o trial, informe --experiment-id e --maze-config-id juntos "
+                "(sem os dois, o vídeo só é inspecionado, nada é salvo)."
             )
-        typer.echo(f"Trial #{trial_id} salvo no banco.")
+        if persist and phase not in TRIAL_PHASES:
+            raise ValueError(f"--phase deve ser um de: {', '.join(TRIAL_PHASES)} (recebido {phase}).")
+
+        video = load_trial_video(path)
+        _print_metadata(video)
+
+        try:
+            interval = build_trial_interval(
+                video, start_s=start_s, end_s=end_s, start_frame=start_frame, end_frame=end_frame
+            )
+        except TrialIntervalError as exc:
+            typer.echo(f"Erro no intervalo útil: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+        _print_interval(interval)
+
+        if persist:
+            try:
+                with get_connection(dsn) as conn:
+                    trial_id = insert_trial(
+                        conn,
+                        experiment_id=experiment_id,
+                        maze_config_id=maze_config_id,
+                        video=video,
+                        phase=phase,
+                        day_number=day,
+                        trial_number_in_day=trial_in_day,
+                        rotation_deg=rotation_deg,
+                        interval=interval,
+                    )
+            except psycopg.errors.UniqueViolation as exc:
+                # trials.content_hash é UNIQUE: o trial é identificado pelo conteúdo (RN05).
+                raise ValueError(
+                    f"Este vídeo já foi carregado como trial (mesmo conteúdo, hash "
+                    f"{video.content_hash[:12]}…), possivelmente com outro nome de arquivo."
+                ) from exc
+            except psycopg.errors.ForeignKeyViolation as exc:
+                raise ValueError(
+                    f"Experimento #{experiment_id} ou montagem #{maze_config_id} não existe."
+                ) from exc
+            typer.echo(
+                f"Trial #{trial_id} salvo no banco (rotação da plataforma: {rotation_deg % 360:g}°)."
+            )
 
     if preview:
         _interactive_preview(video.path, frame_index)
 
 
+@trial_app.command("set-rotation")
+def set_rotation(
+    trial_id: int = typer.Argument(..., help="Id do trial."),
+    rotation_deg: float = typer.Argument(
+        ..., help="Rotação da plataforma, em graus (para negativos, use `--` antes do valor)."
+    ),
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Registra ou corrige a rotação da plataforma de um trial já carregado (US-05 RN01)."""
+    with _command_errors(), get_connection(dsn) as conn:
+        set_trial_rotation(conn, trial_id, rotation_deg)
+
+    typer.echo(f"Trial #{trial_id}: rotação da plataforma registrada em {rotation_deg % 360:g}°.")
+
+
+@trial_app.command("show")
+def show_trial(
+    trial_id: int = typer.Argument(..., help="Id do trial."),
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Mostra o buraco-alvo do trial nos referenciais da plataforma e da sala (US-05).
+
+    Recusa o trial sem rotação registrada em vez de assumir 0° (Cenário 3).
+    """
+    with _command_errors(), get_connection(dsn) as conn:
+        rotation_deg = require_rotations(get_trial_rotations(conn, [trial_id]))[trial_id]
+        maze_config_id = get_trial_maze_config_id(conn, trial_id)
+        geometry = get_maze_config(conn, maze_config_id)
+
+    target_hole = target_hole_for_trial(geometry, rotation_deg=rotation_deg)
+    target_angle = hole_to_room_angle(geometry, target_hole, rotation_deg=rotation_deg)
+
+    # RN05: cada valor identifica o referencial em que está expresso.
+    typer.echo(f"Trial #{trial_id} (montagem #{maze_config_id})")
+    typer.echo(f"Rotação da plataforma: {rotation_deg:g}°")
+    typer.echo(
+        f"Alvo [plataforma] {ReferenceFrame.PLATFORM.column('target_hole')}: buraco #{target_hole}"
+    )
+    typer.echo(f"Alvo [sala] {ReferenceFrame.ROOM.column('target_angle_deg')}: {target_angle:.1f}°")
+
+
+REFERENCE_HOLE_COLOR = (255, 0, 255)  # BGR magenta: buraco 0 = referência física (US-05)
+
+
 def _draw_geometry_overlay(frame: np.ndarray, geometry: MazeGeometry) -> np.ndarray:
-    """Desenha o círculo da plataforma, uma marca no centro e os buracos sobre uma cópia do quadro."""
+    """Desenha o círculo da plataforma, uma marca no centro e os buracos sobre uma cópia do quadro.
+
+    O buraco 0 ganha um anel, uma linha a partir do centro e o rótulo "ref":
+    ele precisa coincidir com o buraco físico de referência combinado com o
+    laboratório, que ancora o referencial da sala (US-05).
+    """
     canvas = frame.copy()
     center = (int(geometry.center_x_px), int(geometry.center_y_px))
     cv2.circle(canvas, center, int(geometry.platform_radius_px), (0, 255, 0), 1)
     cv2.drawMarker(canvas, center, (0, 255, 255), cv2.MARKER_CROSS, 16, 2)
+
+    reference = geometry.holes[0]
+    reference_center = (int(reference.x_px), int(reference.y_px))
+    cv2.line(canvas, center, reference_center, REFERENCE_HOLE_COLOR, 1)
+    cv2.circle(
+        canvas, reference_center, max(int(reference.radius_px), 1) + 4, REFERENCE_HOLE_COLOR, 2
+    )
+    # Rótulo para fora da plataforma, na direção radial, longe do número "0".
+    label_distance = geometry.platform_radius_px + reference.radius_px + 22
+    label_angle = math.radians(reference.angle_deg)
+    cv2.putText(
+        canvas,
+        "ref",
+        (
+            int(geometry.center_x_px + label_distance * math.cos(label_angle)) - 12,
+            int(geometry.center_y_px + label_distance * math.sin(label_angle)) + 5,
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        REFERENCE_HOLE_COLOR,
+        1,
+    )
+
     for hole in geometry.holes:
         color = (0, 0, 255) if hole.is_target else (255, 0, 0)
         cv2.circle(canvas, (int(hole.x_px), int(hole.y_px)), max(int(hole.radius_px), 1), color, -1)
@@ -237,10 +352,18 @@ def _draw_geometry_overlay(frame: np.ndarray, geometry: MazeGeometry) -> np.ndar
 
 
 MAX_INTERACTIVE_HOLE_COUNT = 30
+# Passo do ajuste do raio do buraco com '['/']'. Meio pixel: o raio é gravado
+# como DOUBLE PRECISION (migração 0005), e num vídeo em que o buraco tem ~8 px
+# de raio um passo de 1 px já seria ~12% do raio.
+HOLE_RADIUS_STEP_PX = 0.5
+MIN_HOLE_RADIUS_PX = 1.0
 
+# Uma instrução por linha: juntas, não cabem num quadro de 640 px. Sem acentos
+# porque as fontes Hershey do OpenCV não os desenham.
 _INSTRUCTIONS = (
-    "arraste = centro/raio/angulo | botao direito = marca alvo | "
-    "a = auto-detectar plataforma | +/- = N (agora {n}, max 30) | Enter/q confirma"
+    "arraste do centro ate o buraco de REFERENCIA fisica (vira o buraco 0 / ref)",
+    "botao direito = marca alvo | a = auto-detectar plataforma | Enter/q confirma",
+    "+/- = N (agora {n}, max 30) | [ ] = raio do buraco ({r:.1f} px)",
 )
 
 
@@ -276,7 +399,7 @@ def _detect_platform_circle(frame: np.ndarray) -> tuple[float, float, float] | N
     return float(x), float(y), float(radius)
 
 
-def _try_generate_geometry(state: dict, hole_radius_px: float) -> MazeGeometry | None:
+def _try_generate_geometry(state: dict) -> MazeGeometry | None:
     """Gera a geometria a partir do estado do mouse/teclado, ou None se inválida."""
     center_x_px, center_y_px = state["center"]
     try:
@@ -287,10 +410,39 @@ def _try_generate_geometry(state: dict, hole_radius_px: float) -> MazeGeometry |
             hole_count=state["hole_count"],
             start_angle_deg=state["start_angle"],
             target_hole_number=state["target"],
-            hole_radius_px=hole_radius_px,
+            hole_radius_px=state["hole_radius"],
         )
     except GeometryValidationError:
         return None
+
+
+def _apply_geometry_key(state: dict, key: int, frame: np.ndarray) -> bool:
+    """Aplica uma tecla da janela de ajuste ao estado; True = confirmar e fechar.
+
+    O raio do buraco ('['/']') é ajustável aqui porque não dá para derivá-lo
+    de `--hole-diameter-cm` na criação da montagem: a escala px→cm (US-02) só
+    é calibrada depois, sobre a montagem já criada. Ele precisa coincidir com
+    o buraco real no quadro, pois as zonas de proximidade (Épico D) e a região
+    "buraco" da anotação (US-06) são definidas em múltiplos dele (RN06).
+    """
+    if key in (ord("+"), ord("=")):
+        state["hole_count"] = min(state["hole_count"] + 1, MAX_INTERACTIVE_HOLE_COUNT)
+    elif key in (ord("-"), ord("_")):
+        state["hole_count"] = max(state["hole_count"] - 1, 3)
+    elif key == ord("]"):
+        state["hole_radius"] += HOLE_RADIUS_STEP_PX
+    elif key == ord("["):
+        state["hole_radius"] = max(state["hole_radius"] - HOLE_RADIUS_STEP_PX, MIN_HOLE_RADIUS_PX)
+    elif key == ord("a"):
+        detected = _detect_platform_circle(frame)
+        if detected is not None:
+            center_x, center_y, radius = detected
+            state["center"] = (center_x, center_y)
+            state["radius"] = radius
+    elif key in (13, ord("q"), 27):  # 13 = Enter, 27 = Esc
+        return True
+    state["target"] = min(state["target"], state["hole_count"] - 1)
+    return False
 
 
 def _adjust_geometry_interactively(
@@ -306,10 +458,11 @@ def _adjust_geometry_interactively(
 ) -> MazeGeometry:
     """Janela OpenCV para ajustar a geometria com o mouse (Cenário 1).
 
-    Arrastar o botão esquerdo do centro real até um buraco visível define
-    centro, raio e ângulo inicial de uma vez (o ângulo vem da direção do
-    arraste). Clicar com o botão direito perto de um buraco já desenhado
-    marca aquele buraco como alvo. Teclas '+'/'-' mudam N ao vivo. Tecla
+    Arrastar o botão esquerdo do centro real até o buraco físico de
+    referência (US-05) define centro, raio e ângulo inicial de uma vez (o
+    ângulo vem da direção do arraste) — esse buraco vira o buraco 0. Clicar com o botão direito perto de um buraco já desenhado
+    marca aquele buraco como alvo. Teclas '+'/'-' mudam N e '['/']' mudam o
+    raio do buraco ao vivo (ver `_apply_geometry_key`). Tecla
     'q'/Esc/Enter confirma e fecha a janela, retornando a última geometria
     válida exibida — combinações inválidas (ex.: N <= 2 durante o ajuste)
     simplesmente não substituem essa última geometria válida.
@@ -323,6 +476,7 @@ def _adjust_geometry_interactively(
         "start_angle": start_angle_deg,
         "hole_count": hole_count,
         "target": target_hole_number,
+        "hole_radius": max(hole_radius_px, MIN_HOLE_RADIUS_PX),
         "dragging": False,
     }
 
@@ -331,7 +485,7 @@ def _adjust_geometry_interactively(
     # não existe de fato no SO) — o teclado funciona porque passa por
     # waitKey, não por esse hook. Por isso mostramos um primeiro quadro e
     # damos um waitKey(1) para "realizar" a janela antes de registrar.
-    geometry = _try_generate_geometry(state, hole_radius_px)
+    geometry = _try_generate_geometry(state)
     canvas = _draw_geometry_overlay(frame, geometry) if geometry is not None else frame.copy()
     cv2.imshow(window, canvas)
     cv2.waitKey(1)
@@ -347,7 +501,7 @@ def _adjust_geometry_interactively(
         elif event == cv2.EVENT_LBUTTONUP:
             state["dragging"] = False
         elif event == cv2.EVENT_RBUTTONDOWN:
-            candidate = _try_generate_geometry(state, hole_radius_px)
+            candidate = _try_generate_geometry(state)
             if candidate is not None:
                 nearest = min(
                     candidate.holes, key=lambda h: math.hypot(h.x_px - x, h.y_px - y)
@@ -358,34 +512,24 @@ def _adjust_geometry_interactively(
     cv2.setMouseCallback(window, on_mouse)
     while True:
         key = cv2.waitKey(30) & 0xFF
-        if key in (ord("+"), ord("=")):
-            state["hole_count"] = min(state["hole_count"] + 1, MAX_INTERACTIVE_HOLE_COUNT)
-        elif key in (ord("-"), ord("_")):
-            state["hole_count"] = max(state["hole_count"] - 1, 3)
-        elif key == ord("a"):
-            detected = _detect_platform_circle(frame)
-            if detected is not None:
-                center_x, center_y, radius = detected
-                state["center"] = (center_x, center_y)
-                state["radius"] = radius
-        elif key in (13, ord("q"), 27):  # 13 = Enter, 27 = Esc
+        if _apply_geometry_key(state, key, frame):
             break
-        state["target"] = min(state["target"], state["hole_count"] - 1)
 
-        candidate = _try_generate_geometry(state, hole_radius_px)
+        candidate = _try_generate_geometry(state)
         if candidate is not None:
             geometry = candidate
 
         canvas = _draw_geometry_overlay(frame, geometry) if geometry is not None else frame.copy()
-        cv2.putText(
-            canvas,
-            _INSTRUCTIONS.format(n=state["hole_count"]),
-            (10, canvas.shape[0] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            (0, 255, 255),
-            1,
-        )
+        for line_index, line in enumerate(reversed(_INSTRUCTIONS)):
+            cv2.putText(
+                canvas,
+                line.format(n=state["hole_count"], r=state["hole_radius"]),
+                (10, canvas.shape[0] - 10 - 18 * line_index),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 255, 255),
+                1,
+            )
         cv2.imshow(window, canvas)
 
     cv2.destroyWindow(window)
@@ -419,11 +563,20 @@ def create_maze(
     hole_count: int = typer.Option(
         20, help="Número de buracos, N (> 2). Ajustável com +/- no modo interativo."
     ),
-    start_angle_deg: float = typer.Option(0.0, help="Ângulo do buraco de índice 0, em graus."),
+    start_angle_deg: float = typer.Option(
+        0.0,
+        help="Ângulo do buraco de índice 0, em graus. O buraco 0 deve ser o buraco físico de "
+        "referência combinado com o laboratório (US-05) — ele ancora o referencial da sala.",
+    ),
     target_hole_number: int = typer.Option(
         0, help="Índice do buraco-alvo, 0..N-1. Ajustável clicando com o botão direito."
     ),
-    hole_radius_px: float = typer.Option(15.0, help="Raio de cada buraco, em pixels."),
+    hole_radius_px: float = typer.Option(
+        15.0,
+        help="Raio de cada buraco, em pixels — base das zonas de proximidade (RN06). No modo "
+        "interativo é só o valor inicial: ajuste com [ e ] até cobrir o buraco real; com "
+        "--no-interactive, meça no quadro e informe.",
+    ),
     frame_index: int = typer.Option(0, help="Quadro do vídeo de referência usado no overlay."),
     interactive: bool = typer.Option(True, help="Abrir janela OpenCV para ajuste antes de confirmar."),
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
@@ -438,7 +591,8 @@ def create_maze(
         raise typer.Exit(code=1)
 
     if interactive:
-        frame = read_frame(reference_frame, frame_index)
+        with _command_errors():
+            frame = read_frame(reference_frame, frame_index)
         height, width = frame.shape[:2]
         if center_x is None:
             center_x = width / 2
@@ -463,28 +617,35 @@ def create_maze(
             raise typer.Exit(code=1) from exc
         geometry = None  # o operador corrige arrastando o mouse na janela
 
-    if interactive:
-        geometry = _adjust_geometry_interactively(
-            frame,
-            center_x_px=center_x,
-            center_y_px=center_y,
-            platform_radius_px=platform_radius_px,
-            hole_count=hole_count,
-            start_angle_deg=start_angle_deg,
-            target_hole_number=target_hole_number,
-            hole_radius_px=hole_radius_px,
-        )
+    with _command_errors():
+        if interactive:
+            geometry = _adjust_geometry_interactively(
+                frame,
+                center_x_px=center_x,
+                center_y_px=center_y,
+                platform_radius_px=platform_radius_px,
+                hole_count=hole_count,
+                start_angle_deg=start_angle_deg,
+                target_hole_number=target_hole_number,
+                hole_radius_px=hole_radius_px,
+            )
 
-    with get_connection(dsn) as conn:
-        maze_config_id = insert_maze_config(
-            conn,
-            experiment_id=experiment_id,
-            name=name,
-            arena_diameter_cm=arena_diameter_cm,
-            hole_diameter_cm=hole_diameter_cm,
-            geometry=geometry,
-        )
-    typer.echo(f"Montagem #{maze_config_id} salva no banco ({geometry.hole_count} buracos).")
+        try:
+            with get_connection(dsn) as conn:
+                maze_config_id = insert_maze_config(
+                    conn,
+                    experiment_id=experiment_id,
+                    name=name,
+                    arena_diameter_cm=arena_diameter_cm,
+                    hole_diameter_cm=hole_diameter_cm,
+                    geometry=geometry,
+                )
+        except psycopg.errors.ForeignKeyViolation as exc:
+            raise ValueError(f"Experimento #{experiment_id} não existe.") from exc
+    typer.echo(
+        f"Montagem #{maze_config_id} salva no banco ({geometry.hole_count} buracos, "
+        f"raio do buraco {geometry.holes[0].radius_px:.1f} px)."
+    )
 
 
 @maze_app.command("show")
@@ -493,18 +654,21 @@ def show_maze(
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
     """Carrega uma montagem do banco e imprime sua geometria, sem interação (RN05)."""
-    with get_connection(dsn) as conn:
+    with _command_errors(), get_connection(dsn) as conn:
         geometry = get_maze_config(conn, maze_config_id)
 
     typer.echo(f"Centro: ({geometry.center_x_px}, {geometry.center_y_px}) px")
     typer.echo(f"Raio da plataforma: {geometry.platform_radius_px} px")
     typer.echo(f"N buracos: {geometry.hole_count}")
+    typer.echo(f"Raio do buraco: {geometry.holes[0].radius_px:.1f} px")
     typer.echo(f"Alvo: buraco #{geometry.target_hole.hole_number}")
+    typer.echo("Buraco 0 = buraco físico de referência; ângulos de sala com rotação 0° (US-05).")
     for hole in geometry.holes:
-        marker = " (ALVO)" if hole.is_target else ""
+        markers = (" (REF)" if hole.hole_number == 0 else "") + (" (ALVO)" if hole.is_target else "")
+        room_angle = hole_to_room_angle(geometry, hole.hole_number, rotation_deg=0.0)
         typer.echo(
-            f"  #{hole.hole_number}: angulo={hole.angle_deg:.1f} "
-            f"pos=({hole.x_px:.1f}, {hole.y_px:.1f}){marker}"
+            f"  #{hole.hole_number}: angulo [imagem]={hole.angle_deg:.1f} "
+            f"[sala]={room_angle:.1f} pos=({hole.x_px:.1f}, {hole.y_px:.1f}){markers}"
         )
 
 
@@ -519,10 +683,22 @@ MazeConfigId = Annotated[
 
 @contextmanager
 def _command_errors():
+    """Traduz os erros esperados de um comando em mensagem + código de saída, sem traceback.
+
+    Usado por todos os comandos: um erro de operação (vídeo ilegível, trial
+    inexistente, banco fora do ar) nunca deve aparecer como traceback do Python.
+    """
     try:
         yield
     except typer.Exit:
         raise
+    except DatabaseConfigError as exc:
+        # A mensagem só explica como configurar; não contém a string de conexão.
+        typer.echo(f"Erro: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except GeometryValidationError as exc:
+        typer.echo(f"Erro no parâmetro '{exc.field}': {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     except CalibrationCancelled as exc:
         typer.echo(f"Cancelado: {exc}", err=True)
         raise typer.Exit(code=130) from exc
@@ -658,9 +834,20 @@ def _read_trajectory(path: Path) -> tuple[list[tuple[float, float]], list[float]
 @metrics_app.command("process")
 def process(
     video: Video,
-    trajectory: Annotated[Path, typer.Option("--trajectory", help="CSV com x_px,y_px,time_s.")],
+    trajectory: Annotated[
+        Path,
+        typer.Option(
+            "--trajectory", help="CSV com x_px,y_px,time_s (time_s desde o início do vídeo)."
+        ),
+    ],
     trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
-    maze_config_id: MazeConfigId,
+    maze_config_id: Annotated[
+        int | None,
+        typer.Option(
+            "--maze-config-id",
+            help="Opcional: a montagem vem do próprio trial; se informada, precisa ser a dele.",
+        ),
+    ] = None,
     frame: Frame = 0,
     ideal_distance_px: Annotated[
         float | None,
@@ -670,20 +857,44 @@ def process(
     ] = None,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Calcular métricas de uma trajetória já extraída e registrar a escala usada (RN03/RN05)."""
+    """Calcular métricas de uma trajetória já extraída e registrar a escala usada (RN03/RN05).
+
+    Usa a montagem do próprio trial e só as amostras dentro do intervalo útil
+    gravado nele (US-03 RN02).
+    """
     with _command_errors():
-        # Sem escala, nem o vídeo é decodificado nem o CSV é lido.
+        # Sem trial válido, intervalo ou escala, nem o vídeo é decodificado nem o CSV é lido.
         with get_connection(dsn) as conn:
-            calibration = require_calibration(conn, maze_config_id)
+            stored = get_trial(conn, trial)
+            if maze_config_id is not None and maze_config_id != stored.maze_config_id:
+                raise ValueError(
+                    f"O trial #{trial} é da montagem #{stored.maze_config_id}, não da "
+                    f"#{maze_config_id}: a escala de outra montagem não vale para ele. "
+                    "Omita --maze-config-id."
+                )
+            if stored.interval is None:
+                raise ValueError(
+                    f"O trial #{trial} não tem intervalo útil registrado (US-03), então não dá "
+                    "para garantir que nada fora dele entre nas métricas. Recarregue o vídeo "
+                    "com `barnes video load`."
+                )
+            calibration = require_calibration(conn, stored.maze_config_id)
         reference = read_frame(video, frame)
+        frame_size = (reference.shape[1], reference.shape[0])
+        if frame_size != (stored.width_px, stored.height_px):
+            raise ValueError(
+                f"O vídeo informado tem resolução {frame_size}, mas o trial #{trial} foi "
+                f"gravado em {(stored.width_px, stored.height_px)}: confira --video."
+            )
         # Resolução incompatível também falha antes de ler o CSV da trajetória inteiro.
-        validate_frame_size(calibration, (reference.shape[1], reference.shape[0]))
+        validate_frame_size(calibration, frame_size)
         points, times = _read_trajectory(trajectory)
         metrics = process_trial(
             calibration.cm_per_px,
             points,
             times,
-            frame_size=(reference.shape[1], reference.shape[0]),
+            frame_size=frame_size,
+            interval=stored.interval,
             ideal_distance_px=ideal_distance_px,
         )
         with get_connection(dsn) as conn:

@@ -161,11 +161,13 @@ escala da montagem (RN05) e invalida os resultados calculados com a escala
 anterior — eles ficam no banco, mas marcados como obsoletos até reprocessar.
 
 O processamento disponível recebe uma trajetória existente em CSV com as
-colunas `x_px,y_px,time_s`. A inferência automática de trajetória a partir do
-vídeo permanece nas demais histórias do projeto.
+colunas `x_px,y_px,time_s` (`time_s` desde o início do vídeo). A montagem e o
+intervalo útil (US-03) vêm do próprio trial, e só as amostras dentro do
+intervalo entram nas métricas. A inferência automática de trajetória a partir
+do vídeo permanece nas demais histórias do projeto.
 
 ```bash
-uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1 --maze-config-id 1
+uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1
 uv run barnes metrics executions --trial 1
 ```
 

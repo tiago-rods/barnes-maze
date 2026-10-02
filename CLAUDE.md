@@ -17,6 +17,11 @@ feature; `docs/revisao-cards.md` records team decisions that **narrow**
 those cards (e.g. MP4-only support for US-01, Postgres over SQLite).
 `docs/DER.md` is the Postgres ER diagram (Mermaid) the schema is derived
 from — update it whenever `database/migrations/` changes.
+`docs/ROTEIRO-DEMONSTRACAO.md` is the PowerShell end-to-end script for the
+client demo (US-01..US-06, on a separate `barnes_demo` database); the team
+also uses it as the manual acceptance run. Whenever a `barnes` command's
+options, messages or behavior change, update the matching step there too —
+it breaks silently otherwise.
 
 ## Commands
 
@@ -27,6 +32,11 @@ certificate error, add `--native-tls`.
 uv sync                              # install deps
 uv sync --extra pose                 # + SLEAP (read pyproject.toml warning first)
 uv sync --extra anotacao             # + sleap-io, reads SLEAP .slp files, no CUDA (US-06)
+    # NB: sleap-io 0.9.x's wheel installs its own top-level `tests` package into
+    # site-packages, which shadows this repo's `tests/` (no __init__.py) for any
+    # `import tests.…` outside pytest. pytest is unaffected (--import-mode=importlib);
+    # scripts needing a test helper must put the folder on sys.path instead
+    # (e.g. `sys.path.insert(0, 'tests/io'); from test_trim import …`).
 uv sync --extra longitudinal         # + DTW/Fréchet (US-24)
 
 uv run pytest                        # full suite
@@ -36,13 +46,17 @@ uv run pytest tests/db/ -v           # DB integration tests — see below
 uv run ruff check src/ tests/        # lint (line-length 100, py311 target)
 
 uv run barnes video load PATH [--experiment-id N --maze-config-id N \
-    --phase acquisition --day 1 --trial-in-day 1] [--no-preview]
+    --phase acquisition --day 1 --trial-in-day 1 --rotation-deg 0] [--no-preview]
+uv run barnes trial set-rotation ID DEG   # US-05; negatives need `--` first
+uv run barnes trial show ID          # target hole in platform + room frames
 uv run barnes db migrate             # apply pending database/migrations/*.sql
 
 uv run barnes maze create --experiment-id N --name NAME \
     --reference-frame PATH --arena-diameter-cm X --hole-diameter-cm Y
-    # interactive OpenCV window: drag = center/radius/angle, right-click =
-    # mark target hole, 'a' = auto-detect platform circle, +/- = N (max 30);
+    # interactive OpenCV window: drag center -> physical reference hole =
+    # center/radius/angle (that hole becomes hole 0), right-click =
+    # mark target hole, 'a' = auto-detect platform circle, +/- = N (max 30),
+    # [ ] = hole radius (0.5 px steps; base of proximity zones, US-04 RN06);
     # --no-interactive requires --center-x/--center-y/--platform-radius-px
 uv run barnes maze show ID           # reapply a saved montagem, no interaction
 
@@ -51,7 +65,7 @@ uv run barnes maze show ID           # reapply a saved montagem, no interaction
 uv run barnes scale calibrate --video PATH --maze-config-id N [--length-1-cm X --length-2-cm Y]
 uv run barnes scale verify --video PATH --maze-config-id N [--length-cm Z]   # error must be < 3%
 uv run barnes scale show --maze-config-id N
-uv run barnes metrics process --video PATH --trajectory CSV --trial N --maze-config-id N
+uv run barnes metrics process --video PATH --trajectory CSV --trial N   # montagem + interval from the trial
 
 # US-06 (pose annotation set; files under data/annotations/, nothing in the DB)
 uv run barnes pose sample --video PATH --maze-config-id N [--start-frame F --end-frame F] [--overwrite]
@@ -114,6 +128,39 @@ under it) — deliberate, not an oversight. Enumerated fields (`phase`,
 by the application, not the database. `trials.content_hash` is `UNIQUE` —
 a trial is identified by file content, not by path, so the same recording
 can't be loaded twice under a different name (see US-01/US-27 below).
+`trials.rotation_deg` (US-05, migration `0004`) is nullable with **no
+DEFAULT** on purpose: NULL means "not registered" and longitudinal
+analysis must refuse the trial, never assume 0°. Migration numbering has a
+historical duplicate (`0002_trial_interval_manual_flag` and
+`0002_us02_calibration`) — harmless because `schema_migrations` tracks by
+filename; don't rename them (already-migrated DBs would re-apply), just keep
+numbering forward. Pixel coordinates/radii (`maze_configs.center_*_px`,
+`holes.x_px/y_px/radius_px`) are DOUBLE PRECISION since `0005` (were INTEGER).
+
+The US-03 useful interval is persisted on the trial **and read back**:
+`db.trials.get_trial` rebuilds it (via `io.trim.interval_from_seconds`, the
+single seconds→frame conversion), and `metrics.process_trial` takes it as a
+**required** argument and drops samples outside it (RN02). Trajectory
+`time_s` is seconds from the start of the video file. `metrics process`
+takes the montagem from the trial itself, never from a free
+`--maze-config-id`. Any new pipeline stage must do the same: read the trial,
+apply its interval upstream.
+
+### Reference frames (US-05)
+
+`src/barnes/geometry/reference_frame.py` converts between three angular
+frames, all sharing `holes.py`'s convention (0° = +x, clockwise on screen):
+image (`holes.angle_deg`, camera-dependent), platform (`hole_number`) and
+room (`(k·360/N + rotation) mod 360`). Hole 0 of **every** montagem must be
+the lab's agreed **physical reference hole** — the camera only sees the
+platform from above (no wall landmark), and the platform doesn't rotate
+(B4), so that hole anchors the room frame. A moved camera means a new
+`maze_configs` row dragged to the same physical hole; room angles stay
+comparable across montagens. Any analysis comparing trials (US-24, US-26,
+cross-trial visit sequences) must work in the room frame and go through
+`require_rotations()` first, which raises `MissingRotationError` listing
+every trial without rotation. Output columns carrying a position must end
+in `ReferenceFrame` suffixes (`_image`/`_platform`/`_room`, RN05).
 
 US-02's px->cm scale (`maze_configs.px_per_10cm`/`calibration_date`/
 `measured_error_pct`/`calibration_segments`/`calibration_reference_*`) and
@@ -176,11 +223,12 @@ via `uv run python -m database.seeds.<name>` from the repo root, never as a
 
 `src/barnes/{io,geometry,pose,events,metrics,strategy,longitudinal,stats,report,db}/`
 — each corresponds to both a project epic and a pipeline stage. `io`
-(US-01), `geometry` (US-04) and `io/calibration.py`/`metrics` (US-02, scale
-and the distance/speed/route-efficiency conversions it gates) are
-implemented; `pose` has only the US-06 annotation tooling (no model or
-inference yet — that is US-07+); `events`/`strategy`/`longitudinal`/`stats`/
-`report` are still empty `__init__.py` stubs pending their user story.
+(US-01), `geometry` (US-04, plus US-05 reference frames) and
+`io/calibration.py`/`metrics` (US-02, scale and the
+distance/speed/route-efficiency conversions it gates) are implemented;
+`pose` has only the US-06 annotation tooling (no model or inference yet —
+that is US-07+); `events`/`strategy`/`longitudinal`/`stats`/`report` are
+still empty `__init__.py` stubs pending their user story.
 
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
 tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because

@@ -95,3 +95,69 @@ Descobrir na semana 8 que quem respondeu não era quem decide é caro (C6).
 
 **Enquanto esta seção estiver em branco, o escopo não está congelado e os
 critérios de aceite da seção 10 da definição não podem ser fixados.**
+
+## 6. Referenciais e rotação da plataforma (US-05)
+
+Fixa em que referencial cada posição angular é expressa. Sem isso, comparar
+trials (sequência de visitação, DTW/Fréchet da US-24, probe e palpites da
+US-26) compara índices de buraco, que não significam a mesma posição física
+se a plataforma girar ou a câmera mudar de lugar.
+
+### 6.1 Pergunta B4: a plataforma é rotacionada entre trials?
+
+| | |
+|---|---|
+| Resposta | **Não.** O LNBio não rotaciona a plataforma. |
+| Respondido por | _a preencher_ |
+| Data | _a preencher_ |
+
+Consequência (US-05 RN04): a rotação de todo trial é gravada como **0°**,
+explicitamente (`barnes video load` usa `--rotation-deg 0` por padrão), e a
+conversão entre plataforma e sala vira identidade. A coluna
+`trials.rotation_deg` e o caminho de código continuam existindo: se o
+protocolo mudar, basta informar a rotação real de cada trial.
+
+Ausência de valor **não** é 0°: um trial sem rotação registrada (por
+exemplo, carregado antes da US-05) é recusado por toda análise longitudinal,
+com o id do trial na mensagem (US-05 RN01, Cenário 3).
+
+### 6.2 Buraco físico de referência
+
+A câmera filma a plataforma de cima e não enxerga nenhum marco fixo da sala.
+Como a plataforma não gira, os próprios buracos são fixos na sala: um deles é
+escolhido como **buraco de referência** e passa a ser o buraco 0 de **toda**
+montagem.
+
+| | |
+|---|---|
+| Buraco de referência | _a definir com o laboratório (ex.: buraco marcado com fita, ou o mais próximo da porta)_ |
+| Como identificá-lo no vídeo | _a preencher_ |
+
+Se a câmera for deslocada entre dias, cria-se uma montagem nova, arrastando
+de novo até o mesmo buraco físico. Os ângulos de sala continuam comparáveis
+entre as montagens.
+
+### 6.3 Os três referenciais
+
+Todos usam a mesma convenção angular: 0° apontando para a direita da imagem
+(+x) e ângulos crescendo no sentido horário na tela.
+
+| Referencial | Sufixo nas saídas | O que é | Muda com |
+|---|---|---|---|
+| Imagem | `_image` | Ângulo do buraco no quadro do vídeo (`holes.angle_deg`) | Posição da câmera |
+| Plataforma | `_platform` | Índice do buraco, 0 a N−1 (0 = buraco de referência) | Nada, é o próprio buraco |
+| Sala | `_room` | Ângulo fixo na sala, com 0° no buraco de referência em repouso | Nada, é fixo na sala |
+
+```
+sala(k) = (k · 360/N + rotação) mod 360
+```
+
+A rotação é positiva no mesmo sentido da numeração dos buracos. O buraco-alvo
+é marcado com a plataforma em repouso, então sua posição na sala é fixa.
+
+### 6.4 Identificação nas saídas (US-05 RN05)
+
+Toda coluna que carrega uma posição traz no nome o sufixo do referencial em
+que está expressa, por exemplo `target_hole_platform` e
+`target_angle_deg_room`. Uma coluna de posição sem sufixo é um erro de
+exportação.

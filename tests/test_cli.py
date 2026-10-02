@@ -21,6 +21,7 @@ from barnes.db.connection import get_connection
 from barnes.db.trial_results import get_trial_result
 from barnes.db.trials import insert_trial
 from barnes.io.calibration_ui import CalibrationCancelled
+from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
 
 pytestmark = pytest.mark.skipif(
@@ -93,8 +94,7 @@ def maze_config_id():
         conn.close()
 
 
-@pytest.fixture
-def trial_id(maze_config_id, video):
+def _insert_trial(maze_config_id, video, interval):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -108,11 +108,22 @@ def trial_id(maze_config_id, video):
             phase="acquisition",
             day_number=1,
             trial_number_in_day=1,
+            rotation_deg=0.0,
+            interval=interval,
         )
         conn.commit()
         return result
     finally:
         conn.close()
+
+
+@pytest.fixture
+def trial_id(maze_config_id, video):
+    # Intervalo útil de 0 s a 4 s: cobre as trajetórias dos testes (tempos 0, 2 e 4).
+    # O vídeo sintético é mais curto, mas aqui só importa o intervalo gravado no trial.
+    return _insert_trial(
+        maze_config_id, video, interval_from_seconds(0.0, 4.0, 10.0, manually_adjusted=True)
+    )
 
 
 @pytest.fixture
@@ -171,6 +182,12 @@ def test_cli_full_flow_reuse_verification_and_recalibration(args, maze_config_id
     with get_connection() as conn:
         assert get_calibration(conn, maze_config_id).measured_error_pct == pytest.approx(0, abs=1)
 
+    # O verify acima trocou a simulação por um segmento só; a calibração precisa de dois.
+    monkeypatch.setattr(
+        cli,
+        "collect_segments",
+        lambda *a, **k: (((10, 10), (210, 10)), ((10, 30), (10, 230))),
+    )
     calibrate(args, length="40")  # recalibra a mesma montagem
     with get_connection() as conn:
         assert get_trial_result(conn, trial_id).is_stale  # calculado com a escala anterior
@@ -212,6 +229,56 @@ def test_process_without_scale_fails_before_opening_video(maze_config_id, trial_
     )
     assert result.exit_code == 2
     assert "exige calibração" in result.output
+
+
+def _process(args, trial_id, trajectory):
+    return runner.invoke(
+        cli.app,
+        ["metrics", "process", *args, "--trial", str(trial_id), "--trajectory", str(trajectory)],
+    )
+
+
+def test_process_ignores_samples_outside_useful_interval(args, trial_id, tmp_path):
+    # US-03 RN02: a amostra em 10 s está depois do fim do intervalo (4 s) e não entra.
+    calibrate(args)
+    trajectory = tmp_path / "trajectory.csv"
+    trajectory.write_text(
+        "x_px,y_px,time_s\n10,10,0\n40,50,2\n70,90,4\n600,400,10\n", encoding="utf-8"
+    )
+    result = _process(args, trial_id, trajectory)
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    metrics = json.loads(result.output)
+    assert metrics["distance_cm"] == pytest.approx(10)
+    assert metrics["samples_outside_interval"] == 1
+    assert (metrics["interval_start_s"], metrics["interval_end_s"]) == (0.0, 4.0)
+
+
+def test_process_refuses_scale_of_another_montagem(video, maze_config_id, trial_id, tmp_path):
+    other = maze_config_id + 100_000  # qualquer id diferente da montagem do trial
+    result = runner.invoke(
+        cli.app,
+        [
+            "metrics", "process",
+            "--video", str(video),
+            "--maze-config-id", str(other),
+            "--trial", str(trial_id),
+            "--trajectory", str(tmp_path / "unused.csv"),
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 1
+    assert f"montagem #{maze_config_id}" in result.output
+    with get_connection() as conn:
+        assert get_trial_result(conn, trial_id) is None
+
+
+def test_process_refuses_trial_without_useful_interval(args, maze_config_id, tmp_path):
+    calibrate(args)
+    other_video = tmp_path / "sem_intervalo.mp4"
+    _write_video(other_video, frame_count=5)  # outro conteúdo: content_hash é UNIQUE
+    trial_without_interval = _insert_trial(maze_config_id, other_video, interval=None)
+    result = _process(args, trial_without_interval, tmp_path / "unused.csv")
+    assert result.exit_code == 1
+    assert "intervalo útil" in result.output
 
 
 def test_cancelled_calibration_creates_no_scale(args, maze_config_id, monkeypatch):

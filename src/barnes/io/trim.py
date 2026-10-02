@@ -63,6 +63,25 @@ def _frame_at(seconds: float, fps_real: float) -> int:
     return round(seconds * fps_real)
 
 
+def interval_from_seconds(
+    start_s: float, end_s: float, fps_real: float, *, manually_adjusted: bool
+) -> TrialInterval:
+    """Monta um `TrialInterval` a partir dos limites em segundos, derivando os quadros.
+
+    Ponto único da conversão segundos → quadro: usado na resolução do
+    intervalo (`build_trial_interval`) e na releitura do intervalo gravado no
+    trial (`barnes.db.trials.get_trial`), para que os dois cheguem aos mesmos
+    quadros. Não valida contra a duração do vídeo — isso é feito na resolução.
+    """
+    return TrialInterval(
+        start_s=start_s,
+        end_s=end_s,
+        start_frame=_frame_at(start_s, fps_real),
+        end_frame=_frame_at(end_s, fps_real),
+        manually_adjusted=manually_adjusted,
+    )
+
+
 def detect_release_time(path: str, *, capture_factory=cv2.VideoCapture) -> float | None:
     """Estima o instante de soltura do animal por detecção de movimento (RN03).
 
@@ -204,12 +223,8 @@ def build_trial_interval(
             f"({resolved_start_s:.3f}s)."
         )
 
-    return TrialInterval(
-        start_s=resolved_start_s,
-        end_s=resolved_end_s,
-        start_frame=_frame_at(resolved_start_s, video.fps_real),
-        end_frame=_frame_at(resolved_end_s, video.fps_real),
-        manually_adjusted=manually_adjusted,
+    return interval_from_seconds(
+        resolved_start_s, resolved_end_s, video.fps_real, manually_adjusted=manually_adjusted
     )
 
 

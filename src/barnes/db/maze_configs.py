@@ -106,11 +106,10 @@ def get_maze_config(conn: psycopg.Connection, maze_config_id: int) -> MazeGeomet
     esta função retorna só a geometria, para não acoplar `geometry` à
     leitura de calibração (US-02).
 
-    Nota de precisão: `center_x_px`/`center_y_px` (`maze_configs`) e
-    `x_px`/`y_px`/`radius_px` (`holes`) são `INTEGER` no schema — o valor
-    lido de volta é arredondado para o pixel mais próximo em relação ao que
-    foi gerado por `generate_holes`. `angle_deg` e `platform_radius_px` são
-    `DOUBLE PRECISION` e mantêm a precisão original.
+    Todas as coordenadas e raios em pixel são `DOUBLE PRECISION` (desde a
+    migração 0005; antes, centro e buracos eram `INTEGER` e voltavam
+    arredondados), então a geometria lida é a mesma gerada por
+    `generate_holes`.
 
     Args:
         conn: Conexão psycopg aberta.
