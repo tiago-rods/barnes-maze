@@ -288,7 +288,7 @@ def _adjust_geometry_interactively(
     simplesmente não substituem essa última geometria válida.
     """
     window = "Ajuste da geometria - Barnes"
-    cv2.namedWindow(window)
+    cv2.namedWindow(window, cv2.WINDOW_AUTOSIZE)
 
     state = {
         "center": (center_x_px, center_y_px),
@@ -298,6 +298,16 @@ def _adjust_geometry_interactively(
         "target": target_hole_number,
         "dragging": False,
     }
+
+    # No backend win32 do OpenCV, registrar o mouse callback antes do
+    # primeiro imshow pode não vincular à superfície da janela (ela ainda
+    # não existe de fato no SO) — o teclado funciona porque passa por
+    # waitKey, não por esse hook. Por isso mostramos um primeiro quadro e
+    # damos um waitKey(1) para "realizar" a janela antes de registrar.
+    geometry = _try_generate_geometry(state, hole_radius_px)
+    canvas = _draw_geometry_overlay(frame, geometry) if geometry is not None else frame.copy()
+    cv2.imshow(window, canvas)
+    cv2.waitKey(1)
 
     def on_mouse(event: int, x: int, y: int, _flags: int, _param: object) -> None:
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -319,8 +329,6 @@ def _adjust_geometry_interactively(
                     state["target"] = nearest.hole_number
 
     cv2.setMouseCallback(window, on_mouse)
-
-    geometry = _try_generate_geometry(state, hole_radius_px)
     while True:
         key = cv2.waitKey(30) & 0xFF
         if key in (ord("+"), ord("=")):
@@ -524,9 +532,9 @@ def calibrate(
             # Valida que a montagem existe antes de abrir a janela e pedir os cliques.
             get_calibration(conn, maze_config_id)
         reference = read_frame(video, frame)
+        first, second = collect_segments(reference)
         length_a = _length(length_1_cm, "Comprimento real do segmento 1 (cm)")
         length_b = _length(length_2_cm, "Comprimento real do segmento 2 (cm)")
-        first, second = collect_segments(reference)
         result = calculate_calibration([Segment(*first, length_a), Segment(*second, length_b)])
         with get_connection(dsn) as conn:
             save_calibration(

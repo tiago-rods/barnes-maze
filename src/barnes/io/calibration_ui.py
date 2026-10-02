@@ -93,6 +93,11 @@ def collect_segments(
 
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
         created = True
+        # No backend win32 do OpenCV, registrar o mouse callback antes do
+        # primeiro imshow pode não vincular à superfície da janela (ver
+        # mesmo ajuste em cli.py:_adjust_geometry_interactively).
+        cv2.imshow(window_name, preview)
+        cv2.waitKey(1)
         cv2.setMouseCallback(window_name, on_mouse)
         while True:
             display = preview.copy()
