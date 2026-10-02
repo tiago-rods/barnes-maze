@@ -89,7 +89,116 @@ Extras opcionais:
 
 ```bash
 uv sync --extra pose          # SLEAP — ler o aviso no pyproject.toml antes
+uv sync --extra anotacao      # leitor do .slp do SLEAP (sleap-io), sem CUDA (US-06)
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
+```
+
+## Uso
+
+Carregar um vídeo de trial e ver os metadados (US-01):
+
+```bash
+uv run barnes video load "data/OF_Animal_22_240919.mp4"
+```
+
+Mostra resolução, fps real medido (não o do cabeçalho do contêiner), duração,
+número de quadros e o hash do arquivo, e abre uma janela navegável entre
+quadros (`n`/`d` = próximo, `p`/`a` = anterior, `q`/Esc = fechar) — útil
+porque o primeiro quadro pode estar obstruído.
+
+Para também persistir o trial em `trials` (exige um `experiment` e um
+`maze_config` já cadastrados):
+
+```bash
+uv run barnes video load "data/OF_Animal_22_240919.mp4" \
+    --experiment-id 1 --maze-config-id 1 \
+    --phase acquisition --day 1 --trial-in-day 1
+```
+
+Use `--no-preview` para rodar sem abrir janela (scripts, CI).
+
+## Banco de dados
+
+O schema (Postgres puro, sem ORM) mora em `database/migrations/`, gerado a
+partir de `docs/DER.md`.
+
+Para desenvolvimento local, suba um Postgres descartável com Docker Compose:
+
+```bash
+docker compose up -d
+export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
+uv run barnes db migrate
+```
+
+(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL`.)
+
+Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
+ordem e registrados em `schema_migrations` — rodar o comando de novo não
+reaplica o que já foi feito. Alterações de schema viram um novo arquivo
+`NNNN_descricao.sql`, nunca uma edição do anterior.
+
+O acesso ao banco em `src/barnes/db/` usa `psycopg` diretamente (sem ORM):
+schema explícito em SQL, consistente com a regra de que geometria e limiares
+são configuração, não abstração escondida em código.
+
+## Calibração px → cm (US-02)
+
+A calibração usa dois segmentos conhecidos, marcados em uma janela OpenCV, e
+salva a escala direto na montagem (`maze_configs`, no mesmo Postgres do
+resto do projeto — sem banco separado). Use `--maze-config-id` com o id de
+uma montagem já criada por `barnes maze create`.
+
+```bash
+uv run barnes scale calibrate --video data/raw/trial.mp4 --maze-config-id 1 --length-1-cm 20 --length-2-cm 20
+uv run barnes scale verify --video data/raw/trial.mp4 --maze-config-id 1 --length-cm 15
+uv run barnes scale show --maze-config-id 1
+```
+
+Clique nas quatro extremidades em ordem, dois pontos por segmento, e confirme
+com Enter. Para verificar a exatidão, marque uma terceira distância independente;
+o erro aceito é estritamente menor que 3%. Uma recalibração sobrescreve a
+escala da montagem (RN05) e invalida os resultados calculados com a escala
+anterior — eles ficam no banco, mas marcados como obsoletos até reprocessar.
+
+O processamento disponível recebe uma trajetória existente em CSV com as
+colunas `x_px,y_px,time_s` (`time_s` desde o início do vídeo). A montagem e o
+intervalo útil (US-03) vêm do próprio trial, e só as amostras dentro do
+intervalo entram nas métricas. A inferência automática de trajetória a partir
+do vídeo permanece nas demais histórias do projeto.
+
+```bash
+uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1
+uv run barnes metrics executions --trial 1
+```
+
+Sem escala para a montagem, o cálculo é bloqueado. O procedimento completo,
+os controles da janela, a API sem interface gráfica e a recalibração estão no
+[manual do usuário](docs/manual-usuario.md).
+
+## Anotação de pose (US-06)
+
+Prepara o conjunto de treino do modelo de pose: escolhe quadros com o animal
+no centro, na borda e perto dos buracos, converte as anotações feitas no
+SLEAP, divide em treino/validação/teste **por trial** e verifica que nenhum
+trial vazou entre conjuntos.
+
+```bash
+uv run barnes pose sample --video data/raw/trial.mp4 --maze-config-id 1   # exporta PNGs
+# ... anotar no SLEAP (focinho, centro_corpo, base_cauda) ...
+uv run barnes pose import-slp data/annotations/projeto.slp
+uv run barnes pose split
+uv run barnes pose check-split
+uv run barnes pose report   # montagem de cada trial, registrada pelo sample
+```
+
+Parâmetros do protocolo na seção `anotacao` de `configs/default.yaml`; passo a
+passo completo em [docs/protocolo-anotacao.md](docs/protocolo-anotacao.md).
+
+Para verificar a implementação:
+
+```bash
+uv run python -m pytest
+uv run python -m ruff check .
 ```
 
 ## Antes de escrever código
