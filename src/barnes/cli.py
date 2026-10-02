@@ -600,19 +600,21 @@ def process(
 ) -> None:
     """Calcular métricas de uma trajetória já extraída e registrar a escala usada (RN03/RN05)."""
     with _command_errors():
-        reference = read_frame(video, frame)
+        # Sem escala, nem o vídeo é decodificado nem o CSV é lido.
         with get_connection(dsn) as conn:
             calibration = require_calibration(conn, maze_config_id)
-            # Falha na resolução antes de ler o CSV da trajetória inteiro.
-            validate_frame_size(calibration, (reference.shape[1], reference.shape[0]))
-            points, times = _read_trajectory(trajectory)
-            metrics = process_trial(
-                calibration.cm_per_px,
-                points,
-                times,
-                frame_size=(reference.shape[1], reference.shape[0]),
-                ideal_distance_px=ideal_distance_px,
-            )
+        reference = read_frame(video, frame)
+        # Resolução incompatível também falha antes de ler o CSV da trajetória inteiro.
+        validate_frame_size(calibration, (reference.shape[1], reference.shape[0]))
+        points, times = _read_trajectory(trajectory)
+        metrics = process_trial(
+            calibration.cm_per_px,
+            points,
+            times,
+            frame_size=(reference.shape[1], reference.shape[0]),
+            ideal_distance_px=ideal_distance_px,
+        )
+        with get_connection(dsn) as conn:
             upsert_trial_result(
                 conn,
                 trial,

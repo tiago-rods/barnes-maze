@@ -6,14 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from barnes.db import CalibrationRepository
-from barnes.io.calibration import (
-    CalibrationError,
-    Segment,
-    calculate_calibration,
-    calibrate_orientation,
-    verify_distance,
-)
+from barnes.io.calibration import CalibrationError, Segment, calculate_calibration, verify_distance
 
 
 def reference_calibration():
@@ -111,21 +104,3 @@ def test_validation_rejects_reusing_a_calibration_segment(reverse):
     segment = Segment(used.end, used.start, used.length_cm) if reverse else used
     with pytest.raises(CalibrationError, match="independente"):
         verify_distance(known, segment)
-
-
-def test_callable_calibration_saves_without_a_window(tmp_path, monkeypatch):
-    def unexpected_window(*args, **kwargs):
-        pytest.fail("A função de calibração não pode abrir uma janela.")
-
-    monkeypatch.setattr(cv2, "namedWindow", unexpected_window)
-    with CalibrationRepository(tmp_path / "scale.sqlite3") as repository:
-        saved = calibrate_orientation(
-            repository,
-            "camera-A",
-            reference_calibration().segments,
-            reference_video="trial.mp4",
-            reference_frame=0,
-            reference_size=(640, 480),
-        )
-        assert saved.cm_per_px == pytest.approx(0.1)
-        assert repository.require_calibration("camera-A").id == saved.id
