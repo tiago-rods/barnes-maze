@@ -20,7 +20,16 @@ class CalibrationCancelled(RuntimeError):
     """The researcher cancelled point selection; no calibration was saved."""
 
 
-def _prepare_preview(frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
+def _prepare_preview(frame: NDArray[np.uint8]) -> tuple[NDArray[np.uint8], float]:
+    """Returns the resized preview and the single ratio used on both axes.
+
+    Returning the ratio (not just the resized frame) lets the caller scale
+    clicked points back with one factor for x and y. Recomputing
+    ``original_width / width`` and ``original_height / height`` independently
+    from the rounded output dimensions gives each axis a slightly different
+    factor (e.g. ~0.06% apart for a 2001x901 frame), which skews calibration
+    accuracy right at the margin of the 3% inter-segment check.
+    """
     if not isinstance(frame, np.ndarray) or frame.size == 0:
         raise ValueError("O quadro de referência deve ser uma imagem não vazia.")
     if frame.dtype != np.uint8:
@@ -39,7 +48,7 @@ def _prepare_preview(frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
             (max(1, round(width * ratio)), max(1, round(height * ratio))),
             interpolation=cv2.INTER_AREA,
         )
-    return preview
+    return preview, ratio
 
 
 def collect_segments(
@@ -65,11 +74,9 @@ def collect_segments(
     points: list[Point] = []
     created = False
     try:
-        preview = _prepare_preview(frame)
+        preview, ratio = _prepare_preview(frame)
         height, width = preview.shape[:2]
-        original_height, original_width = frame.shape[:2]
-        x_scale = original_width / width
-        y_scale = original_height / height
+        scale = 1 / ratio
         required_points = 2 * segment_count
 
         def on_mouse(event: int, x: int, y: int, flags: int, param: object) -> None:
@@ -82,14 +89,14 @@ def collect_segments(
                 and 0 <= x < width
                 and 0 <= y < height
             ):
-                points.append((x * x_scale, y * y_scale))
+                points.append((x * scale, y * scale))
 
         cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
         created = True
         cv2.setMouseCallback(window_name, on_mouse)
         while True:
             display = preview.copy()
-            preview_points = [(round(x / x_scale), round(y / y_scale)) for x, y in points]
+            preview_points = [(round(x / scale), round(y / scale)) for x, y in points]
             for index, point in enumerate(preview_points):
                 color = _COLORS[(index // 2) % len(_COLORS)]
                 if index % 2:

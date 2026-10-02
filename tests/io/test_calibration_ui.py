@@ -92,14 +92,22 @@ def test_preview_coordinates_are_mapped_to_original_resolution(monkeypatch):
     assert window.shapes[0] == (800, 1280, 3)
 
 
-def test_resize_rounding_uses_actual_dimensions_on_each_axis(monkeypatch):
+def test_resize_uses_single_ratio_consistently_on_both_axes(monkeypatch):
+    """A 2001x901 frame rounds to height=576 under the width-constrained ratio.
+
+    Recomputing x_scale/y_scale independently from the *rounded* resized
+    dimensions (2001/1280 vs. 901/576) gives each axis a slightly different
+    factor. Both clicked coordinates must scale back by the same factor
+    (1 / ratio), not by two axis-specific ones.
+    """
     FakeWindow(monkeypatch, [("left", 100, 100), ("left", 300, 200), 13])
     frame = np.zeros((901, 2001, 3), dtype=np.uint8)
 
     segments = collect_segments(frame, segment_count=1)
 
-    assert segments[0][0] == pytest.approx((100 * 2001 / 1280, 100 * 901 / 576))
-    assert segments[0][1] == pytest.approx((300 * 2001 / 1280, 200 * 901 / 576))
+    scale = 2001 / 1280
+    assert segments[0][0] == pytest.approx((100 * scale, 100 * scale))
+    assert segments[0][1] == pytest.approx((300 * scale, 200 * scale))
 
 
 def test_ignore_out_of_bounds_and_support_undo_and_reset(monkeypatch):
