@@ -186,7 +186,7 @@ uv run barnes pose sample --video data/raw/trial.mp4 --maze-config-id 1   # expo
 uv run barnes pose import-slp data/annotations/projeto.slp
 uv run barnes pose split
 uv run barnes pose check-split
-uv run barnes pose report --maze-config-id 1
+uv run barnes pose report   # montagem de cada trial, registrada pelo sample
 ```
 
 Parâmetros do protocolo na seção `anotacao` de `configs/default.yaml`; passo a

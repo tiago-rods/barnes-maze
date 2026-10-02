@@ -58,7 +58,7 @@ uv run barnes pose sample --video PATH --maze-config-id N [--start-frame F --end
 uv run barnes pose import-slp FILE.slp [FILE2.slp ...]   # -> data/annotations/anotacoes.csv
 uv run barnes pose split                 # by trial -> data/annotations/divisao.csv
 uv run barnes pose check-split           # fails naming any trial in >1 set
-uv run barnes pose report --maze-config-id N
+uv run barnes pose report [--maze-config-id N]   # per-trial montagem from amostragem.csv
 uv run barnes metrics executions [--trial N]
 ```
 
@@ -190,7 +190,11 @@ RN07 may still swap SLEAP for YOLO-pose. Trials are keyed by
 `pose/regions.py` (centro/borda/buraco) is meant to be reused by US-08's
 per-region error report. Region during *sampling* comes from contrast
 segmentation (no model exists yet); the *reported* count uses the annotated
-`centro_corpo`. `data/` and
+`centro_corpo`, classified with each trial's **own** montagem (`maze_config_id`
+recorded in `<trial>/amostragem.csv` by `pose sample`) — never one montagem for
+all trials, since the camera can shift between recording days. `from_slp`
+rejects `.pkg.slp` (embedded images): its "video" is the .slp itself, which
+would turn into a fake trial key and defeat the leakage check. `data/` and
 `models/` are gitignored (raw videos, trained pose weights) — never assume
 their contents are present in a fresh clone or CI; tests must not depend on
 files under `data/`, which is why `tests/conftest.py` generates small

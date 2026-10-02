@@ -13,6 +13,7 @@ from barnes.pose.sampling import (
     build_background,
     estimate_animal_position,
     export_frames,
+    read_sampled_maze_config,
     sample_frames,
 )
 
@@ -88,8 +89,9 @@ def test_export_writes_pngs_and_sampling_csv(trial_video, geometry, protocol, tm
     metadata = load_trial_video(trial_video)
     result = _sample(trial_video, geometry, replace(protocol, seed=1))
     trial_dir = export_frames(
-        trial_video, metadata.content_hash, result.frames, tmp_path / "annotations"
-    )
+        trial_video, metadata.content_hash, result.frames, tmp_path / "annotations",
+        maze_config_id=7,
+    )  # fmt: skip
 
     assert trial_dir.name == trial_key(metadata.content_hash)
     pngs = sorted((trial_dir / "quadros").glob("quadro_*.png"))
@@ -101,3 +103,19 @@ def test_export_writes_pngs_and_sampling_csv(trial_video, geometry, protocol, tm
     assert [int(row["quadro"]) for row in rows] == [f.frame_index for f in result.frames]
     assert {row["regiao_estimada"] for row in rows} == {r.value for r in Region}
     assert rows[0]["hash_video"] == metadata.content_hash
+    assert {row["maze_config_id"] for row in rows} == {"7"}
+    assert read_sampled_maze_config(trial_dir) == 7
+
+
+def test_sampled_maze_config_absent_or_legacy(tmp_path) -> None:
+    assert read_sampled_maze_config(tmp_path) is None  # sem amostragem.csv
+    (tmp_path / "amostragem.csv").write_text("trial,quadro\nabc,0\n", encoding="utf-8")
+    assert read_sampled_maze_config(tmp_path) is None  # CSV anterior à coluna
+
+
+def test_sampled_maze_config_rejects_two_montagens(tmp_path) -> None:
+    (tmp_path / "amostragem.csv").write_text(
+        "trial,maze_config_id,quadro\nabc,1,0\nabc,2,25\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="mais de uma montagem"):
+        read_sampled_maze_config(tmp_path)

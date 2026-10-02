@@ -87,6 +87,13 @@ def test_locate_rejects_foreign_image() -> None:
         _locate(["fotos/img1.png"], 0, {})
 
 
+@pytest.mark.parametrize("package", ["data/annotations/projeto.pkg.slp", r"C:\proj\anotacoes.SLP"])
+def test_locate_rejects_embedded_images_package(package) -> None:
+    # Sem esta recusa, o hash do próprio .slp viraria a chave do trial.
+    with pytest.raises(AnnotationError, match="embutidas"):
+        _locate(package, 0, {})
+
+
 def test_locate_video_uses_content_hash(make_mp4) -> None:
     video = make_mp4()
     trial, frame = _locate(str(video), 7, {})

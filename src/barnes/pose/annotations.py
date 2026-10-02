@@ -168,6 +168,15 @@ def _locate(filename: str | list[str], frame_idx: int, hashes: dict[str, str]) -
         return match.group(1), int(match.group(2))
 
     video = Path(filename)
+    if video.suffix.lower() == ".slp":
+        # Projeto salvo com imagens embutidas (ex.: `.pkg.slp`): o "vídeo" é o
+        # próprio .slp, e o hash dele viraria uma chave de trial falsa — dois
+        # trials no mesmo pacote passariam por um só na verificação de vazamento.
+        raise AnnotationError(
+            f"{video.name} tem as imagens embutidas no próprio .slp, então não dá para saber "
+            "de que trial vem cada quadro. Salve o projeto no SLEAP como .slp comum (sem "
+            "embutir imagens), apontando para os PNGs de `barnes pose sample`."
+        )
     if str(video) not in hashes:
         if not video.is_file():
             raise AnnotationError(f"Vídeo referenciado pelo projeto SLEAP não encontrado: {video}")
@@ -189,7 +198,8 @@ def from_slp(path: str | Path) -> list[AnnotatedFrame]:
     Raises:
         AnnotationError: Se o esqueleto não tiver os três pontos, se houver
             mais de um animal anotado num quadro, ou se a origem do quadro
-            não puder ser identificada.
+            não puder ser identificada (inclusive projeto com imagens
+            embutidas, `.pkg.slp`).
         ImportError: Se `sleap-io` não estiver instalado.
     """
     try:

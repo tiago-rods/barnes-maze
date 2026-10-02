@@ -49,8 +49,8 @@ from barnes.pose.annotations import (
     write_annotations_csv,
 )
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
-from barnes.pose.report import count_by_region, empty_regions
-from barnes.pose.sampling import export_frames, sample_frames
+from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
+from barnes.pose.sampling import export_frames, read_sampled_maze_config, sample_frames
 from barnes.pose.split import (
     SPLIT_CSV,
     build_manifest,
@@ -766,7 +766,9 @@ def pose_sample(
             end_frame=min(interval.end_frame, metadata.frame_count - 1),
             scan_step=scan_step,
         )
-        trial_dir = export_frames(video, metadata.content_hash, result.frames, out_dir)
+        trial_dir = export_frames(
+            video, metadata.content_hash, result.frames, out_dir, maze_config_id=maze_config_id
+        )
 
         rate = result.detected / result.scanned if result.scanned else 0.0
         typer.echo(
@@ -839,8 +841,18 @@ def pose_check_split(manifest: ManifestPath = ANNOTATIONS_DIR / SPLIT_CSV) -> No
 
 @pose_app.command("report")
 def pose_report(
-    maze_config_id: MazeConfigId,
+    maze_config_id: Annotated[
+        int | None,
+        typer.Option(
+            "--maze-config-id",
+            help="Montagem para trials sem registro em amostragem.csv. Omitido: a de cada trial.",
+        ),
+    ] = None,
     annotations: AnnotationsPath = ANNOTATIONS_DIR / ANNOTATIONS_CSV,
+    samples_dir: Annotated[
+        Path,
+        typer.Option("--samples", help="Diretório com <trial>/amostragem.csv de `pose sample`."),
+    ] = ANNOTATIONS_DIR,
     config: ConfigPath = DEFAULT_CONFIG_PATH,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
@@ -849,9 +861,14 @@ def pose_report(
         protocol = load_annotation_protocol(config)
         frames = read_annotations_csv(annotations)
         validate_complete(frames)
+        trials = {frame.trial for frame in frames}
+        recorded = {trial: read_sampled_maze_config(samples_dir / trial) for trial in trials}
+        montagens = resolve_maze_configs(trials, recorded, maze_config_id)
         with get_connection(dsn) as conn:
-            geometry = get_maze_config(conn, maze_config_id)
-        counts = count_by_region(frames, geometry, protocol.regions)
+            by_id = {i: get_maze_config(conn, i) for i in sorted(set(montagens.values()))}
+        geometries = {trial: by_id[montagens[trial]] for trial in trials}
+        counts = count_by_region(frames, geometries, protocol.regions)
+        typer.echo(f"Montagem(ns) usada(s): {', '.join(str(i) for i in by_id)}")
         typer.echo(f"Quadros anotados: {len(frames)}")
         for count in counts:
             typer.echo(f"  {count.region.value:<7} {count.frames:>5}  ({count.proportion:.1%})")

@@ -140,14 +140,21 @@ def test_sample_then_report_end_to_end(tmp_path, trial_video, fake_maze_db) -> N
         )
         for row in sampled
     ]
-    report = runner.invoke(
-        cli.app,
-        [
-            "pose", "report",
-            "--maze-config-id", "1",
-            "--annotations", str(_annotations(tmp_path, frames)),
-            "--config", str(REPO_CONFIG),
-        ],
-    )  # fmt: skip
+    annotations = _annotations(tmp_path, frames)
+    report_args = [
+        "pose", "report",
+        "--annotations", str(annotations),
+        "--samples", str(out_dir),
+        "--config", str(REPO_CONFIG),
+    ]  # fmt: skip
+
+    # Sem --maze-config-id: a montagem vem do amostragem.csv do trial.
+    report = runner.invoke(cli.app, report_args)
     assert report.exit_code == 0, report.output
+    assert "Montagem(ns) usada(s): 1" in report.output
     assert "Cobertura OK" in report.output
+
+    # Uma montagem diferente da usada na amostragem é recusada, não aplicada em silêncio.
+    conflict = runner.invoke(cli.app, [*report_args, "--maze-config-id", "2"])
+    assert conflict.exit_code == 1
+    assert "contradiz a montagem registrada" in conflict.output

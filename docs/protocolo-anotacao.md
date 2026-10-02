@@ -130,10 +130,13 @@ cadastrada (`barnes maze create`, US-04) e os vídeos em `data/raw/`.
 uv run barnes pose sample --video data/raw/<trial>.mp4 --maze-config-id <id>
 #    → data/annotations/<trial>/quadros/quadro_NNNNNN.png + amostragem.csv
 #    (o intervalo útil é detectado; corrija com --start-frame/--end-frame se precisar)
+#    amostragem.csv registra a montagem usada, que o passo 5 reaproveita por trial
 
 # 2. No SLEAP: novo projeto → importar as pastas quadros/ como imagens →
 #    esqueleto com os nós focinho, centro_corpo, base_cauda (nesta ordem) →
 #    anotar → salvar data/annotations/projeto.slp
+#    Salvar como .slp comum: projeto com imagens embutidas (.pkg.slp) é recusado
+#    pelo import-slp, porque perde a referência ao trial de cada quadro
 
 # 3. Converter para o formato interno (exige os três pontos em todo quadro).
 #    Aceita vários .slp de uma vez (um por anotador); quadro repetido entre eles é erro.
@@ -142,8 +145,11 @@ uv run barnes pose import-slp data/annotations/*.slp
 # 4. Dividir por trial e verificar vazamento
 uv run barnes pose split
 
-# 5. Contar os quadros por região e colar o resultado na seção 7
-uv run barnes pose report --maze-config-id <id>
+# 5. Contar os quadros por região e colar o resultado na seção 7.
+#    Cada trial é classificado com a montagem registrada na sua amostragem
+#    (trials de dias diferentes podem ter a câmera deslocada). --maze-config-id
+#    só preenche trials sem registro e é recusado se contradisser um registro.
+uv run barnes pose report
 
 # A qualquer momento, reverificar a divisão
 uv run barnes pose check-split

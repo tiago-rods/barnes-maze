@@ -299,6 +299,8 @@ def export_frames(
     content_hash: str,
     frames: tuple[SampledFrame, ...] | list[SampledFrame],
     out_dir: str | Path,
+    *,
+    maze_config_id: int,
 ) -> Path:
     """Grava os quadros escolhidos como PNG, prontos para importar no SLEAP.
 
@@ -312,6 +314,10 @@ def export_frames(
         content_hash: Hash SHA-256 do vídeo (`VideoMetadata.content_hash`).
         frames: Quadros escolhidos por `sample_frames`.
         out_dir: Diretório base, normalmente `data/annotations`.
+        maze_config_id: Montagem usada na amostragem. Fica registrada no CSV
+            para que a contagem por região (`barnes pose report`) use a
+            geometria do próprio trial — trials de dias diferentes podem ter
+            a câmera deslocada e, portanto, outra montagem.
 
     Returns:
         O diretório do trial.
@@ -330,7 +336,16 @@ def export_frames(
     with (trial_dir / SAMPLING_CSV).open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(
-            ["trial", "hash_video", "video", "quadro", "regiao_estimada", "x_px", "y_px"]
+            [
+                "trial",
+                "hash_video",
+                "video",
+                "maze_config_id",
+                "quadro",
+                "regiao_estimada",
+                "x_px",
+                "y_px",
+            ]
         )
         for sampled in frames:
             writer.writerow(
@@ -338,6 +353,7 @@ def export_frames(
                     key,
                     content_hash,
                     str(Path(video_path).resolve()),
+                    maze_config_id,
                     sampled.frame_index,
                     sampled.region.value,
                     f"{sampled.x_px:.2f}",
@@ -345,3 +361,36 @@ def export_frames(
                 ]
             )
     return trial_dir
+
+
+def read_sampled_maze_config(trial_dir: str | Path) -> int | None:
+    """Montagem registrada no `amostragem.csv` de um trial por `export_frames`.
+
+    Args:
+        trial_dir: Diretório do trial (`<out_dir>/<trial>`).
+
+    Returns:
+        O `maze_config_id`, ou `None` se não houver `amostragem.csv`, se ele
+        estiver vazio ou se for anterior a este registro (sem a coluna).
+
+    Raises:
+        ValueError: Se o valor não for inteiro ou se o CSV registrar mais de
+            uma montagem para o mesmo trial.
+    """
+    path = Path(trial_dir) / SAMPLING_CSV
+    if not path.is_file():
+        return None
+    with path.open(encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        if "maze_config_id" not in (reader.fieldnames or []):
+            return None
+        values = {row["maze_config_id"] for row in reader}
+    if not values:
+        return None
+    if len(values) > 1:
+        raise ValueError(f"{path} registra mais de uma montagem: {', '.join(sorted(values))}.")
+    (value,) = values
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"maze_config_id inválido em {path}: '{value}'.") from exc
