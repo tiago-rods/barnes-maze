@@ -38,6 +38,13 @@ pose = [
     "sleap>=1.3",
 ]
 
+# Leitura do projeto de anotação do SLEAP (.slp) — US-06, `barnes pose import-slp`.
+# sleap-io é BSD-3 e só lê/grava arquivos: não traz TensorFlow/PyTorch nem
+# CUDA, então pode ser instalado já, sem esperar a decisão de `pose` acima.
+anotacao = [
+    "sleap-io>=0.9",
+]
+
 # Similaridade de trajetórias (US-24) — contribuição protegida.
 longitudinal = [
     "dtaidistance>=2.3",

@@ -52,6 +52,30 @@ from barnes.io.calibration_ui import CalibrationCancelled, collect_segments
 from barnes.io.trim import TrialInterval, TrialIntervalError, build_trial_interval
 from barnes.io.video import VideoLoadError, VideoMetadata, load_trial_video, read_frame
 from barnes.metrics import process_trial
+from barnes.pose.annotations import (
+    ANNOTATIONS_CSV,
+    from_slp,
+    read_annotations_csv,
+    validate_complete,
+    write_annotations_csv,
+)
+from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
+from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
+from barnes.pose.sampling import (
+    check_previous_export,
+    export_frames,
+    read_sampled_maze_config,
+    sample_frames,
+)
+from barnes.pose.split import (
+    SPLIT_CSV,
+    build_manifest,
+    check_no_leakage,
+    read_manifest,
+    split_by_trial,
+    summarize,
+    write_manifest,
+)
 
 app = typer.Typer()
 
@@ -72,6 +96,9 @@ app.add_typer(scale_app, name="scale")
 
 metrics_app = typer.Typer(help="Métricas calculadas com a escala calibrada (US-02).")
 app.add_typer(metrics_app, name="metrics")
+
+pose_app = typer.Typer(help="Conjunto anotado para o modelo de pose (US-06).")
+app.add_typer(pose_app, name="pose")
 
 
 @db_app.command("migrate")
@@ -395,7 +422,7 @@ def _adjust_geometry_interactively(
     simplesmente não substituem essa última geometria válida.
     """
     window = "Ajuste da geometria - Barnes"
-    cv2.namedWindow(window)
+    cv2.namedWindow(window, cv2.WINDOW_AUTOSIZE)
 
     state = {
         "center": (center_x_px, center_y_px),
@@ -405,6 +432,16 @@ def _adjust_geometry_interactively(
         "target": target_hole_number,
         "dragging": False,
     }
+
+    # No backend win32 do OpenCV, registrar o mouse callback antes do
+    # primeiro imshow pode não vincular à superfície da janela (ela ainda
+    # não existe de fato no SO) — o teclado funciona porque passa por
+    # waitKey, não por esse hook. Por isso mostramos um primeiro quadro e
+    # damos um waitKey(1) para "realizar" a janela antes de registrar.
+    geometry = _try_generate_geometry(state, hole_radius_px)
+    canvas = _draw_geometry_overlay(frame, geometry) if geometry is not None else frame.copy()
+    cv2.imshow(window, canvas)
+    cv2.waitKey(1)
 
     def on_mouse(event: int, x: int, y: int, _flags: int, _param: object) -> None:
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -426,8 +463,6 @@ def _adjust_geometry_interactively(
                     state["target"] = nearest.hole_number
 
     cv2.setMouseCallback(window, on_mouse)
-
-    geometry = _try_generate_geometry(state, hole_radius_px)
     while True:
         key = cv2.waitKey(30) & 0xFF
         if key in (ord("+"), ord("=")):
@@ -638,9 +673,9 @@ def calibrate(
             # Valida que a montagem existe antes de abrir a janela e pedir os cliques.
             get_calibration(conn, maze_config_id)
         reference = read_frame(video, frame)
+        first, second = collect_segments(reference)
         length_a = _length(length_1_cm, "Comprimento real do segmento 1 (cm)")
         length_b = _length(length_2_cm, "Comprimento real do segmento 2 (cm)")
-        first, second = collect_segments(reference)
         result = calculate_calibration([Segment(*first, length_a), Segment(*second, length_b)])
         with get_connection(dsn) as conn:
             save_calibration(
@@ -792,6 +827,190 @@ def executions(
             else:
                 rows = list_trial_results(conn)
         typer.echo(json.dumps([asdict(row) for row in rows], ensure_ascii=False, indent=2, default=str))
+
+
+ANNOTATIONS_DIR = Path("data/annotations")
+ConfigPath = Annotated[
+    Path, typer.Option("--config", help="YAML com a seção 'anotacao' do protocolo.")
+]
+AnnotationsPath = Annotated[
+    Path, typer.Option("--annotations", help="Conjunto anotado no formato interno.")
+]
+ManifestPath = Annotated[Path, typer.Option("--manifest", help="Manifesto da divisão.")]
+
+
+@pose_app.command("sample")
+def pose_sample(
+    video: Video,
+    maze_config_id: MazeConfigId,
+    start_frame: Annotated[
+        int | None,
+        typer.Option(
+            "--start-frame",
+            min=0,
+            help="Início do intervalo útil (US-03). Omitido: detecção automática da soltura.",
+        ),
+    ] = None,
+    end_frame: Annotated[
+        int | None,
+        typer.Option("--end-frame", min=0, help="Fim do intervalo útil. Omitido: fim do vídeo."),
+    ] = None,
+    scan_step: Annotated[
+        int, typer.Option("--scan-step", min=1, help="Varre um a cada N quadros.")
+    ] = 5,
+    out_dir: Annotated[
+        Path, typer.Option("--out", help="Diretório base dos quadros exportados.")
+    ] = ANNOTATIONS_DIR,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite",
+            help="Apaga os PNGs de uma amostragem anterior deste trial (podem estar anotados).",
+        ),
+    ] = False,
+    config: ConfigPath = DEFAULT_CONFIG_PATH,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Escolher e exportar quadros de um trial para anotar, cobrindo as 3 regiões (RN02)."""
+    with _command_errors():
+        protocol = load_annotation_protocol(config)
+        metadata = load_trial_video(video)
+        # Recusa antes da varredura, que num vídeo real leva minutos.
+        check_previous_export(metadata.content_hash, out_dir, overwrite=overwrite)
+        try:
+            interval = build_trial_interval(metadata, start_frame=start_frame, end_frame=end_frame)
+        except TrialIntervalError as exc:
+            raise ValueError(f"Intervalo útil: {exc}") from exc
+        _print_interval(interval)
+        with get_connection(dsn) as conn:
+            geometry = get_maze_config(conn, maze_config_id)
+
+        result = sample_frames(
+            video,
+            geometry,
+            protocol,
+            frame_count=metadata.frame_count,
+            start_frame=interval.start_frame,
+            end_frame=min(interval.end_frame, metadata.frame_count - 1),
+            scan_step=scan_step,
+        )
+        trial_dir = export_frames(
+            video,
+            metadata.content_hash,
+            result.frames,
+            out_dir,
+            maze_config_id=maze_config_id,
+            overwrite=overwrite,
+        )
+
+        rate = result.detected / result.scanned if result.scanned else 0.0
+        typer.echo(
+            f"Quadros varridos: {result.scanned} | animal encontrado por contraste em "
+            f"{result.detected} ({rate:.1%})"
+        )
+        for region, wanted in protocol.frames_per_region.items():
+            line = (
+                f"  {region.value:<7} escolhidos {wanted - result.shortfall[region]}/{wanted} "
+                f"(candidatos: {result.candidates[region]})"
+            )
+            if result.shortfall[region]:
+                line += " — FALTARAM quadros nesta região"
+            typer.echo(line)
+        typer.echo(f"{len(result.frames)} quadros exportados em {trial_dir}")
+
+
+@pose_app.command("import-slp")
+def pose_import_slp(
+    slp: Annotated[
+        list[Path],
+        typer.Argument(help="Um ou mais projetos do SLEAP (.slp) — ex.: um por anotador."),
+    ],
+    out: Annotated[
+        Path, typer.Option("--out", help="CSV de saída no formato interno.")
+    ] = ANNOTATIONS_DIR / ANNOTATIONS_CSV,
+) -> None:
+    """Converter as anotações do SLEAP para o formato interno, exigindo os 3 pontos (Cenário 1)."""
+    with _command_errors():
+        try:
+            frames = [frame for path in slp for frame in from_slp(path)]
+        except ImportError as exc:
+            raise RuntimeError(str(exc)) from exc
+        validate_complete(frames)
+        write_annotations_csv(frames, out)
+        trials = len({frame.trial for frame in frames})
+        typer.echo(f"{len(frames)} quadros anotados de {trials} trial(s) gravados em {out}")
+
+
+@pose_app.command("split")
+def pose_split(
+    annotations: AnnotationsPath = ANNOTATIONS_DIR / ANNOTATIONS_CSV,
+    out: Annotated[
+        Path, typer.Option("--out", help="Manifesto de saída.")
+    ] = ANNOTATIONS_DIR / SPLIT_CSV,
+    config: ConfigPath = DEFAULT_CONFIG_PATH,
+) -> None:
+    """Dividir o conjunto anotado em treino/validação/teste por trial (RN03)."""
+    with _command_errors():
+        protocol = load_annotation_protocol(config)
+        frames = read_annotations_csv(annotations)
+        validate_complete(frames)
+        assignment = split_by_trial((f.trial for f in frames), protocol.split, protocol.seed)
+        rows = build_manifest(frames, assignment)
+        check_no_leakage(rows)
+        write_manifest(rows, out)
+        typer.echo(f"Divisão gravada em {out} (semente {protocol.seed}):")
+        for subset, (trials, count) in summarize(rows).items():
+            typer.echo(f"  {subset:<9} {trials} trial(s), {count} quadros")
+        typer.echo("Verificação de vazamento: OK — nenhum trial em mais de um conjunto.")
+
+
+@pose_app.command("check-split")
+def pose_check_split(manifest: ManifestPath = ANNOTATIONS_DIR / SPLIT_CSV) -> None:
+    """Verificar que nenhum trial tem quadros em mais de um conjunto (Cenário 3)."""
+    with _command_errors():
+        check_no_leakage(read_manifest(manifest))
+        typer.echo("Verificação de vazamento: OK — nenhum trial em mais de um conjunto.")
+
+
+@pose_app.command("report")
+def pose_report(
+    maze_config_id: Annotated[
+        int | None,
+        typer.Option(
+            "--maze-config-id",
+            help="Montagem para trials sem registro em amostragem.csv. Omitido: a de cada trial.",
+        ),
+    ] = None,
+    annotations: AnnotationsPath = ANNOTATIONS_DIR / ANNOTATIONS_CSV,
+    samples_dir: Annotated[
+        Path,
+        typer.Option("--samples", help="Diretório com <trial>/amostragem.csv de `pose sample`."),
+    ] = ANNOTATIONS_DIR,
+    config: ConfigPath = DEFAULT_CONFIG_PATH,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Contar os quadros anotados por região, pelo centro do corpo anotado (Cenário 2)."""
+    with _command_errors():
+        protocol = load_annotation_protocol(config)
+        frames = read_annotations_csv(annotations)
+        validate_complete(frames)
+        trials = {frame.trial for frame in frames}
+        recorded = {trial: read_sampled_maze_config(samples_dir / trial) for trial in trials}
+        montagens = resolve_maze_configs(trials, recorded, maze_config_id)
+        with get_connection(dsn) as conn:
+            by_id = {i: get_maze_config(conn, i) for i in sorted(set(montagens.values()))}
+        geometries = {trial: by_id[montagens[trial]] for trial in trials}
+        counts = count_by_region(frames, geometries, protocol.regions)
+        typer.echo(f"Montagem(ns) usada(s): {', '.join(str(i) for i in by_id)}")
+        typer.echo(f"Quadros anotados: {len(frames)}")
+        for count in counts:
+            typer.echo(f"  {count.region.value:<7} {count.frames:>5}  ({count.proportion:.1%})")
+        missing = empty_regions(counts)
+        if missing:
+            names = ", ".join(region.value for region in missing)
+            typer.echo(f"Reprovado: nenhuma anotação na(s) região(ões) {names}.", err=True)
+            raise typer.Exit(code=1)
+        typer.echo("Cobertura OK: as três regiões têm quadros anotados.")
 
 
 if __name__ == "__main__":
