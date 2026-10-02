@@ -38,6 +38,7 @@ from barnes.io.calibration import (
     verify_distance,
 )
 from barnes.io.calibration_ui import CalibrationCancelled, collect_segments
+from barnes.io.trim import TrialInterval, TrialIntervalError, build_trial_interval
 from barnes.io.video import VideoLoadError, VideoMetadata, load_trial_video, read_frame
 from barnes.metrics import process_trial
 
@@ -87,6 +88,14 @@ def _print_metadata(video: VideoMetadata) -> None:
     typer.echo(f"Hash (sha256): {video.content_hash}")
 
 
+def _print_interval(interval: TrialInterval) -> None:
+    origin = "ajustado manualmente" if interval.manually_adjusted else "detecção automática"
+    typer.echo(
+        f"Intervalo útil: {interval.start_s:.2f}s (quadro {interval.start_frame}) a "
+        f"{interval.end_s:.2f}s (quadro {interval.end_frame}) — {origin}."
+    )
+
+
 def _interactive_preview(path: Path, start_index: int) -> None:
     """Abre uma janela navegável entre quadros: n/d = próximo, p/a = anterior, q/Esc = sair."""
     frame_index = start_index
@@ -121,11 +130,28 @@ def load_video(
     phase: str = typer.Option("acquisition", help="habituation | acquisition | probe"),
     day: int = typer.Option(1, help="Número do dia do trial dentro do experimento."),
     trial_in_day: int = typer.Option(1, help="Ordem do trial dentro do dia."),
+    start_s: float = typer.Option(
+        None,
+        help="Início do intervalo útil, em segundos (US-03). Omitido: detecção automática "
+        "da soltura. Informar sobrescreve a detecção e marca o intervalo como ajustado "
+        "manualmente — não combinar com --start-frame.",
+    ),
+    end_s: float = typer.Option(
+        None,
+        help="Fim do intervalo útil, em segundos (US-03). Omitido: fim do vídeo — não "
+        "combinar com --end-frame.",
+    ),
+    start_frame: int = typer.Option(
+        None, help="Início do intervalo útil, em número de quadro — alternativa a --start-s."
+    ),
+    end_frame: int = typer.Option(
+        None, help="Fim do intervalo útil, em número de quadro — alternativa a --end-s."
+    ),
     frame_index: int = typer.Option(0, help="Quadro inicial da pré-visualização."),
     preview: bool = typer.Option(True, help="Abrir janela de pré-visualização navegável."),
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Carrega um vídeo de trial, mostra os metadados e, se pedido, persiste (US-01)."""
+    """Carrega um vídeo de trial, mostra os metadados e, se pedido, persiste (US-01, US-03)."""
     try:
         video = load_trial_video(path)
     except VideoLoadError as exc:
@@ -133,6 +159,16 @@ def load_video(
         raise typer.Exit(code=1) from exc
 
     _print_metadata(video)
+
+    try:
+        interval = build_trial_interval(
+            video, start_s=start_s, end_s=end_s, start_frame=start_frame, end_frame=end_frame
+        )
+    except TrialIntervalError as exc:
+        typer.echo(f"Erro no intervalo útil: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    _print_interval(interval)
 
     if experiment_id is not None and maze_config_id is not None:
         with get_connection(dsn) as conn:
@@ -144,6 +180,7 @@ def load_video(
                 phase=phase,
                 day_number=day,
                 trial_number_in_day=trial_in_day,
+                interval=interval,
             )
         typer.echo(f"Trial #{trial_id} salvo no banco.")
 
