@@ -5,10 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from math import asin, degrees, hypot, isclose, isfinite
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from barnes.db import CalibrationRepository, StoredCalibration
 
 Point = tuple[float, float]
 MAX_RELATIVE_ERROR = 0.03
@@ -139,23 +135,3 @@ def verify_distance(calibration: CalibrationResult, independent: Segment) -> Ver
     measured = positive_number(independent.length_px * calibration.cm_per_px, "Distância medida")
     error = abs(measured - independent.length_cm) / independent.length_cm
     return VerificationResult(measured, independent.length_cm, error, _below_error_limit(error))
-
-
-def calibrate_orientation(
-    repository: CalibrationRepository,
-    orientation_id: str,
-    segments: Iterable[Segment],
-    *,
-    reference_video: str,
-    reference_frame: int,
-    reference_size: tuple[int, int],
-) -> StoredCalibration:
-    """Callable calibration and persistence; no window or user interaction required."""
-    result = calculate_calibration(segments)
-    return repository.save_calibration(
-        orientation_id,
-        result,
-        reference_video=reference_video,
-        reference_frame=reference_frame,
-        reference_size=reference_size,
-    )
