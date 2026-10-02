@@ -6,10 +6,12 @@ from itertools import pairwise
 import cv2
 import pytest
 
-from barnes.io.video import load_trial_video, read_frame
-from barnes.pose.annotations import trial_key
+from barnes.io.video import VideoLoadError, load_trial_video, read_frame
+from barnes.pose.annotations import frame_filename, trial_key
 from barnes.pose.regions import Region
 from barnes.pose.sampling import (
+    SampledFrame,
+    _scan,
     build_background,
     estimate_animal_position,
     export_frames,
@@ -105,6 +107,83 @@ def test_export_writes_pngs_and_sampling_csv(trial_video, geometry, protocol, tm
     assert rows[0]["hash_video"] == metadata.content_hash
     assert {row["maze_config_id"] for row in rows} == {"7"}
     assert read_sampled_maze_config(trial_dir) == 7
+
+
+def test_resampling_refuses_previous_pngs_unless_overwrite(
+    trial_video, geometry, protocol, tmp_path
+) -> None:
+    content_hash = load_trial_video(trial_video).content_hash
+    out_dir = tmp_path / "annotations"
+    first = _sample(trial_video, geometry, replace(protocol, seed=1)).frames
+    trial_dir = export_frames(trial_video, content_hash, first, out_dir, maze_config_id=1)
+
+    second = _sample(trial_video, geometry, replace(protocol, seed=2)).frames
+    assert {f.frame_index for f in second} != {f.frame_index for f in first}
+    with pytest.raises(FileExistsError, match="--overwrite"):
+        export_frames(trial_video, content_hash, second, out_dir, maze_config_id=1)
+
+    export_frames(trial_video, content_hash, second, out_dir, maze_config_id=1, overwrite=True)
+    # Só os quadros da rodada atual: nenhum PNG órfão da anterior.
+    pngs = sorted(p.name for p in (trial_dir / "quadros").glob("quadro_*.png"))
+    assert pngs == sorted(frame_filename(f.frame_index) for f in second)
+
+
+_REAL_CAPTURE = cv2.VideoCapture
+
+
+class _NoSeekCapture:
+    """`cv2.VideoCapture` que falha se alguém posicionar por número de quadro."""
+
+    def __init__(self, path: str) -> None:
+        self._capture = _REAL_CAPTURE(path)
+
+    def set(self, prop: int, value: float) -> bool:
+        assert prop != cv2.CAP_PROP_POS_FRAMES, "seek por quadro (impreciso com B-frames)"
+        return self._capture.set(prop, value)
+
+    def __getattr__(self, name: str):
+        return getattr(self._capture, name)
+
+
+def test_scan_and_export_read_sequentially_without_seek(
+    trial_video, geometry, protocol, tmp_path, monkeypatch
+) -> None:
+    metadata = load_trial_video(trial_video)
+    background = build_background(trial_video, 0, metadata.frame_count - 1)
+    monkeypatch.setattr(cv2, "VideoCapture", _NoSeekCapture)
+
+    candidates, _ = _scan(trial_video, geometry, protocol, background, 10, 60, 5)
+    assert [c.frame_index for c in candidates][:2] == [10, 15]
+
+    chosen = [c for c in candidates if c.frame_index in (20, 55)]
+    assert len(chosen) == 2
+    trial_dir = export_frames(
+        trial_video, metadata.content_hash, chosen, tmp_path, maze_config_id=1
+    )
+    monkeypatch.undo()
+    for sampled in chosen:
+        png = cv2.imread(str(trial_dir / "quadros" / frame_filename(sampled.frame_index)))
+        # O PNG é exatamente o quadro sequencial de mesmo índice.
+        assert (png == _sequential_frame(trial_video, sampled.frame_index)).all()
+
+
+def _sequential_frame(path, index):
+    capture = cv2.VideoCapture(str(path))
+    try:
+        for _ in range(index):
+            capture.grab()
+        ok, frame = capture.read()
+        assert ok
+        return frame
+    finally:
+        capture.release()
+
+
+def test_export_fails_if_video_ends_before_chosen_frame(trial_video, tmp_path) -> None:
+    content_hash = load_trial_video(trial_video).content_hash
+    beyond = SampledFrame(frame_index=10_000, region=Region.CENTRO, x_px=0.0, y_px=0.0)
+    with pytest.raises(VideoLoadError, match="10000"):
+        export_frames(trial_video, content_hash, [beyond], tmp_path, maze_config_id=1)
 
 
 def test_sampled_maze_config_absent_or_legacy(tmp_path) -> None:

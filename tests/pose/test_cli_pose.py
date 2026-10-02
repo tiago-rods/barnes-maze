@@ -112,18 +112,16 @@ def fake_maze_db(monkeypatch, geometry):
 
 def test_sample_then_report_end_to_end(tmp_path, trial_video, fake_maze_db) -> None:
     out_dir = tmp_path / "annotations"
-    result = runner.invoke(
-        cli.app,
-        [
-            "pose", "sample",
-            "--video", str(trial_video),
-            "--maze-config-id", "1",
-            "--start-frame", "0",
-            "--scan-step", "1",
-            "--out", str(out_dir),
-            "--config", str(REPO_CONFIG),
-        ],
-    )  # fmt: skip
+    sample_args = [
+        "pose", "sample",
+        "--video", str(trial_video),
+        "--maze-config-id", "1",
+        "--start-frame", "0",
+        "--scan-step", "1",
+        "--out", str(out_dir),
+        "--config", str(REPO_CONFIG),
+    ]  # fmt: skip
+    result = runner.invoke(cli.app, sample_args)
     assert result.exit_code == 0, result.output
     assert "animal encontrado por contraste" in result.output
     (trial_dir,) = [p for p in out_dir.iterdir() if p.is_dir()]
@@ -158,3 +156,11 @@ def test_sample_then_report_end_to_end(tmp_path, trial_video, fake_maze_db) -> N
     conflict = runner.invoke(cli.app, [*report_args, "--maze-config-id", "2"])
     assert conflict.exit_code == 1
     assert "contradiz a montagem registrada" in conflict.output
+
+    # Reamostrar o mesmo trial (quadros possivelmente já anotados) exige --overwrite.
+    again = runner.invoke(cli.app, sample_args)
+    assert again.exit_code == 1
+    assert "--overwrite" in again.output
+    assert "Quadros varridos" not in again.output  # recusou antes da varredura
+    overwritten = runner.invoke(cli.app, [*sample_args, "--overwrite"])
+    assert overwritten.exit_code == 0, overwritten.output

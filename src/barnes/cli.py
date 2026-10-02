@@ -50,7 +50,12 @@ from barnes.pose.annotations import (
 )
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
 from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
-from barnes.pose.sampling import export_frames, read_sampled_maze_config, sample_frames
+from barnes.pose.sampling import (
+    check_previous_export,
+    export_frames,
+    read_sampled_maze_config,
+    sample_frames,
+)
 from barnes.pose.split import (
     SPLIT_CSV,
     build_manifest,
@@ -742,6 +747,13 @@ def pose_sample(
     out_dir: Annotated[
         Path, typer.Option("--out", help="Diretório base dos quadros exportados.")
     ] = ANNOTATIONS_DIR,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite",
+            help="Apaga os PNGs de uma amostragem anterior deste trial (podem estar anotados).",
+        ),
+    ] = False,
     config: ConfigPath = DEFAULT_CONFIG_PATH,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
@@ -749,6 +761,8 @@ def pose_sample(
     with _command_errors():
         protocol = load_annotation_protocol(config)
         metadata = load_trial_video(video)
+        # Recusa antes da varredura, que num vídeo real leva minutos.
+        check_previous_export(metadata.content_hash, out_dir, overwrite=overwrite)
         try:
             interval = build_trial_interval(metadata, start_frame=start_frame, end_frame=end_frame)
         except TrialIntervalError as exc:
@@ -767,7 +781,12 @@ def pose_sample(
             scan_step=scan_step,
         )
         trial_dir = export_frames(
-            video, metadata.content_hash, result.frames, out_dir, maze_config_id=maze_config_id
+            video,
+            metadata.content_hash,
+            result.frames,
+            out_dir,
+            maze_config_id=maze_config_id,
+            overwrite=overwrite,
         )
 
         rate = result.detected / result.scanned if result.scanned else 0.0

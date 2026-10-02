@@ -18,6 +18,7 @@ from __future__ import annotations
 import csv
 import math
 import random
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,6 +126,8 @@ def build_background(video_path: str | Path, start_frame: int, end_frame: int) -
     count = min(_BACKGROUND_FRAMES, end_frame - start_frame + 1)
     indices = np.linspace(start_frame, end_frame, num=max(count, 1)).round().astype(int)
     frames = []
+    # Seek é aceitável aqui (diferente de `_iter_frames`): um quadro vizinho
+    # no lugar do pedido não muda a mediana do fundo.
     for index in sorted(set(indices.tolist())):
         try:
             frames.append(_gray(read_frame(video_path, index)))
@@ -172,6 +175,35 @@ def estimate_animal_position(
     return moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]
 
 
+def _iter_frames(
+    video_path: Path, start_frame: int, end_frame: int, wanted: Callable[[int], bool]
+) -> Iterator[tuple[int, np.ndarray]]:
+    """Percorre o vídeo em sequência desde o quadro 0, entregando os quadros pedidos.
+
+    Nunca posiciona por `CAP_PROP_POS_FRAMES`: em H.264 com B-frames (caso dos
+    vídeos do LNBio, ver US-01) o seek pode cair num quadro vizinho. A
+    varredura e a exportação usam este mesmo caminho, então o PNG exportado é
+    exatamente o quadro em que a posição foi estimada, e `quadro` é o índice
+    real no vídeo — o que US-07/US-08 assumem ao voltar ao vídeo original.
+    Os quadros antes de `start_frame` só são pulados com `grab()`, sem
+    conversão de imagem.
+    """
+    capture = cv2.VideoCapture(str(video_path))
+    try:
+        if not capture.isOpened():
+            raise VideoLoadError(f"Não foi possível abrir o vídeo: {video_path}")
+        for index in range(end_frame + 1):
+            if index >= start_frame and wanted(index):
+                ok, frame = capture.read()
+                if not ok:
+                    return
+                yield index, frame
+            elif not capture.grab():
+                return
+    finally:
+        capture.release()
+
+
 def _scan(
     video_path: Path,
     geometry: MazeGeometry,
@@ -181,30 +213,16 @@ def _scan(
     end_frame: int,
     scan_step: int,
 ) -> tuple[list[SampledFrame], int]:
-    capture = cv2.VideoCapture(str(video_path))
     candidates: list[SampledFrame] = []
     scanned = 0
-    try:
-        if not capture.isOpened():
-            raise VideoLoadError(f"Não foi possível abrir o vídeo: {video_path}")
-        if start_frame:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        index = start_frame
-        while index <= end_frame:
-            if (index - start_frame) % scan_step == 0:
-                ok, frame = capture.read()
-                if not ok:
-                    break
-                scanned += 1
-                position = estimate_animal_position(frame, background, geometry)
-                if position is not None:
-                    region = classify_region(*position, geometry, protocol.regions)
-                    candidates.append(SampledFrame(index, region, *position))
-            elif not capture.grab():
-                break
-            index += 1
-    finally:
-        capture.release()
+    for index, frame in _iter_frames(
+        video_path, start_frame, end_frame, lambda i: (i - start_frame) % scan_step == 0
+    ):
+        scanned += 1
+        position = estimate_animal_position(frame, background, geometry)
+        if position is not None:
+            region = classify_region(*position, geometry, protocol.regions)
+            candidates.append(SampledFrame(index, region, *position))
     return candidates, scanned
 
 
@@ -294,6 +312,36 @@ def sample_frames(
     )
 
 
+def check_previous_export(content_hash: str, out_dir: str | Path, *, overwrite: bool) -> list[Path]:
+    """PNGs de uma amostragem anterior do mesmo trial, recusando-os sem `overwrite`.
+
+    Reamostrar reescreve `amostragem.csv`, mas PNGs da rodada anterior que
+    não forem sorteados de novo sobrariam em `quadros/` e poderiam ser
+    importados no SLEAP como se fossem do conjunto atual. Como podem ser
+    quadros já anotados, apagá-los exige pedido explícito.
+
+    Args:
+        content_hash: Hash SHA-256 do vídeo do trial.
+        out_dir: Diretório base da exportação.
+        overwrite: Se `True`, os PNGs anteriores são só listados (para que
+            `export_frames` os apague); se `False`, a existência deles é erro.
+
+    Returns:
+        Os PNGs anteriores (vazio se o trial nunca foi amostrado ali).
+
+    Raises:
+        FileExistsError: Se houver PNGs anteriores e `overwrite` for `False`.
+    """
+    frames_dir = Path(out_dir) / trial_key(content_hash) / FRAMES_DIR
+    previous = sorted(frames_dir.glob("quadro_*.png")) if frames_dir.is_dir() else []
+    if previous and not overwrite:
+        raise FileExistsError(
+            f"{frames_dir} já tem {len(previous)} quadro(s) de uma amostragem anterior deste "
+            "trial, que podem já ter sido anotados. Use --overwrite para apagá-los e reamostrar."
+        )
+    return previous
+
+
 def export_frames(
     video_path: str | Path,
     content_hash: str,
@@ -301,13 +349,15 @@ def export_frames(
     out_dir: str | Path,
     *,
     maze_config_id: int,
+    overwrite: bool = False,
 ) -> Path:
     """Grava os quadros escolhidos como PNG, prontos para importar no SLEAP.
 
     Estrutura: `<out_dir>/<trial>/quadros/quadro_NNNNNN.png` mais
     `<out_dir>/<trial>/amostragem.csv`, em que `<trial>` é a chave curta do
     hash de conteúdo do vídeo (`trial_key`) — o mesmo critério de identidade
-    de trial usado no banco (`trials.content_hash`).
+    de trial usado no banco (`trials.content_hash`). Os quadros são lidos na
+    mesma passada sequencial da varredura (`_iter_frames`), sem seek.
 
     Args:
         video_path: Caminho do vídeo do trial.
@@ -318,20 +368,36 @@ def export_frames(
             para que a contagem por região (`barnes pose report`) use a
             geometria do próprio trial — trials de dias diferentes podem ter
             a câmera deslocada e, portanto, outra montagem.
+        overwrite: Apaga os PNGs de uma amostragem anterior do mesmo trial
+            em vez de recusar (ver `check_previous_export`).
 
     Returns:
         O diretório do trial.
+
+    Raises:
+        FileExistsError: Se já houver PNGs deste trial e `overwrite` for `False`.
+        VideoLoadError: Se o vídeo acabar antes de algum quadro escolhido.
     """
     key = trial_key(content_hash)
     trial_dir = Path(out_dir) / key
     frames_dir = trial_dir / FRAMES_DIR
+    for previous in check_previous_export(content_hash, out_dir, overwrite=overwrite):
+        previous.unlink()
     frames_dir.mkdir(parents=True, exist_ok=True)
 
-    for sampled in frames:
-        image = read_frame(video_path, sampled.frame_index)
-        target = frames_dir / frame_filename(sampled.frame_index)
-        if not cv2.imwrite(str(target), image):
-            raise OSError(f"Não foi possível gravar {target}")
+    wanted = {sampled.frame_index for sampled in frames}
+    written = set()
+    if wanted:
+        for index, image in _iter_frames(
+            Path(video_path), min(wanted), max(wanted), wanted.__contains__
+        ):
+            target = frames_dir / frame_filename(index)
+            if not cv2.imwrite(str(target), image):
+                raise OSError(f"Não foi possível gravar {target}")
+            written.add(index)
+    if written != wanted:
+        missing = ", ".join(str(i) for i in sorted(wanted - written))
+        raise VideoLoadError(f"O vídeo {video_path} acabou antes do(s) quadro(s) {missing}.")
 
     with (trial_dir / SAMPLING_CSV).open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)

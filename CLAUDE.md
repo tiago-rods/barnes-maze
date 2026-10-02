@@ -54,7 +54,7 @@ uv run barnes scale show --maze-config-id N
 uv run barnes metrics process --video PATH --trajectory CSV --trial N --maze-config-id N
 
 # US-06 (pose annotation set; files under data/annotations/, nothing in the DB)
-uv run barnes pose sample --video PATH --maze-config-id N [--start-frame F --end-frame F]
+uv run barnes pose sample --video PATH --maze-config-id N [--start-frame F --end-frame F] [--overwrite]
 uv run barnes pose import-slp FILE.slp [FILE2.slp ...]   # -> data/annotations/anotacoes.csv
 uv run barnes pose split                 # by trial -> data/annotations/divisao.csv
 uv run barnes pose check-split           # fails naming any trial in >1 set
@@ -194,7 +194,12 @@ segmentation (no model exists yet); the *reported* count uses the annotated
 recorded in `<trial>/amostragem.csv` by `pose sample`) — never one montagem for
 all trials, since the camera can shift between recording days. `from_slp`
 rejects `.pkg.slp` (embedded images): its "video" is the .slp itself, which
-would turn into a fake trial key and defeat the leakage check. `data/` and
+would turn into a fake trial key and defeat the leakage check. Sampling scan
+and PNG export both decode **sequentially from frame 0** (`_iter_frames`), never
+via `CAP_PROP_POS_FRAMES` seek — with LNBio's B-frames a seek can land on a
+neighbor frame, so the exported PNG/`quadro` index wouldn't be the frame whose
+region was estimated. Re-sampling a trial refuses to touch existing PNGs
+(possibly already annotated) unless `--overwrite`. `data/` and
 `models/` are gitignored (raw videos, trained pose weights) — never assume
 their contents are present in a fresh clone or CI; tests must not depend on
 files under `data/`, which is why `tests/conftest.py` generates small

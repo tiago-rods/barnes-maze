@@ -47,6 +47,10 @@ A amostragem cobre as três regiões, **não** quadros aleatórios: o erro do mo
 3. **Região**, pela geometria da montagem (US-04), com a regra abaixo.
 4. **Sorteio por região**, com semente fixa e espaçamento mínimo entre quadros
    (quadros vizinhos são quase idênticos e não acrescentam nada ao treino).
+5. **Exportação** dos PNGs lendo o vídeo em sequência, como na varredura, sem
+   pular direto para o quadro: com B-frames, o salto pode cair num quadro
+   vizinho. Assim `quadro` é o índice real no vídeo, e o PNG é o quadro em
+   que a região foi estimada.
 
 | Região | Regra (`anotacao.regioes`) | Quadros por trial | Por quê |
 |---|---|---|---|
@@ -131,6 +135,8 @@ uv run barnes pose sample --video data/raw/<trial>.mp4 --maze-config-id <id>
 #    → data/annotations/<trial>/quadros/quadro_NNNNNN.png + amostragem.csv
 #    (o intervalo útil é detectado; corrija com --start-frame/--end-frame se precisar)
 #    amostragem.csv registra a montagem usada, que o passo 5 reaproveita por trial
+#    Reamostrar um trial já amostrado é recusado (os PNGs podem já estar anotados);
+#    --overwrite apaga os PNGs antigos e reamostra, sem deixar quadro órfão
 
 # 2. No SLEAP: novo projeto → importar as pastas quadros/ como imagens →
 #    esqueleto com os nós focinho, centro_corpo, base_cauda (nesta ordem) →
