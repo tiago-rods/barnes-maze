@@ -16,6 +16,7 @@ import numpy as np
 import psycopg
 import typer
 
+from barnes.cli_pose import register_pose_commands
 from barnes.db.calibration import (
     CalibrationRequiredError,
     get_calibration,
@@ -98,7 +99,7 @@ app.add_typer(scale_app, name="scale")
 metrics_app = typer.Typer(help="Métricas calculadas com a escala calibrada (US-02).")
 app.add_typer(metrics_app, name="metrics")
 
-pose_app = typer.Typer(help="Conjunto anotado para o modelo de pose (US-06).")
+pose_app = typer.Typer(help="Anotação, treino, avaliação e inferência local de pose (US-06/07/08).")
 app.add_typer(pose_app, name="pose")
 
 
@@ -1329,6 +1330,8 @@ def pose_report(
             raise typer.Exit(code=1)
         typer.echo("Cobertura OK: as três regiões têm quadros anotados.")
 
+
+register_pose_commands(pose_app, _command_errors)
 
 if __name__ == "__main__":
     app()

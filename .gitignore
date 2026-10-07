@@ -5,6 +5,7 @@ __pycache__/
 
 # Ambientes virtuais
 .venv/
+.venv-pose-check/
 venv/
 env/
 

@@ -4,6 +4,10 @@
 
 Manual de instalação e operação para o laboratório.
 
+Treino, avaliação por região e inferência local (US-07/US-08) estão detalhados
+no [guia de pose](pose-treino-avaliacao.md), incluindo instalação CUDA,
+diagnóstico de hardware, fallback/D4, registro no banco e validação offline.
+
 > **Critérios que este documento precisa fazer passar (US-30):**
 > instalação concluída por **pessoa de fora** seguindo só este manual;
 > operador processa um trial em **≤ 10 min**; funciona **offline**.

@@ -10,6 +10,8 @@ erDiagram
 
     MAZE_CONFIG ||--o{ HOLE : "defines N holes"
     MAZE_CONFIG ||--o{ TRIAL : "reused by (same camera setup)"
+    MAZE_CONFIG ||--o{ EXECUCAO : "pose training/evaluation/inference"
+    TRIAL |o--o{ EXECUCAO : "optional except inference; same maze_config"
 
     TRIAL ||--|| TRIAL_RESULT : produces
     TRIAL_RESULT ||--o{ HOLE_VISIT : "ordered sequence of pokes"
@@ -90,6 +92,18 @@ erDiagram
         string trajectory_path "caminho do .parquet de pose/eventos gerado para o trial"
         float rotation_deg "US-05 RN01 — rotação da plataforma, 0-360, sem default (NULL = não registrada)"
     }
+    EXECUCAO {
+        int id PK
+        string kind "treino|avaliacao|inferencia"
+        string model_id "identificador dos pesos locais em models/"
+        int maze_config_id FK "treino por montagem, nunca por trial"
+        int trial_id FK "obrigatório na inferência; nulo no treino"
+        string status "concluido|falhou; nova tentativa = nova linha"
+        float duration_seconds "finito e >=0; obrigatório na inferência concluída"
+        string artifact_path "pesos, relatório ou predições locais"
+        json metadata "manifesto: dados, parâmetros, ambiente, máquina, commit, hashes e resultados"
+        datetime recorded_at "instante do registro no banco"
+    }
     TRIAL_RESULT {
         int id PK
         int trial_id FK, UK
@@ -119,6 +133,21 @@ erDiagram
         float duration_s "quanto tempo o focinho ficou no buraco"
     }
 ```
+
+`execucao` (migração `0006_pose_executions.sql`) registra o identificador do
+modelo e o manifesto completo das tentativas de treino, avaliação e inferência
+(US-07/US-08). Os binários dos pesos ficam em `models/`, fora do Git. O campo
+`metadata` é JSONB e armazena versão/hash do conjunto, hiperparâmetros, ambiente,
+máquina, commit do código, início/fim, hashes dos artefatos e resultados.
+A FK composta `(trial_id, maze_config_id)` garante que a inferência use a montagem
+do trial. Uma execução concluída de inferência exige duração e caminho de saída.
+Registros não aceitam UPDATE: repetir ou corrigir uma execução acrescenta outra
+linha com outro identificador. `metadata.run_id`, quando informado, é único por
+tipo de execução: repetir o registro dos mesmos artefatos devolve o id anterior;
+reutilizá-lo com outra proveniência é recusado. A exclusão segue a cadeia de
+posse com CASCADE, como as demais tabelas.
+Isso não altera a relação 1:1 de `trial_results`; a proveniência de métricas
+posteriores continua sendo trabalho da US-27.
 
 <!--
 Pontos identificados na revisão do schema mas propositalmente adiados —
