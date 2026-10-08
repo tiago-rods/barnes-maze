@@ -139,6 +139,9 @@ Decisões que estreitam o card (detalhes em [DER](DER.md) e no
   Métricas anteriores à US-27 receberam uma execução "legado" na migração.
 - **Conexão:** mantido `BARNES_DATABASE_URL` (agora também lido de `.env`);
   testes usam um banco separado, `BARNES_TEST_DATABASE_URL`.
-- **Distribuição do PostgreSQL para o laboratório (SCRUM-148): em aberto.**
-  Três opções (nativo, Docker, voltar para SQLite) com prós e contras no manual,
-  §2.2.2, para decisão da equipe/cliente.
+- **Distribuição do PostgreSQL para o laboratório (SCRUM-148): instalação
+  nativa (opção A).** No projeto, a "máquina do laboratório" é o PC onde o banco
+  real já roda (o do Tiago), com PostgreSQL nativo; só ele processa com os dados
+  do estudo, e os demais desenvolvem com o Postgres do Docker. Docker (licença do
+  Docker Desktop, WSL2) e SQLite (reescrita das migrações e de `db/`) foram
+  avaliados e ficam como alternativas. Passo a passo no manual, §2.2.2.

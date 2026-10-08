@@ -135,8 +135,8 @@ uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_
 `.env`.) O banco `barnes_test` é só da suíte de testes
 (`BARNES_TEST_DATABASE_URL`); os testes nunca tocam o banco de trabalho. Numa
 próxima sessão: abra o Docker Desktop e rode `docker compose up -d`. A
-distribuição do banco para a máquina do laboratório ainda está em aberto —
-ver o rascunho em `docs/manual-usuario.md` §2.2.2.
+máquina do laboratório usa PostgreSQL instalado nativamente (decisão da
+SCRUM-148) — passo a passo em `docs/manual-usuario.md` §2.2.2.
 
 Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
 ordem e registrados em `schema_migrations` — rodar o comando de novo não

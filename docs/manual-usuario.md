@@ -23,7 +23,7 @@ diagnóstico de hardware, fallback/D4, registro no banco e validação offline.
 | Python | 3.11 |
 | GPU | Não obrigatória para inferência |
 | Interface de calibração | Ambiente gráfico com teclado, mouse e OpenCV |
-| Banco de dados | PostgreSQL — ver seção 2 |
+| Banco de dados | PostgreSQL instalado nativamente — ver seção 2.2.2 |
 
 ## 2. Instalação
 
@@ -93,66 +93,63 @@ Numa sessão seguinte, basta abrir o Docker Desktop e rodar `docker compose up -
 para não colidir com um PostgreSQL já instalado na 5432 (mude com
 `BARNES_PG_PORT`). O banco `barnes_test` é só da suíte de testes.
 
-#### 2.2.2 Distribuição para a máquina do laboratório — RASCUNHO (US-27, SCRUM-148)
+#### 2.2.2 Banco da máquina do laboratório — PostgreSQL nativo (US-27, SCRUM-148)
 
-> **Decisão em aberto — não decidida pela equipe.** PostgreSQL é um
-> **servidor**, não um arquivo: precisa estar instalado e rodando na máquina do
-> laboratório. Isso atinge dois critérios de aceite da US-30 — instalação feita
-> por **pessoa de fora** seguindo só este manual, e operação **offline**. As
-> opções abaixo são para revisão; a escolha depende do perfil do operador e da
-> TI do LNBio.
+> **Decisão (SCRUM-148): PostgreSQL instalado nativamente no Windows (opção A).**
+> PostgreSQL é um servidor, não um arquivo (US-27 RN07): precisa estar instalado
+> e rodando na máquina que guarda os dados. A instalação nativa é a via padrão,
+> sobe sozinha com o Windows, funciona **offline** e tem licença permissiva
+> (PostgreSQL License). No projeto, a máquina de referência é o PC onde o banco
+> real já roda (o do Tiago) — é ele quem processa com os dados do estudo. Os
+> demais integrantes desenvolvem com o banco local do Docker (seção 2.2.1), com
+> as mesmas migrações.
 
-| Critério | A. PostgreSQL nativo | B. Docker Desktop | C. SQLite (plano B) |
-|---|---|---|---|
-| Instalação por pessoa de fora | média: instalador com várias telas + 1 script | média: Docker + reinício + 1 comando | fácil: nada além do `barnes` |
-| Funciona offline | sim | sim, depois de baixar a imagem uma vez | sim |
-| Exige administrador | sim (instalação) | sim (instalação, WSL2) | não |
-| Licença | PostgreSQL License (permissiva) | Docker Desktop: verificar termos para a instituição | domínio público |
-| Trabalho de código | nenhum | nenhum | alto: reescrever migrações e `db/` |
-| Igual ao ambiente de desenvolvimento | parcialmente | sim | não |
+**Instalação (uma vez, como administrador):**
 
-**A. PostgreSQL instalado como serviço do Windows** (instalador oficial da
-EDB). Um script do projeto criaria o usuário e o banco `barnes` e rodaria
-`barnes db migrate`.
+1. Baixe o instalador oficial do PostgreSQL para Windows (EDB, versão 16 ou
+   mais recente) e execute-o. Mantenha a porta **5432**, defina e **anote** a
+   senha do superusuário `postgres`. O Stack Builder, oferecido no fim, não é
+   necessário.
+2. Crie o usuário e o banco do projeto, no PowerShell (troque a versão no
+   caminho se for outra, e `SENHA` por uma senha sua):
 
-- Prós: solução padrão e documentada; sobe sozinho com o Windows; não exige
-  virtualização; licença permissiva; desempenho nativo; atende ao offline sem
-  ressalvas.
-- Contras: o instalador pede senha do superusuário, porta e componentes —
-  pontos onde uma pessoa de fora pode errar; fica um serviço permanente na
-  máquina; atualizações de versão são manuais.
-- Variante: se o LNBio já tiver um PostgreSQL mantido pela TI, o `barnes` só
-  aponta para ele (`BARNES_DATABASE_URL`). Zero instalação, mas depende da rede
-  interna — confirmar se isso conta como "offline" para a US-30.
+   ```powershell
+   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE ROLE barnes LOGIN PASSWORD 'SENHA';"
+   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE barnes OWNER barnes;"
+   ```
 
-**B. Docker Desktop com o `docker-compose.yml` do repositório.**
+3. Na pasta do projeto, copie `.env.example` para `.env` e ajuste a linha da
+   conexão para o banco nativo:
 
-- Prós: é exatamente o ambiente que a equipe usa e testa; depois do Docker,
-  um único comando (`docker compose up -d`); versão do Postgres fixada; fácil
-  de descartar e recriar.
-- Contras: exige virtualização habilitada (WSL2), direitos de administrador e
-  reinício; o Docker Desktop precisa estar aberto para o banco funcionar; a
-  imagem precisa ser baixada uma vez (ou levada em arquivo com `docker save`/
-  `docker load`); consome mais memória. **Licença:** o Docker Desktop é gratuito
-  só para uso pessoal, educacional e organizações pequenas — **confirmar se o
-  LNBio/CNPEM se enquadra** ou se exige assinatura. Alternativas com licença
-  Apache-2.0 (Rancher Desktop, Podman) rodam o mesmo arquivo, mas não foram
-  testadas.
+   ```text
+   BARNES_DATABASE_URL=postgresql://barnes:SENHA@localhost:5432/barnes
+   ```
 
-**C. Voltar para SQLite** (plano B previsto no escopo).
+4. Crie as tabelas e confira:
 
-- Prós: o banco é um único arquivo, sem servidor nem instalação; backup é
-  copiar o arquivo; offline trivial; adequado ao volume do estudo (milhões de
-  linhas) e a um único operador.
-- Contras: reescrever as migrações (o SQLite não tem `JSONB`, `IDENTITY`,
-  gatilhos em PL/pgSQL, `ALTER TABLE ... DROP CONSTRAINT` nem regex nos
-  `CHECK`) e a camada `src/barnes/db/` (hoje `psycopg`); refazer os testes de
-  banco; perder o acesso simultâneo de mais de uma máquina; migrar os dados de
-  quem já usa o PostgreSQL.
+   ```powershell
+   barnes db migrate
+   barnes catalog list     # "Nenhum trial catalogado." num banco novo
+   ```
 
-_Pendente: escolher a opção com a equipe/cliente, registrar a decisão em
-`docs/revisao-cards.md` e transformar a opção escolhida em passo a passo
-testado por uma pessoa de fora (US-30)._
+**A cada atualização do código** (antes de processar):
+
+```powershell
+git pull
+uv sync
+barnes db migrate        # aplica só as migrações novas; seguro repetir
+```
+
+`barnes db migrate` só funciona como esperado num banco criado por ele mesmo
+(tabela `schema_migrations`). Um banco montado à mão precisa ser recriado pelos
+passos acima.
+
+**Alternativas avaliadas e não adotadas:**
+
+| Opção | Por que não |
+|---|---|
+| B. Docker Desktop com `docker-compose.yml` | Exige virtualização (WSL2), reinício e o Docker aberto; a licença gratuita pode não cobrir uma instituição do porte do LNBio/CNPEM. Continua sendo o ambiente de **desenvolvimento** (seção 2.2.1). |
+| C. Voltar para SQLite (plano B do escopo) | Exigiria reescrever as migrações (sem `JSONB`, `IDENTITY`, gatilhos PL/pgSQL, `DROP CONSTRAINT`) e a camada `src/barnes/db/`. Fica como contingência se a instalação nativa se mostrar inviável para o operador (US-27 RN07). |
 
 ## 3. Configurar uma montagem
 
