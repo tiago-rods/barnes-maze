@@ -16,6 +16,7 @@ from barnes.pose.training import (
     _worker,
     build_training_config,
     load_model_manifest,
+    load_training_run_record,
     read_training_parameters,
     train_model,
 )
@@ -79,6 +80,36 @@ def test_failed_run_is_not_a_model(prepared, tmp_path):
     assert error.value.model_dir == manifest_path.parent
     with pytest.raises(TrainingError, match="concluído"):
         load_model_manifest(manifest_path.parent)
+
+
+def test_load_training_run_record_for_completed_and_failed_runs(prepared, tmp_path):
+    completed_dir = train_model(
+        prepared, tmp_path / "models", DEFAULT_CONFIG, {"eligible": True}, runner=successful_runner
+    )
+    run = load_training_run_record(completed_dir)
+    assert run.artifact_filename == "manifest.json"
+    assert run.duration_seconds == run.document["elapsed_seconds"]
+    assert run.document["run_id"] == run.document["model_id"]
+    assert run.document["status"] == "completed"
+
+    def fail(*args):
+        raise RuntimeError("out of GPU memory")
+
+    with pytest.raises(TrainingError, match="memory") as error:
+        train_model(prepared, tmp_path / "models", DEFAULT_CONFIG, {"eligible": True}, runner=fail)
+    failed = load_training_run_record(error.value.model_dir)
+    assert failed.document["status"] == "failed"
+    assert failed.document["run_id"] == failed.document["model_id"]
+
+
+def test_load_training_run_record_refuses_unfinished_run(tmp_path):
+    run_dir = tmp_path / "models" / "running-model"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"status": "running", "model_id": "running-model"}), encoding="utf-8"
+    )
+    with pytest.raises(TrainingError, match="não terminou"):
+        load_training_run_record(run_dir)
 
 
 def test_checks_hardware_before_runner(prepared, tmp_path):

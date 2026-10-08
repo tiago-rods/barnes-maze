@@ -8,7 +8,13 @@ import pytest
 
 from barnes.geometry.holes import generate_holes
 from barnes.pose.annotations import KEYPOINTS, AnnotatedFrame
-from barnes.pose.evaluation import EvaluationError, evaluate_pose, write_evaluation_report
+from barnes.pose.dataset import file_sha256
+from barnes.pose.evaluation import (
+    EvaluationError,
+    evaluate_pose,
+    finalize_evaluation_record,
+    write_evaluation_report,
+)
 from barnes.pose.split import ManifestRow, SplitLeakageError
 
 
@@ -281,3 +287,21 @@ def test_writer_preserves_previous_report(evaluation_data, region_params, tmp_pa
     with pytest.raises(EvaluationError, match="já existe"):
         write_evaluation_report(report, tmp_path)
     assert paths["evaluation_json"].read_bytes() == original
+
+
+def test_finalize_evaluation_record_merges_duration_and_hashes_artifacts(tmp_path):
+    (tmp_path / "predicoes.csv").write_text("trial,frame_index\n", encoding="utf-8")
+    (tmp_path / "registro-banco.json").write_text("{}", encoding="utf-8")
+    record = {"status": "completed", "duration_seconds": 1.5}
+    finalized = finalize_evaluation_record(tmp_path, record, evaluation_started=0.0)
+    assert finalized["prediction_duration_seconds"] == 1.5
+    assert finalized["duration_seconds"] >= 0
+    assert finalized["artifacts"] == {
+        "predicoes.csv": file_sha256(tmp_path / "predicoes.csv"),
+    }
+    assert "registro-banco.json" not in finalized["artifacts"]
+    assert "execucao.json" not in finalized["artifacts"]
+    stored = json.loads((tmp_path / "execucao.json").read_text(encoding="utf-8"))
+    assert stored == finalized
+    # Não muta o dict recebido; o chamador ainda tem o registro original.
+    assert "artifacts" not in record
