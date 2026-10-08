@@ -18,11 +18,13 @@ from typer.testing import CliRunner
 from barnes import cli
 from barnes.db.calibration import get_calibration
 from barnes.db.connection import get_connection
+from barnes.db.executions import get_execution
 from barnes.db.trial_results import get_trial_result
 from barnes.db.trials import insert_trial
 from barnes.io.calibration_ui import CalibrationCancelled
 from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
+from barnes.provenance import GitState, git_state, thresholds_snapshot
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("BARNES_DATABASE_URL"),
@@ -165,7 +167,7 @@ def test_cli_full_flow_reuse_verification_and_recalibration(args, maze_config_id
         ],
     )
     assert result.exit_code == 0, result.output + repr(result.exception)
-    metrics = json.loads(result.output)
+    metrics = json.loads(result.stdout)
     assert metrics["distance_cm"] == pytest.approx(10)
     assert metrics["mean_speed_cm_s"] == pytest.approx(2.5)
     assert metrics["route_efficiency"] == pytest.approx(0.8)
@@ -197,14 +199,14 @@ def test_cli_full_flow_reuse_verification_and_recalibration(args, maze_config_id
         ["metrics", "process", *args, "--trial", str(trial_id), "--trajectory", str(trajectory)],
     )
     assert reprocessed.exit_code == 0, reprocessed.output
-    updated = json.loads(reprocessed.output)
+    updated = json.loads(reprocessed.stdout)
     assert updated["distance_cm"] == pytest.approx(20)
     with get_connection() as conn:
         assert not get_trial_result(conn, trial_id).is_stale
 
     history = runner.invoke(cli.app, ["metrics", "executions"])
     assert history.exit_code == 0
-    assert len(json.loads(history.output)) >= 1
+    assert len(json.loads(history.stdout)) >= 1
 
 
 def test_process_without_scale_fails_before_opening_video(maze_config_id, trial_id, monkeypatch, tmp_path):
@@ -247,7 +249,7 @@ def test_process_ignores_samples_outside_useful_interval(args, trial_id, tmp_pat
     )
     result = _process(args, trial_id, trajectory)
     assert result.exit_code == 0, result.output + repr(result.exception)
-    metrics = json.loads(result.output)
+    metrics = json.loads(result.stdout)
     assert metrics["distance_cm"] == pytest.approx(10)
     assert metrics["samples_outside_interval"] == 1
     assert (metrics["interval_start_s"], metrics["interval_end_s"]) == (0.0, 4.0)
@@ -331,3 +333,76 @@ def test_invalid_csv_is_reported_and_no_result_saved(args, maze_config_id, trial
     assert "Erro:" in result.output
     with get_connection() as conn:
         assert get_trial_result(conn, trial_id) is None
+
+
+# --- US-27: proveniência registrada em cada `metrics process` -----------------
+
+
+def _straight_trajectory(tmp_path):
+    trajectory = tmp_path / "trajectory.csv"
+    trajectory.write_text("x_px,y_px,time_s\n10,10,0\n40,50,2\n70,90,4\n", encoding="utf-8")
+    return trajectory
+
+
+def test_process_registers_execution_and_links_metric(args, trial_id, tmp_path):
+    # Cenários 1 e 2: a execução guarda limiares, parâmetros e commit; a métrica aponta para ela.
+    calibrate(args)
+    result = _process(args, trial_id, _straight_trajectory(tmp_path))
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    execucao_id = json.loads(result.stdout)["execucao_id"]
+
+    with get_connection() as conn:
+        assert get_trial_result(conn, trial_id).execucao_id == execucao_id
+        stored = get_execution(conn, execucao_id)
+    assert stored.kind == "processamento"
+    assert stored.trial_id == trial_id
+    assert stored.limiares_sha256 == thresholds_snapshot().sha256
+    assert stored.limiares == thresholds_snapshot().values
+    assert stored.parametros["trajectory_sha256"]
+    assert stored.parametros["px_per_10cm"] == pytest.approx(100)
+    assert stored.git_commit == git_state().commit
+    assert stored.recorded_at is not None
+
+    shown = runner.invoke(cli.app, ["execution", "show", str(execucao_id)])
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.stdout)["limiares_sha256"] == stored.limiares_sha256
+
+
+def test_process_marks_dirty_repository(args, trial_id, tmp_path, monkeypatch):
+    # Cenário 4: alterações não commitadas → execução marcada como suja.
+    calibrate(args)
+    monkeypatch.setattr(cli, "git_state", lambda: GitState("d" * 40, True))
+    result = _process(args, trial_id, _straight_trajectory(tmp_path))
+    assert result.exit_code == 0, result.output
+    assert "sujo" in result.stderr
+    with get_connection() as conn:
+        stored = get_execution(conn, json.loads(result.stdout)["execucao_id"])
+    assert stored.git_dirty is True
+    assert not stored.reproducible
+
+
+def test_process_refuses_replaced_video(args, trial_id, video, tmp_path):
+    # Cenário 3: conteúdo substituído no mesmo caminho → recusa, sem gravar nada.
+    calibrate(args)
+    _write_video(video, frame_count=7)
+    result = _process(args, trial_id, _straight_trajectory(tmp_path))
+    assert result.exit_code != 0
+    assert f"trial #{trial_id}" in result.output
+    with get_connection() as conn:
+        assert get_trial_result(conn, trial_id) is None
+
+
+def test_process_flags_moved_video_and_records_new_path(args, trial_id, video, tmp_path):
+    # Cenário 3: mesmo conteúdo em outro caminho → processa, mas sinaliza e registra.
+    calibrate(args)
+    moved = tmp_path / "outra_pasta" / "renomeado.mp4"
+    moved.parent.mkdir()
+    video.rename(moved)
+    moved_args = ["--video", str(moved), *args[2:]]
+    result = _process(moved_args, trial_id, _straight_trajectory(tmp_path))
+    assert result.exit_code == 0, result.output
+    assert "Aviso" in result.stderr
+    with get_connection() as conn:
+        stored = get_execution(conn, json.loads(result.stdout)["execucao_id"])
+    assert stored.parametros["video_movido"] is True
+    assert stored.parametros["video"] == str(moved)
