@@ -54,33 +54,105 @@ A janela exige `opencv-python` com suporte a interface gráfica; a variante
 
 ### 2.2 Banco de dados
 
-> **Ponto em aberto — US-27 RN07, resolver até o Sprint 2.**
-> PostgreSQL é um **servidor**, não um arquivo: exige instalação e serviço
-> rodando na máquina do laboratório. Isso atinge dois critérios de aceite de
-> US-30 — instalação por pessoa de fora seguindo só o manual, e operação
-> offline. Definir a via: instalador embarcado, container, ou serviço já
-> existente no LNBio.
->
-> Se a distribuição se mostrar inviável para o perfil do operador, **SQLite é a
-> alternativa adequada** ao volume real do estudo (alguns milhões de linhas).
+O projeto usa **um** PostgreSQL para tudo: montagens, escala (US-02), trials,
+execuções, métricas e eventos. Antes do primeiro uso, e depois de cada
+atualização do código, aplique as migrações:
 
-A calibração da US-02 usa o **mesmo** Postgres das demais tabelas do projeto
-(`maze_configs`, `holes`, `trials`, ...) — não há um banco separado para a
-escala. Aplique as migrações antes de calibrar (`barnes db migrate`, ver
-`CLAUDE.md`). Para um servidor PostgreSQL já disponível, use uma conexão no
-formato `postgresql://usuario:senha@localhost:5432/barnes`; o banco e o
-usuário precisam existir, com permissão para criar as tabelas.
+```powershell
+barnes db migrate
+```
 
-Cada comando aceita `--dsn` para essa conexão. Como alternativa, configure
-`BARNES_DATABASE_URL` uma vez no terminal:
+O comando só aplica o que ainda falta (registra o que já aplicou na tabela
+`schema_migrations`); rodá-lo de novo não faz nada. O banco e o usuário
+precisam existir, com permissão para criar tabelas.
+
+**Conexão.** Copie `.env.example` para `.env` na pasta do projeto e ajuste
+`BARNES_DATABASE_URL` (formato `postgresql://usuario:senha@host:porta/banco`).
+O `.env` guarda a senha: **nunca o envie para o Git** (ele já está no
+`.gitignore`). Também funcionam a opção `--dsn` de cada comando, que tem
+precedência, ou a variável no terminal:
 
 ```powershell
 $env:BARNES_DATABASE_URL = "postgresql://usuario:senha@localhost:5432/barnes"
 ```
 
-A opção `--dsn` tem precedência sobre a variável de ambiente. A implantação do
-servidor e a distribuição do aplicativo completo continuam pertencendo à
-US-27/US-30.
+#### 2.2.1 Banco local para desenvolvimento (Docker)
+
+Para desenvolver sem o banco do laboratório, o repositório traz um Postgres
+descartável em `docker-compose.yml` (exige Docker Desktop):
+
+```powershell
+Copy-Item .env.example .env   # uma vez
+docker compose up -d          # sobe o Postgres na porta 5433
+barnes db migrate             # banco de desenvolvimento
+barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_test
+```
+
+Numa sessão seguinte, basta abrir o Docker Desktop e rodar `docker compose up -d`
+— os dados ficam no volume. `docker compose down -v` apaga tudo. A porta é 5433
+para não colidir com um PostgreSQL já instalado na 5432 (mude com
+`BARNES_PG_PORT`). O banco `barnes_test` é só da suíte de testes.
+
+#### 2.2.2 Distribuição para a máquina do laboratório — RASCUNHO (US-27, SCRUM-148)
+
+> **Decisão em aberto — não decidida pela equipe.** PostgreSQL é um
+> **servidor**, não um arquivo: precisa estar instalado e rodando na máquina do
+> laboratório. Isso atinge dois critérios de aceite da US-30 — instalação feita
+> por **pessoa de fora** seguindo só este manual, e operação **offline**. As
+> opções abaixo são para revisão; a escolha depende do perfil do operador e da
+> TI do LNBio.
+
+| Critério | A. PostgreSQL nativo | B. Docker Desktop | C. SQLite (plano B) |
+|---|---|---|---|
+| Instalação por pessoa de fora | média: instalador com várias telas + 1 script | média: Docker + reinício + 1 comando | fácil: nada além do `barnes` |
+| Funciona offline | sim | sim, depois de baixar a imagem uma vez | sim |
+| Exige administrador | sim (instalação) | sim (instalação, WSL2) | não |
+| Licença | PostgreSQL License (permissiva) | Docker Desktop: verificar termos para a instituição | domínio público |
+| Trabalho de código | nenhum | nenhum | alto: reescrever migrações e `db/` |
+| Igual ao ambiente de desenvolvimento | parcialmente | sim | não |
+
+**A. PostgreSQL instalado como serviço do Windows** (instalador oficial da
+EDB). Um script do projeto criaria o usuário e o banco `barnes` e rodaria
+`barnes db migrate`.
+
+- Prós: solução padrão e documentada; sobe sozinho com o Windows; não exige
+  virtualização; licença permissiva; desempenho nativo; atende ao offline sem
+  ressalvas.
+- Contras: o instalador pede senha do superusuário, porta e componentes —
+  pontos onde uma pessoa de fora pode errar; fica um serviço permanente na
+  máquina; atualizações de versão são manuais.
+- Variante: se o LNBio já tiver um PostgreSQL mantido pela TI, o `barnes` só
+  aponta para ele (`BARNES_DATABASE_URL`). Zero instalação, mas depende da rede
+  interna — confirmar se isso conta como "offline" para a US-30.
+
+**B. Docker Desktop com o `docker-compose.yml` do repositório.**
+
+- Prós: é exatamente o ambiente que a equipe usa e testa; depois do Docker,
+  um único comando (`docker compose up -d`); versão do Postgres fixada; fácil
+  de descartar e recriar.
+- Contras: exige virtualização habilitada (WSL2), direitos de administrador e
+  reinício; o Docker Desktop precisa estar aberto para o banco funcionar; a
+  imagem precisa ser baixada uma vez (ou levada em arquivo com `docker save`/
+  `docker load`); consome mais memória. **Licença:** o Docker Desktop é gratuito
+  só para uso pessoal, educacional e organizações pequenas — **confirmar se o
+  LNBio/CNPEM se enquadra** ou se exige assinatura. Alternativas com licença
+  Apache-2.0 (Rancher Desktop, Podman) rodam o mesmo arquivo, mas não foram
+  testadas.
+
+**C. Voltar para SQLite** (plano B previsto no escopo).
+
+- Prós: o banco é um único arquivo, sem servidor nem instalação; backup é
+  copiar o arquivo; offline trivial; adequado ao volume do estudo (milhões de
+  linhas) e a um único operador.
+- Contras: reescrever as migrações (o SQLite não tem `JSONB`, `IDENTITY`,
+  gatilhos em PL/pgSQL, `ALTER TABLE ... DROP CONSTRAINT` nem regex nos
+  `CHECK`) e a camada `src/barnes/db/` (hoje `psycopg`); refazer os testes de
+  banco; perder o acesso simultâneo de mais de uma máquina; migrar os dados de
+  quem já usa o PostgreSQL.
+
+_Pendente: escolher a opção com a equipe/cliente, registrar a decisão em
+`docs/revisao-cards.md` e transformar a opção escolhida em passo a passo
+testado por uma pessoa de fora (US-30)._
 
 ## 3. Configurar uma montagem
 
@@ -380,6 +452,16 @@ mensagem solicitando a calibração daquela montagem. O resultado salvo
 registra a escala exata usada (`px_per_10cm_used`), para detectar se fica
 obsoleto numa recalibração futura.
 
+**Conferência do vídeo e execução registrada (US-27).** Antes de calcular, o
+vídeo informado em `--video` é comparado com o hash gravado no trial: se o
+conteúdo for outro, o comando recusa (as métricas iriam para o trial errado).
+Se o conteúdo for o mesmo mas o caminho mudou, processa e avisa. Cada
+processamento grava uma linha em `execucao` — limiares de
+`configs/default.yaml`, parâmetros, commit do código e se havia alterações
+não commitadas — e as métricas apontam para ela. O resultado impresso traz o
+`execucao_id`. Reprocessar não apaga o resultado anterior: cria outra execução
+(seção 4.5).
+
 A distância é a soma dos deslocamentos entre amostras. A velocidade média é
 essa distância dividida pelo tempo entre a primeira e a última amostra. No CSV
 acima, uma escala de `0.1 cm/px` resulta em 10 cm percorridos em 2 s, ou 5 cm/s.
@@ -491,11 +573,47 @@ Trials do mesmo animal devem mostrar o **mesmo** ângulo de sala para o
 alvo, mesmo que tenham usado montagens diferentes (câmera deslocada) ou
 rotações diferentes.
 
+### 4.5 Catálogo de trials e proveniência (US-27)
+
+```powershell
+barnes catalog list                      # todos os trials; confere existência e tamanho do vídeo
+barnes catalog list --verificar-hash     # relê cada vídeo e compara o conteúdo (lento)
+barnes catalog list --procurar-em D:\videos_novos   # onde procurar vídeos movidos
+barnes catalog list --json               # para outra ferramenta
+```
+
+O catálogo mostra trial, animal, sessão (o dia), fase, ordem no dia,
+**situação** e **cobertura de pose**. A situação é calculada na hora:
+
+| Situação | Significado |
+|---|---|
+| `sem_recorte` | sem intervalo útil (US-03); nada pode ser processado |
+| `carregado` | pronto, ainda sem pose nem métricas |
+| `pose_inferida` | há inferência de pose concluída, sem métricas |
+| `processado` | métricas calculadas com a escala atual da montagem |
+| `obsoleto` | métricas calculadas com uma escala que já foi trocada — reprocesse |
+
+A cobertura de pose aparece como `—` até a US-10. A coluna **arquivo** mostra
+`ok`/`presente` quando o vídeo confere; `movido`, `alterado` ou `ausente`
+aparecem também como aviso no fim da listagem, com o id do trial. **Não
+reprocesse um trial com vídeo divergente** antes de conferir o arquivo.
+
+Para reproduzir um resultado antigo, pegue o `execucao_id` (em
+`barnes metrics executions --trial N --history`) e consulte:
+
+```powershell
+barnes execution show 42
+```
+
+A saída traz o modelo de pose (se houve), os limiares, os parâmetros, o commit
+e `reproduzivel`. Se `reproduzivel` for `false`, o código tinha alterações não
+commitadas (ou não havia git) — o commit sozinho não reproduz aquele resultado.
+
 ## 5. Saídas
 
 Na US-02, os resultados são exibidos no terminal e persistidos no mesmo
-Postgres do projeto. Use `barnes scale show` e `barnes metrics executions`
-para consultar os registros.
+Postgres do projeto. Use `barnes scale show`, `barnes metrics executions`,
+`barnes catalog list` e `barnes execution show` para consultar os registros.
 As exportações do produto completo abaixo permanecem previstas para suas
 respectivas histórias:
 
@@ -524,7 +642,10 @@ use sempre as colunas `_room`.
 | Janela não abre | Execute em sessão gráfica com `opencv-python` e acesso ao monitor; a interface interativa exige janela. |
 | Vídeo/quadro não pode ser lido | Confira caminho, formato e índice do quadro; o primeiro quadro é o 0. |
 | Resultado parece ausente | Confira `--dsn`/`BARNES_DATABASE_URL` e o id do trial/da montagem. |
-| Resultado marcado obsoleto | Reprocesse o trial (`metrics process`) para aplicar a escala atual; o valor anterior fica até reprocessar. |
+| Resultado marcado obsoleto | Reprocesse o trial (`metrics process`) para aplicar a escala atual; o resultado anterior continua no histórico. |
+| "O vídeo informado não é o catalogado" | O arquivo em `--video` tem outro conteúdo. Ache o vídeo original (`barnes catalog list --verificar-hash --procurar-em PASTA`). |
+| Catálogo mostra `movido`/`ausente` | O vídeo mudou de lugar. Informe o caminho novo em `--video` ao reprocessar; o caminho fica registrado na execução. |
+| Execução marcada como suja | Havia alterações não commitadas no código. Faça commit e reprocesse para ter um resultado reproduzível. |
 
 _Outros problemas serão acrescentados nas demais histórias, especialmente o
 aviso de fps variável (US-01), que não é corrigido automaticamente._
@@ -583,6 +704,7 @@ Os testes incluem imagem sintética com escala conhecida e uma terceira
 distância independente, bloqueio sem escala, reutilização pela montagem e
 obsolescência após recalibração. Os testes da janela simulam os eventos do
 OpenCV; não substituem uma sessão manual com vídeo real. Os testes de
-persistência (`tests/db/`, `tests/test_cli.py`) exigem `BARNES_DATABASE_URL`
-apontando para um Postgres de teste com o schema aplicado (`barnes db
-migrate`) — são pulados automaticamente se a variável não estiver definida.
+persistência (`tests/db/`, `tests/test_cli.py`) exigem
+`BARNES_TEST_DATABASE_URL` (no `.env`) apontando para um Postgres **de teste**
+com o schema aplicado (seção 2.2.1) — são pulados automaticamente sem ela. Os
+testes nunca usam `BARNES_DATABASE_URL`, para não tocar no banco de trabalho.
