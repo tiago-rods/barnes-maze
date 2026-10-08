@@ -19,7 +19,14 @@ from pathlib import Path
 import yaml
 
 from barnes.pose.annotations import KEYPOINTS
-from barnes.pose.dataset import contained_path, file_sha256, load_dataset_manifest, write_json
+from barnes.pose.dataset import (
+    RunForRegistration,
+    contained_path,
+    file_sha256,
+    git_revision_record,
+    load_dataset_manifest,
+    write_json,
+)
 from barnes.pose.environment import MIN_RAM_BYTES, inspect_hardware
 from barnes.pose.offline import offline_network
 
@@ -28,6 +35,9 @@ SLEAP_IO_VERSION = "0.9.2"
 TORCH_VERSION = "2.7.1"
 TORCHVISION_VERSION = "0.22.1"
 DEFAULT_CONFIG = Path("configs/pose/single_animal.yaml")
+# Teto de segurança contra um worker travado (driver de GPU, dataloader em deadlock);
+# não é o tempo esperado de treino, que fica muito abaixo disso.
+TRAINING_WORKER_TIMEOUT_SECONDS = 24 * 60 * 60
 DEFAULT_PARAMETERS = {
     "seed": 42,
     "max_epochs": 100,
@@ -196,16 +206,7 @@ def _source_record(model_dir: Path) -> dict:
     for name in ("pyproject.toml", "uv.lock"):
         if (repo / name).is_file():
             shutil.copyfile(repo / name, model_dir / "source" / name)
-    try:
-        revision = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-        ).stdout.strip()
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True
-        ).stdout.strip()
-        return {"git_commit": revision, "git_dirty": bool(dirty), "snapshot": "source"}
-    except (OSError, subprocess.CalledProcessError):
-        return {"git_commit": None, "git_dirty": None, "snapshot": "source"}
+    return {**git_revision_record(repo), "snapshot": "source"}
 
 
 def _run_worker(config_path: Path, log_path: Path, environment: dict[str, str]) -> None:
@@ -216,6 +217,7 @@ def _run_worker(config_path: Path, log_path: Path, environment: dict[str, str]) 
             stdout=log,
             stderr=subprocess.STDOUT,
             check=True,
+            timeout=TRAINING_WORKER_TIMEOUT_SECONDS,
         )
 
 
@@ -356,6 +358,25 @@ def load_model_manifest(model_dir: str | Path, verify: bool = True) -> dict:
             if manifest.get(key) != dataset.get(key):
                 raise TrainingError(f"Modelo e conjunto de origem divergem em {key}.")
     return manifest
+
+
+def load_training_run_record(run_dir: str | Path) -> RunForRegistration:
+    """Carrega um treino (concluído ou falho) já existente, pronto para registro em execucao.
+
+    ``run_dir`` é ``models/<model_id>``, com ``manifest.json`` gravado por
+    ``train_model``/``_worker`` mesmo em falha. Treino concluído passa pelas
+    mesmas verificações de ``load_model_manifest`` (pesos/config íntegros).
+    """
+    run_dir = Path(run_dir).resolve()
+    document = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise TrainingError(f"Esperado objeto JSON: {run_dir / 'manifest.json'}")
+    if document.get("status") == "completed":
+        document = load_model_manifest(run_dir)
+    if document.get("status") not in ("completed", "failed"):
+        raise TrainingError("O treino ainda não terminou; não pode ser registrado como concluído.")
+    document = dict(document, run_id=document["model_id"])
+    return RunForRegistration(document, "manifest.json", document.get("elapsed_seconds"))
 
 
 def _validate_cuda_runtime(torch, hardware: dict, gpu_index: int) -> dict:
