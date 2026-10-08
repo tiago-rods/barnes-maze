@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import psycopg
+from dotenv import find_dotenv, load_dotenv
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "database" / "migrations"
 
@@ -14,13 +15,24 @@ class DatabaseConfigError(Exception):
     """Erro de configuração de conexão com o banco de dados."""
 
 
+def load_local_env() -> None:
+    """Carrega o `.env` do diretório atual (ou acima), sem sobrescrever o terminal.
+
+    O `.env` não é commitado (ver `.env.example`). Uma variável já definida no
+    ambiente — inclusive vazia, como os testes fazem para isolar o banco de
+    desenvolvimento — tem precedência sobre o arquivo.
+    """
+    load_dotenv(find_dotenv(usecwd=True), override=False)
+
+
 def get_connection(dsn: str | None = None) -> psycopg.Connection:
     """Abre uma conexão com o PostgreSQL.
 
     Args:
         dsn: String de conexão no formato aceito pelo psycopg
             (ex.: ``postgresql://usuario:senha@localhost:5432/barnes``).
-            Se omitida, usa a variável de ambiente ``BARNES_DATABASE_URL``.
+            Se omitida, usa a variável de ambiente ``BARNES_DATABASE_URL``,
+            lida também do `.env` local (`load_local_env`).
 
     Returns:
         Uma conexão psycopg aberta.
@@ -29,6 +41,8 @@ def get_connection(dsn: str | None = None) -> psycopg.Connection:
         DatabaseConfigError: Se nenhum DSN foi passado e a variável de
             ambiente também não está definida.
     """
+    if not dsn:
+        load_local_env()
     dsn = dsn or os.environ.get("BARNES_DATABASE_URL")
     if not dsn:
         raise DatabaseConfigError(

@@ -9,6 +9,9 @@ __pycache__/
 venv/
 env/
 
+# Configuração local (credenciais) — ver .env.example
+.env
+
 # Dados do projeto
 data/
 

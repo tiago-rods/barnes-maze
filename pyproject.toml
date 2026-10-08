@@ -23,6 +23,7 @@ dependencies = [
     "pyyaml>=6.0",              # configs/*.yaml
     "psycopg[binary]>=3.1",     # PostgreSQL — via de distribuição definida em US-27
     "typer>=0.12",              # CLI
+    "python-dotenv>=1.0",       # .env local com BARNES_DATABASE_URL (US-27) — BSD-3
 ]
 
 [project.optional-dependencies]

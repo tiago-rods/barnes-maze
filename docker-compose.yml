@@ -1,5 +1,14 @@
 # Postgres de desenvolvimento local. Credenciais fixas de propósito — são
 # só para a máquina de cada dev, nunca para o banco real do LNBio.
+#
+# Porta publicada: 5433 por padrão (BARNES_PG_PORT), para não colidir com um
+# PostgreSQL nativo já instalado na 5432. O script em database/docker-init/
+# cria também o banco `barnes_test`, usado só pela suíte de testes
+# (BARNES_TEST_DATABASE_URL) — os testes nunca tocam o banco `barnes`.
+#
+#   docker compose up -d        # sobe (dados persistem no volume)
+#   docker compose down         # para, mantendo os dados
+#   docker compose down -v      # descarta tudo (volume incluído)
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,9 +17,10 @@ services:
       POSTGRES_PASSWORD: barnes
       POSTGRES_DB: barnes
     ports:
-      - "5432:5432"
+      - "${BARNES_PG_PORT:-5433}:5432"
     volumes:
       - barnes_postgres_data:/var/lib/postgresql/data
+      - ./database/docker-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U barnes"]
       interval: 5s
