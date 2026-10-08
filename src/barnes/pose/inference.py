@@ -6,7 +6,6 @@ import csv
 import importlib.metadata
 import json
 import math
-import subprocess
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -27,6 +26,7 @@ from barnes.pose.training import (
     environment_record,
     load_model_manifest,
 )
+from barnes.provenance import source_record
 
 
 class InferenceError(ValueError):
@@ -143,37 +143,7 @@ def _sequential_frames(video: Path, start: int, end: int) -> Iterator[tuple[int,
 
 def _source_record() -> dict:
     """Identifica o código executado, inclusive alterações ainda sem commit."""
-    package = Path(__file__).resolve().parents[1]
-    source = {
-        "python_files_sha256": {
-            path.relative_to(package).as_posix(): file_sha256(path)
-            for path in sorted(package.rglob("*.py"))
-        },
-        "git_commit": None,
-        "git_dirty": None,
-    }
-    try:
-        source["git_commit"] = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=package,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        ).stdout.strip()
-        source["git_dirty"] = bool(
-            subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=package,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=5,
-            ).stdout.strip()
-        )
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return source
+    return source_record()
 
 
 def _new_record(

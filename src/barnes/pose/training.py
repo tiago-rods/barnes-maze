@@ -22,6 +22,7 @@ from barnes.pose.annotations import KEYPOINTS
 from barnes.pose.dataset import contained_path, file_sha256, load_dataset_manifest, write_json
 from barnes.pose.environment import MIN_RAM_BYTES, inspect_hardware
 from barnes.pose.offline import offline_network
+from barnes.provenance import git_state
 
 SLEAP_NN_VERSION = "0.3.1"
 SLEAP_IO_VERSION = "0.9.2"
@@ -196,16 +197,8 @@ def _source_record(model_dir: Path) -> dict:
     for name in ("pyproject.toml", "uv.lock"):
         if (repo / name).is_file():
             shutil.copyfile(repo / name, model_dir / "source" / name)
-    try:
-        revision = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-        ).stdout.strip()
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True
-        ).stdout.strip()
-        return {"git_commit": revision, "git_dirty": bool(dirty), "snapshot": "source"}
-    except (OSError, subprocess.CalledProcessError):
-        return {"git_commit": None, "git_dirty": None, "snapshot": "source"}
+    state = git_state(repo)
+    return {"git_commit": state.commit, "git_dirty": state.dirty, "snapshot": "source"}
 
 
 def _run_worker(config_path: Path, log_path: Path, environment: dict[str, str]) -> None:
