@@ -73,20 +73,32 @@ uv run barnes pose import-slp FILE.slp [FILE2.slp ...]   # -> data/annotations/a
 uv run barnes pose split                 # by trial -> data/annotations/divisao.csv
 uv run barnes pose check-split           # fails naming any trial in >1 set
 uv run barnes pose report [--maze-config-id N]   # per-trial montagem from amostragem.csv
-uv run barnes metrics executions [--trial N]
+uv run barnes metrics executions [--trial N [--history]]
+
+# US-27 (provenance + catalog)
+uv run barnes execution show ID      # model, thresholds, params, commit, dirty, "reproduzivel"
+uv run barnes catalog list [--experiment-id N] [--verificar-hash] [--procurar-em DIR] [--json]
 ```
 
 ### Local Postgres for development
 
 ```bash
-docker compose up -d
-export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
-uv run barnes db migrate
+cp .env.example .env                 # once; .env is gitignored (holds the DSN)
+docker compose up -d                 # Postgres 16 on port 5433 (BARNES_PG_PORT)
+uv run barnes db migrate             # dev DB `barnes`
+uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_test
 ```
 
-Tests in `tests/db/` are integration tests against a real Postgres with the
-schema applied; they auto-`skip` (via `pytestmark`) when
-`BARNES_DATABASE_URL` is unset, so `uv run pytest` works with or without a
+Port 5433, not 5432, so it never collides with a native PostgreSQL on the
+dev machine. `database/docker-init/` creates the extra `barnes_test` DB on
+first volume creation. `get_connection()` loads `.env` via python-dotenv
+without overriding variables already set in the shell.
+
+Tests never use the dev DB: `tests/conftest.py` overwrites
+`BARNES_DATABASE_URL` with `BARNES_TEST_DATABASE_URL` (or with an empty string
+when unset — empty, not deleted, so `.env` can't refill it) **before
+collection**. Tests in `tests/db/` and `tests/test_cli.py` auto-`skip` (via
+`pytestmark`) when it is empty, so `uv run pytest` works with or without a
 database available. `tests/io/` and other unit tests never need a database
 — video-reading logic is deliberately free of any DB dependency (see
 Architecture below).
@@ -120,7 +132,8 @@ file is applied and committed in its own transaction and recorded in a
 instead. Schema mirrors `docs/DER.md`: `users → experiments → subjects`
 (1 experiment = 1 subject, no reuse across experiments) and
 `experiments → maze_configs` / `→ trials`. `maze_configs → holes`.
-`trials → trial_results → hole_visits`. Ownership chain uses
+`trials → trial_results → hole_visits`, `trials → evento_buraco`, and every
+`trial_results`/`evento_buraco` row → `execucao` (US-27, see below). Ownership chain uses
 `ON DELETE CASCADE` throughout (deleting an experiment wipes everything
 under it) — deliberate, not an oversight. Enumerated fields (`phase`,
 `search_strategy`) and range fields (`angle_deg`) have `CHECK` constraints;
@@ -166,10 +179,11 @@ US-02's px->cm scale (`maze_configs.px_per_10cm`/`calibration_date`/
 `measured_error_pct`/`calibration_segments`/`calibration_reference_*`) and
 its RN05 "recalibrating invalidates old results" rule
 (`trial_results.calculated_at`/`px_per_10cm_used`) are both columns added by
-later migrations on the already-existing tables, not a new entity —
-`trial_results` stays 1:1 per trial (`UNIQUE(trial_id)`); recomputing a
-trial's metrics overwrites that row rather than appending a history table.
-Staleness is derived when read (`calculated_at`/`px_per_10cm_used` vs. the
+later migrations on the already-existing tables, not a new entity. Since
+US-27 (`0007`) `trial_results` is **one row per trial per execution**
+(`UNIQUE(execucao_id)`, no longer `UNIQUE(trial_id)`): reprocessing appends;
+"current" = most recent row (`get_trial_result`), full history via
+`list_trial_result_history`. Staleness is derived when read (`calculated_at`/`px_per_10cm_used` vs. the
 montagem's current values), never stored as a boolean — same philosophy as
 `measured_error_pct` above. See `src/barnes/db/calibration.py` and
 `src/barnes/db/trial_results.py`.
@@ -229,6 +243,24 @@ distance/speed/route-efficiency conversions it gates) are implemented;
 `pose` includes US-06 annotation plus US-07 dataset/training and US-08
 evaluation/offline inference. `cli_pose.py` orchestrates these commands;
 `db/pose_executions.py` records immutable `execucao` rows (migration 0006).
+
+US-27 provenance (`0007`): every stage that writes results must first write
+an `execucao` row — `kind='processamento'` via
+`db/executions.record_processing_execution` — **in the same transaction** as
+its metrics/events. `trial_results.execucao_id` and `evento_buraco.execucao_id`
+are `NOT NULL` with a composite FK `(execucao_id, trial_id) → execucao(id,
+trial_id)`, so an orphan or cross-trial metric is a schema error, not a
+convention. Capture commit/dirty/thresholds only through `barnes.provenance`
+(`git_state`, `source_record`, `thresholds_snapshot`); dirty includes
+untracked files, and "no git" is `None`, never clean. Before reprocessing,
+check the video with `io.video.verify_video_file` against
+`trials.content_hash` (refuse `alterado`, warn and record on `movido`).
+`db/catalog.list_catalog` is the UI-agnostic catalog; its `situacao` is
+derived on read (`trials.status` from 0001 is unused). Card table names map to
+existing tables (animal=`subjects`, montagem=`maze_configs`,
+metrica=`trial_results`, sessao=VIEW `sessao`) — see `docs/DER.md`.
+`execucao` is immutable by trigger; `0007` disables it only inside its own
+backfill transaction.
 Production training requires NVIDIA; ordinary unit tests need no GPU.
 Native backend smoke tests use synthetic data and do not attest lab quality.
 `events`/`strategy`/`longitudinal`/`stats`/`report` are

@@ -125,12 +125,18 @@ partir de `docs/DER.md`.
 Para desenvolvimento local, suba um Postgres descartável com Docker Compose:
 
 ```bash
-docker compose up -d
-export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
+cp .env.example .env      # uma vez — o .env não é commitado
+docker compose up -d      # Postgres na porta 5433 (não colide com um nativo na 5432)
 uv run barnes db migrate
+uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_test
 ```
 
-(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL`.)
+(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL` no
+`.env`.) O banco `barnes_test` é só da suíte de testes
+(`BARNES_TEST_DATABASE_URL`); os testes nunca tocam o banco de trabalho. Numa
+próxima sessão: abra o Docker Desktop e rode `docker compose up -d`. A
+distribuição do banco para a máquina do laboratório ainda está em aberto —
+ver o rascunho em `docs/manual-usuario.md` §2.2.2.
 
 Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
 ordem e registrados em `schema_migrations` — rodar o comando de novo não
@@ -168,7 +174,20 @@ do vídeo permanece nas demais histórias do projeto.
 
 ```bash
 uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1
-uv run barnes metrics executions --trial 1
+uv run barnes metrics executions --trial 1 [--history]
+```
+
+## Proveniência e catálogo (US-27)
+
+Cada `metrics process` grava uma linha em `execucao` com limiares
+(`configs/default.yaml`), parâmetros, commit e se havia alterações não
+commitadas, e as métricas apontam para ela — métrica sem execução é recusada
+pelo próprio banco. O vídeo é conferido pelo hash antes do cálculo.
+
+```bash
+uv run barnes execution show 42          # tudo o que a execução 42 usou
+uv run barnes catalog list               # trial, animal, sessão, situação, cobertura, arquivo
+uv run barnes catalog list --verificar-hash --procurar-em D:/videos   # vídeos movidos/alterados
 ```
 
 Sem escala para a montagem, o cálculo é bloqueado. O procedimento completo,

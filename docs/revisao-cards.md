@@ -118,3 +118,27 @@ sem reciclar o conjunto de teste. Essa definição operacional está documentada
 para revisão pela equipe/laboratório. Ferramental implementado não equivale
 a modelo real treinado ou validação offline física concluída.
 
+
+## US-27 — proveniência e catálogo (outubro de 2026)
+
+Decisões que estreitam o card (detalhes em [DER](DER.md) e no
+[manual](manual-usuario.md) §2.2 e §4.5):
+
+- **Nomes de tabela mantidos.** O card lista `animal`, `montagem`, `sessao`,
+  `trial`, `metrica`; o banco já tinha `subjects`, `maze_configs`, `trials`,
+  `trial_results`. Renomear quebraria bancos em uso — a correspondência fica
+  documentada no DER. Só o que é novo nasce em português (`evento_buraco`,
+  `sessao`), como `execucao`.
+- **`sessao` é uma VIEW** derivada de `trials` (animal, `day_number`, `phase`,
+  data do primeiro carregamento), sem tabela própria nem backfill.
+- **Métrica com histórico.** O escopo pede "uma linha por trial, por
+  execução": `trial_results` deixou de ser 1:1 por trial (decisão provisória da
+  US-02/US-07). Reprocessar acrescenta; o resultado atual é o mais recente.
+- **`execucao` estendida, não recriada:** `kind = 'processamento'`, commit,
+  estado sujo, limiares, parâmetros e hash do vídeo em colunas próprias.
+  Métricas anteriores à US-27 receberam uma execução "legado" na migração.
+- **Conexão:** mantido `BARNES_DATABASE_URL` (agora também lido de `.env`);
+  testes usam um banco separado, `BARNES_TEST_DATABASE_URL`.
+- **Distribuição do PostgreSQL para o laboratório (SCRUM-148): em aberto.**
+  Três opções (nativo, Docker, voltar para SQLite) com prós e contras no manual,
+  §2.2.2, para decisão da equipe/cliente.
