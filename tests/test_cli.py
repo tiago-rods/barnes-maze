@@ -24,7 +24,8 @@ from barnes.db.trials import insert_trial
 from barnes.io.calibration_ui import CalibrationCancelled
 from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
-from barnes.provenance import GitState, git_state, thresholds_snapshot
+from barnes.pose.dataset import git_revision_record
+from barnes.provenance import PACKAGE_DIR, thresholds_snapshot
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("BARNES_DATABASE_URL"),
@@ -360,7 +361,7 @@ def test_process_registers_execution_and_links_metric(args, trial_id, tmp_path):
     assert stored.limiares == thresholds_snapshot().values
     assert stored.parametros["trajectory_sha256"]
     assert stored.parametros["px_per_10cm"] == pytest.approx(100)
-    assert stored.git_commit == git_state().commit
+    assert stored.git_commit == git_revision_record(PACKAGE_DIR)["git_commit"]
     assert stored.recorded_at is not None
 
     shown = runner.invoke(cli.app, ["execution", "show", str(execucao_id)])
@@ -371,7 +372,9 @@ def test_process_registers_execution_and_links_metric(args, trial_id, tmp_path):
 def test_process_marks_dirty_repository(args, trial_id, tmp_path, monkeypatch):
     # Cenário 4: alterações não commitadas → execução marcada como suja.
     calibrate(args)
-    monkeypatch.setattr(cli, "git_state", lambda: GitState("d" * 40, True))
+    monkeypatch.setattr(
+        cli, "git_revision_record", lambda _repo: {"git_commit": "d" * 40, "git_dirty": True}
+    )
     result = _process(args, trial_id, _straight_trajectory(tmp_path))
     assert result.exit_code == 0, result.output
     assert "sujo" in result.stderr

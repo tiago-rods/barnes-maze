@@ -1,4 +1,8 @@
-"""Captura de commit, estado sujo e limiares (US-27 RN01/RN05, Cenário 4)."""
+"""Captura de commit, estado sujo e limiares (US-27 RN01/RN05, Cenário 4).
+
+O commit e o estado sujo vêm de `git_revision_record` (US-07/08), a única
+captura do sistema; aqui se testa o que a US-27 depende dela.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from barnes.provenance import git_state, source_record, thresholds_snapshot
+from barnes.pose.dataset import git_revision_record
+from barnes.provenance import GitState, thresholds_snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="Requer git instalado.")
+
+
+def git_state(repo: Path) -> GitState:
+    return GitState.from_record(git_revision_record(repo))
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -70,12 +79,6 @@ def _no_parent_repo(path: Path) -> bool:
         ).returncode
         != 0
     )
-
-
-def test_source_record_hashes_package_files(repo):
-    record = source_record(repo)
-    assert record["git_dirty"] is False
-    assert set(record["python_files_sha256"]) == {"codigo.py"}
 
 
 def test_thresholds_snapshot_keeps_nulls_and_hash(tmp_path):

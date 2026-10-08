@@ -1,23 +1,24 @@
-"""Proveniência de execuções: commit do código, estado sujo e limiares vigentes (US-27).
+"""Proveniência de execuções: estado do código e limiares vigentes (US-27).
 
-Ponto único de captura, usado por todo estágio que registra uma linha em
-`execucao` (pose, métricas e os que vierem). Um resultado só é reproduzível
-se o commit registrado for exatamente o código executado — por isso o estado
-"sujo" (alterações não commitadas, inclusive arquivos novos não rastreados) é
-registrado junto (RN05), e um repositório sem git devolve `None`, nunca
-"limpo" por omissão.
+A captura do commit e do estado sujo é a de `barnes.pose.dataset.git_revision_record`
+(US-07/08) — única no sistema; aqui só fica o tipo `GitState`, que o registro em
+`execucao` consome, e o snapshot dos limiares. Um resultado só é reproduzível se o
+commit registrado for exatamente o código executado — por isso o estado "sujo"
+(alterações não commitadas, inclusive arquivos novos não rastreados) é registrado
+junto (RN05), e um repositório sem git dá `None`, nunca "limpo" por omissão.
 """
 
 from __future__ import annotations
 
 import hashlib
-import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+# Diretório do pacote `barnes` — dentro do repositório cujo commit é registrado.
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_THRESHOLDS_PATH = Path("configs/default.yaml")
 
@@ -35,57 +36,15 @@ class GitState:
     commit: str | None
     dirty: bool | None
 
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> GitState:
+        """Constrói a partir do dicionário de `git_revision_record` (`git_commit`/`git_dirty`)."""
+        return cls(commit=record.get("git_commit"), dirty=record.get("git_dirty"))
+
     @property
     def reproducible(self) -> bool:
         """True só quando o commit é conhecido e o repositório estava limpo."""
         return self.commit is not None and self.dirty is False
-
-
-def git_state(repo: Path = PACKAGE_DIR) -> GitState:
-    """Lê o commit e o estado sujo do repositório que contém `repo`.
-
-    Args:
-        repo: Qualquer diretório dentro do repositório (padrão: o do pacote).
-
-    Returns:
-        O estado lido; campos `None` quando git não está disponível ou
-        `repo` não pertence a um repositório.
-    """
-    try:
-        commit = _git(repo, "rev-parse", "HEAD")
-        dirty = bool(_git(repo, "status", "--porcelain"))
-    except (OSError, subprocess.SubprocessError):
-        return GitState(commit=None, dirty=None)
-    return GitState(commit=commit, dirty=dirty)
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, text=True, check=True, timeout=10
-    ).stdout.strip()
-
-
-def file_sha256(path: Path) -> str:
-    """SHA-256 hexadecimal do conteúdo de um arquivo."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def source_record(package: Path = PACKAGE_DIR) -> dict[str, Any]:
-    """Identifica o código executado, inclusive alterações ainda sem commit.
-
-    Returns:
-        `git_commit`, `git_dirty` e o SHA-256 de cada `.py` do pacote — este
-        último permite reconhecer o código exato mesmo numa execução suja.
-    """
-    state = git_state(package)
-    return {
-        "python_files_sha256": {
-            path.relative_to(package).as_posix(): file_sha256(path)
-            for path in sorted(package.rglob("*.py"))
-        },
-        "git_commit": state.commit,
-        "git_dirty": state.dirty,
-    }
 
 
 @dataclass(frozen=True)

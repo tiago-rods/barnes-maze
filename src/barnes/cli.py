@@ -75,6 +75,7 @@ from barnes.pose.annotations import (
     validate_complete,
     write_annotations_csv,
 )
+from barnes.pose.dataset import file_sha256, git_revision_record
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
 from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
 from barnes.pose.sampling import (
@@ -92,7 +93,7 @@ from barnes.pose.split import (
     summarize,
     write_manifest,
 )
-from barnes.provenance import file_sha256, git_state, source_record, thresholds_snapshot
+from barnes.provenance import PACKAGE_DIR, GitState, thresholds_snapshot
 
 app = typer.Typer()
 
@@ -1158,7 +1159,8 @@ def process(
             ideal_distance_px=ideal_distance_px,
         )
         thresholds = thresholds_snapshot()
-        git = git_state()
+        source = git_revision_record(PACKAGE_DIR)
+        git = GitState.from_record(source)
         px_per_10cm = 10 / calibration.cm_per_px
         parameters = {
             "comando": "metrics process",
@@ -1184,7 +1186,7 @@ def process(
                 video_hash=check.actual_hash,
                 started_at=started_at,
                 duration_seconds=(datetime.now(UTC) - started_at).total_seconds(),
-                metadata={"source": source_record()},
+                metadata={"source": source},
             )
             insert_trial_result(
                 conn,

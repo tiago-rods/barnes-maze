@@ -58,13 +58,13 @@ def record_processing_execution(
         parameters: Parâmetros da chamada (arquivos de entrada, opções,
             escala usada), em JSON.
         thresholds: Limiares de `configs/default.yaml` vigentes.
-        git: Commit e estado sujo do código executado (`barnes.provenance`).
+        git: Commit e estado sujo do código executado (`git_revision_record`).
         video_hash: Hash do vídeo efetivamente verificado neste processamento.
         started_at: Início do processamento.
         model_id: Modelo de pose usado, quando o processamento parte de uma
             inferência (US-09 em diante); `None` para trajetória já extraída.
         duration_seconds: Duração do processamento, se medida.
-        metadata: Informações extras (ex.: `source_record()` completo).
+        metadata: Informações extras (ex.: o registro de `git_revision_record`).
 
     Returns:
         O id da nova linha em `execucao`.

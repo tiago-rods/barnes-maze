@@ -250,9 +250,12 @@ an `execucao` row — `kind='processamento'` via
 its metrics/events. `trial_results.execucao_id` and `evento_buraco.execucao_id`
 are `NOT NULL` with a composite FK `(execucao_id, trial_id) → execucao(id,
 trial_id)`, so an orphan or cross-trial metric is a schema error, not a
-convention. Capture commit/dirty/thresholds only through `barnes.provenance`
-(`git_state`, `source_record`, `thresholds_snapshot`); dirty includes
-untracked files, and "no git" is `None`, never clean. Before reprocessing,
+convention. Commit/dirty has a single implementation,
+`pose.dataset.git_revision_record` (US-07/08) — wrap its dict with
+`provenance.GitState.from_record`; thresholds via
+`provenance.thresholds_snapshot`; file hashes via `pose.dataset.file_sha256`.
+Don't add another git/hash helper. Dirty includes untracked files, and "no
+git" is `None`, never clean. Before reprocessing,
 check the video with `io.video.verify_video_file` against
 `trials.content_hash` (refuse `alterado`, warn and record on `movido`).
 `db/catalog.list_catalog` is the UI-agnostic catalog; its `situacao` is
