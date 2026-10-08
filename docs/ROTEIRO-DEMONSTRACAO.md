@@ -714,6 +714,37 @@ grupo até a D4 ser respondida.
 
 ---
 
+## B.10 — US-07/US-08: diagnóstico e fluxo com dados reais
+
+Os rótulos simulados de B.9 demonstram US-06 e não comprovam qualidade de pose.
+Os comandos e pré-requisitos estão no [guia de treino e avaliação](pose-treino-avaliacao.md).
+Usar somente dados realmente anotados para o aceite científico.
+
+```powershell
+uv run --no-sync barnes pose hardware --out data/pose/hardware-demo.json
+```
+
+Código 1 com diagnóstico de NVIDIA ausente é esperado em máquina inelegível.
+O relatório é salvo mesmo nesse caso. Na máquina elegível, após completar
+anotações reais e instalar `uv sync --locked --extra pose`:
+
+```powershell
+uv run --no-sync barnes db migrate
+uv run --no-sync barnes pose prepare-training --maze-config-id $maze --annotations "$anot/anotacoes.csv" --manifest "$anot/divisao.csv" --samples $anot
+# Preencher os caminhos com os IDs mostrados, antes dos comandos seguintes:
+$dataset = "data/pose/datasets/dataset-<id-real>"
+uv run --no-sync barnes pose train --dataset $dataset
+$model = "models/sleap-maze-<id-real>"
+uv run --no-sync barnes pose evaluate --model $model --dataset $dataset
+uv run --no-sync barnes pose infer --model $model --trial $t1
+uv run --no-sync barnes pose executions --trial $t1
+```
+
+A avaliação reprovada sai com código 1 e preserva JSON/Markdown e solicitação
+local US-06 se borda reprovar. O teste offline real exige repetir `infer`
+com rede desconectada no laboratório, dependências instaladas e Postgres
+local; registrar máquina, operador, procedimento e ID da execução no aceite.
+
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:
@@ -744,7 +775,9 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | US-05 | Câmera deslocada entre dias | **Não é detectada automaticamente.** O procedimento é criar uma montagem nova e recalibrar a escala (manual, seção 3.7). Só um vídeo com resolução diferente é recusado automaticamente. |
 | US-06 | Rodada de anotação | O ferramental está pronto; a anotação na B.9 é simulada. A rodada real depende dos 3 trials de G1 e da resposta D4 (uso dos quadros e CEUA). |
 | US-04 | Raio do buraco | É ajustado a olho na janela (`[`/`]`). Não sai do diâmetro em cm, porque a escala só é calibrada depois da montagem existir. |
-| Geral | Trajetória a partir do vídeo | Ainda não existe (Sprint 2). As métricas da demonstração usam uma trajetória de exemplo em CSV. |
+| US-07/US-08 | Treino e qualidade reais | Comandos implementados; dependem de quadros anotados reais, NVIDIA e avaliação do modelo gerado. Testes sintéticos não concluem o aceite científico. |
+| US-08 | Inferência offline no laboratório | Fluxo local implementado; validação física com a rede desconectada permanece pendente. |
+| Geral | Trajetória a partir do vídeo | US-08 gera pose bruta dos três pontos. Correção/orientação e integração completa de trajetória ficam nas próximas histórias; métricas desta demonstração ainda usam CSV de exemplo. |
 | Geral | Cadastro de usuário e experimento | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |
 
 ## Se algo der errado

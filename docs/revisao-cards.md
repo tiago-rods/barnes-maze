@@ -98,3 +98,23 @@ Existe uma GPU instituicional, porém, ver se há necessidade de usa-la
 
 > não tenho tanto conhecimento do épico C e D, podemos ir alterando detalhes ao decorrer do projeto
 
+## US-07/US-08 — implementação de outubro de 2026
+
+Escopo atualizado pelo solicitante: treino primeiro nas máquinas do grupo,
+NVIDIA >=4 GiB/16 GB de RAM; fallback instituição, Kaggle e Colab nessa ordem.
+Nuvem exige D4 favorável registrado e somente quadros rotulados. O código não
+executa uploads. A opção escolhida é SLEAP-NN 0.3.1/PyTorch (sem YOLO/AGPL);
+versões fixadas em `pyproject.toml`/`uv.lock` e configuração por montagem.
+
+Foi acrescentada `execucao` no PostgreSQL para proveniência das tentativas de
+pose, preservando a relação 1:1 de `trial_results`. US-27 continua responsável
+pela proveniência completa de eventos/métricas futuros. Ver o
+[guia US-07/US-08](pose-treino-avaliacao.md) para comandos e critérios.
+
+Na avaliação, corpo é a distância focinho-base da cauda anotada por quadro.
+São exigidos erro mediano <0,5 corpo por ponto/global/região e cobertura completa;
+borda reprovada gera solicitação local de novos trials anotados em US-06,
+sem reciclar o conjunto de teste. Essa definição operacional está documentada
+para revisão pela equipe/laboratório. Ferramental implementado não equivale
+a modelo real treinado ou validação offline física concluída.
+

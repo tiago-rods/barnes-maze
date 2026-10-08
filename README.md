@@ -28,8 +28,8 @@ O que só ele pode entregar, e que a anotação manual não consegue produzir:
 barnes-maze/
 ├── configs/
 │   ├── default.yaml              # limiares operacionais — valores vêm de G3
-│   └── montagens/
-│       └── lnbio_barnes.yaml     # geometria por arranjo labirinto + câmera
+│   ├── pose/single_animal.yaml   # perfil inicial de treino SLEAP-NN
+│   └── montagens/README.md       # geometria persistida no PostgreSQL
 ├── src/barnes/
 │   ├── io/                       # vídeo, escala px→cm, fps, recorte do trial
 │   ├── pose/                     # inferência SLEAP, série x, y, θ, t
@@ -200,6 +200,28 @@ Para verificar a implementação:
 uv run python -m pytest
 uv run python -m ruff check .
 ```
+
+## Treino, avaliação e inferência de pose (US-07/US-08)
+
+SLEAP-NN 0.3.1 / PyTorch, versões fixadas em `pyproject.toml` e `uv.lock`.
+O fluxo prepara pacotes de quadros rotulados por montagem, treina e versiona
+pesos em `models/`, avalia erro global e por região e executa inferência local
+por trial. Hiperparâmetros, dados, ambiente, máquina e tempos ficam nos
+manifestos e na tabela `execucao` (migração `0006`).
+
+```powershell
+uv run --no-sync barnes pose hardware --out data/pose/hardware.json
+uv run --no-sync barnes pose prepare-training --maze-config-id 1
+uv run --no-sync barnes pose train --dataset data/pose/datasets/dataset-<id>
+uv run --no-sync barnes pose evaluate --model models/<id> --dataset data/pose/datasets/dataset-<id>
+uv run --no-sync barnes pose infer --model models/<id> --trial 1
+```
+
+Instalação CUDA, fallback/D4, parâmetros, recuperação e aceite offline estão
+em [Treino e avaliação de pose](docs/pose-treino-avaliacao.md). Os caminhos
+`<id>` são preenchidos com as saídas reais dos comandos. Treino requer dados
+anotados e NVIDIA elegível; a implementação não inclui pesos treinados do
+laboratório. Pose bruta é a entrada das próximas histórias de trajetória.
 
 ## Antes de escrever código
 

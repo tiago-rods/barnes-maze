@@ -30,7 +30,7 @@ certificate error, add `--native-tls`.
 
 ```bash
 uv sync                              # install deps
-uv sync --extra pose                 # + SLEAP (read pyproject.toml warning first)
+uv sync --locked --extra pose        # SLEAP-NN 0.3.1/PyTorch cu128; docs/pose-treino-avaliacao.md
 uv sync --extra anotacao             # + sleap-io, reads SLEAP .slp files, no CUDA (US-06)
     # NB: sleap-io 0.9.x's wheel installs its own top-level `tests` package into
     # site-packages, which shadows this repo's `tests/` (no __init__.py) for any
@@ -226,8 +226,12 @@ via `uv run python -m database.seeds.<name>` from the repo root, never as a
 (US-01), `geometry` (US-04, plus US-05 reference frames) and
 `io/calibration.py`/`metrics` (US-02, scale and the
 distance/speed/route-efficiency conversions it gates) are implemented;
-`pose` has only the US-06 annotation tooling (no model or inference yet —
-that is US-07+); `events`/`strategy`/`longitudinal`/`stats`/`report` are
+`pose` includes US-06 annotation plus US-07 dataset/training and US-08
+evaluation/offline inference. `cli_pose.py` orchestrates these commands;
+`db/pose_executions.py` records immutable `execucao` rows (migration 0006).
+Production training requires NVIDIA; ordinary unit tests need no GPU.
+Native backend smoke tests use synthetic data and do not attest lab quality.
+`events`/`strategy`/`longitudinal`/`stats`/`report` are
 still empty `__init__.py` stubs pending their user story.
 
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
