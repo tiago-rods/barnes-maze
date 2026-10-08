@@ -25,6 +25,7 @@ from barnes.pose.inference import (
     SleapBackend,
     infer_trial,
     load_inference_record,
+    load_inference_run_record,
     predict_test_set,
 )
 from barnes.pose.offline import OfflineNetworkError
@@ -266,6 +267,35 @@ def test_test_predictions_receive_only_held_out_pixels_and_keep_precision(
     assert record["dataset_manifest_sha256"] == file_sha256(
         package_and_model.dataset / "manifest.json"
     )
+
+
+def test_load_inference_run_record_translates_cli_kind_and_merges_evaluation(
+    package_and_model, video_inputs, pixel_backend, tmp_path
+):
+    inference_run = infer_trial(
+        package_and_model.model,
+        output_root=tmp_path / "runs",
+        **video_inputs,
+        backend_factory=pixel_backend,
+    )
+    run = load_inference_run_record(inference_run, "inferencia")
+    assert run.artifact_filename == "execucao.json"
+    assert run.duration_seconds == run.document["duration_seconds"]
+    assert run.document["run_id"] == inference_run.name
+
+    _, test_run = predict_test_set(
+        package_and_model.model,
+        package_and_model.dataset,
+        tmp_path / "runs",
+        batch_size=2,
+        backend_factory=pixel_backend,
+    )
+    evaluation_report = {"accepted": True, "schema_version": 1}
+    write_json(test_run / "avaliacao.json", evaluation_report)
+    evaluation_run = load_inference_run_record(test_run, "avaliacao")
+    assert evaluation_run.document["evaluation"] == evaluation_report
+    with pytest.raises(InferenceError, match="não pertence"):
+        load_inference_run_record(test_run, "inferencia")
 
 
 def test_missing_and_nonfinite_predictions_remain_in_trial_output(

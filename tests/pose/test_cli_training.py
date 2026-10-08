@@ -14,6 +14,7 @@ from barnes import cli
 from barnes import cli_pose as commands
 from barnes.db.pose_executions import StoredInferenceTrial
 from barnes.io.trim import interval_from_seconds
+from barnes.pose import training as training_module
 from barnes.pose.annotations import AnnotatedFrame
 from barnes.pose.dataset import file_sha256
 from barnes.pose.inference import InferenceError
@@ -235,7 +236,9 @@ def test_completed_training_registers_complete_manifest_and_receipt(tmp_path, mo
     _json(run_dir / "manifest.json", document)
     monkeypatch.setattr(commands, "inspect_hardware", lambda: _hardware(True))
     monkeypatch.setattr(commands, "load_dataset_manifest", lambda path: {"maze_config_id": 7})
-    monkeypatch.setattr(commands, "load_model_manifest", lambda path: document)
+    # A leitura do manifesto concluído agora acontece dentro de
+    # load_training_run_record (training.py), não mais em cli_pose.py.
+    monkeypatch.setattr(training_module, "load_model_manifest", lambda path: document)
     train = Mock(return_value=run_dir)
     monkeypatch.setattr(commands, "train_model", train)
     result = runner.invoke(cli.app, ["pose", "train", "--dataset", "prepared-package"])

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
@@ -21,6 +22,7 @@ from statistics import median
 
 from barnes.geometry.holes import MazeGeometry
 from barnes.pose.annotations import KEYPOINTS, AnnotatedFrame
+from barnes.pose.dataset import file_sha256, write_json
 from barnes.pose.regions import Region, RegionParams, classify_region
 from barnes.pose.split import SETS, ManifestRow, check_no_leakage, summarize
 
@@ -370,3 +372,25 @@ def write_evaluation_report(report: dict, output_dir: Path) -> dict[str, Path]:
         with path.open("x", encoding="utf-8") as file:
             file.write(contents[name])
     return paths
+
+
+def finalize_evaluation_record(run_dir: Path, record: dict, *, evaluation_started: float) -> dict:
+    """Fecha o registro local de uma avaliação, com sucesso ou falha.
+
+    Chamado uma única vez pelo comando ``evaluate`` depois de tentar gerar o
+    relatório (``write_evaluation_report``), tanto no caminho de sucesso
+    quanto no de falha: separa a duração de inferência da duração total e
+    recalcula os hashes de todos os artefatos gravados em ``run_dir`` (CSV de
+    predições e, se a qualidade foi aceita, o relatório de avaliação), sem
+    reprocessar nada.
+    """
+    record = dict(record)
+    record["prediction_duration_seconds"] = record["duration_seconds"]
+    record["duration_seconds"] = time.perf_counter() - evaluation_started
+    record["artifacts"] = {
+        path.name: file_sha256(path)
+        for path in run_dir.iterdir()
+        if path.is_file() and path.name not in {"execucao.json", "registro-banco.json"}
+    }
+    write_json(run_dir / "execucao.json", record)
+    return record

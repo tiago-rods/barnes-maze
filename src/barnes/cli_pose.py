@@ -14,18 +14,29 @@ from barnes.db.connection import get_connection
 from barnes.db.maze_configs import get_maze_config
 from barnes.db.pose_executions import get_inference_trial, list_executions, record_execution
 from barnes.pose.annotations import AnnotatedFrame
-from barnes.pose.dataset import file_sha256, load_dataset_manifest, prepare_dataset, write_json
+from barnes.pose.dataset import load_dataset_manifest, prepare_dataset, write_json
 from barnes.pose.environment import inspect_hardware, plan_training_location
-from barnes.pose.evaluation import evaluate_pose, write_evaluation_report
+from barnes.pose.evaluation import (
+    evaluate_pose,
+    finalize_evaluation_record,
+    write_evaluation_report,
+)
 from barnes.pose.inference import (
     InferenceError,
     infer_trial,
     load_inference_record,
+    load_inference_run_record,
     predict_test_set,
 )
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
 from barnes.pose.split import ManifestRow
-from barnes.pose.training import DEFAULT_CONFIG, TrainingError, load_model_manifest, train_model
+from barnes.pose.training import (
+    DEFAULT_CONFIG,
+    TrainingError,
+    load_model_manifest,
+    load_training_run_record,
+    train_model,
+)
 
 DATA = Path("data/annotations")
 
@@ -49,37 +60,22 @@ def _new_json(path: Path, document: dict) -> None:
 def _record_local_run(run_dir: Path, kind: str, dsn: str | None) -> int:
     """Persiste artefatos já existentes; falha de banco nunca apaga o resultado local."""
     run_dir = run_dir.resolve()
-    if kind == "treino":
-        document = _read_json(run_dir / "manifest.json")
-        if document.get("status") == "completed":
-            document = load_model_manifest(run_dir)
-        filename = "manifest.json"
-        duration = document.get("elapsed_seconds")
-    else:
-        document = load_inference_record(run_dir)
-        filename = "execucao.json"
-        duration = document.get("duration_seconds")
-        if kind == "avaliacao" and (
-            document.get("status") == "completed" or (run_dir / "avaliacao.json").is_file()
-        ):
-            document = dict(document, evaluation=_read_json(run_dir / "avaliacao.json"))
-    if document.get("status") not in ("completed", "failed"):
-        raise ValueError("A execução ainda não terminou; não pode ser registrada como concluída.")
-    expected = {"inferencia": "inferencia", "avaliacao": "teste"}.get(kind)
-    if expected and document.get("kind") != expected:
-        raise ValueError(f"O diretório não pertence a uma execução de {kind}.")
-    document = dict(document, run_id=document["model_id"] if kind == "treino" else run_dir.name)
+    run = (
+        load_training_run_record(run_dir)
+        if kind == "treino"
+        else load_inference_run_record(run_dir, kind)
+    )
     with get_connection(dsn) as conn:
         identifier = record_execution(
             conn,
             kind=kind,
-            model_id=document["model_id"],
-            maze_config_id=document["maze_config_id"],
-            trial_id=document.get("trial_id"),
-            status="concluido" if document["status"] == "completed" else "falhou",
-            metadata=document,
-            duration_seconds=duration,
-            artifact_path=str(run_dir / filename),
+            model_id=run.document["model_id"],
+            maze_config_id=run.document["maze_config_id"],
+            trial_id=run.document.get("trial_id"),
+            status="concluido" if run.document["status"] == "completed" else "falhou",
+            metadata=run.document,
+            duration_seconds=run.duration_seconds,
+            artifact_path=str(run_dir / run.artifact_filename),
         )
     # Não altera o manifesto nem os hashes de pesos/configuração.
     write_json(run_dir / "registro-banco.json", {"execution_id": identifier, "kind": kind})
@@ -316,14 +312,7 @@ def register_pose_commands(app: typer.Typer, errors) -> None:
                 record.update(status="failed", error=f"{type(exc).__name__}: {exc}")
                 raise
             finally:
-                record["prediction_duration_seconds"] = record["duration_seconds"]
-                record["duration_seconds"] = time.perf_counter() - started
-                record["artifacts"] = {
-                    path.name: file_sha256(path)
-                    for path in run_dir.iterdir()
-                    if path.is_file() and path.name not in {"execucao.json", "registro-banco.json"}
-                }
-                write_json(run_dir / "execucao.json", record)
+                record = finalize_evaluation_record(run_dir, record, evaluation_started=started)
                 if record["status"] == "failed":
                     _persist_or_explain(run_dir, "avaliacao", dsn)
             execution_id = _persist_or_explain(run_dir, "avaliacao", dsn)
