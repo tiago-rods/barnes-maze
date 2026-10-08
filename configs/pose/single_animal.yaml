@@ -1,0 +1,16 @@
+# Perfil inicial US-07. O treino real exige GPU e dados anotados US-06.
+# Configuração nativa completa e versões efetivas são arquivadas em models/.
+sleap_nn_version: "0.3.1"
+parameters:
+  seed: 42
+  max_epochs: 100
+  batch_size: 2
+  learning_rate: 0.0001
+  scale: 0.5
+  filters: 16
+  max_stride: 16
+  output_stride: 2
+  sigma: 2.5
+  rotation_degrees: 15.0
+  early_stopping_patience: 10
+  gpu_index: 0

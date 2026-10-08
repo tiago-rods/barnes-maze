@@ -103,3 +103,43 @@ def animal_positions() -> list[tuple[float, float]]:
 def segment_frames() -> int:
     """Quadros de cada trecho (centro, borda, buraco) de `trial_video`."""
     return SEGMENT_FRAMES
+
+
+@pytest.fixture
+def dataset_inputs(tmp_path):
+    """Três trials pequenos, distintos e rotulados para os contratos US-07."""
+    from barnes.pose.annotations import AnnotatedFrame, write_annotations_csv
+    from barnes.pose.split import ManifestRow, write_manifest
+
+    frames, rows = [], []
+    source = tmp_path / "annotations"
+    for index, subset in enumerate(("treino", "validacao", "teste")):
+        trial = f"{index + 1:012x}"
+        image_dir = source / trial / "quadros"
+        image_dir.mkdir(parents=True)
+        image = np.full((32, 40, 3), index * 40, dtype=np.uint8)
+        cv2.imwrite(str(image_dir / "quadro_000005.png"), image)
+        (image_dir.parent / "amostragem.csv").write_text(
+            f"trial,maze_config_id,quadro\n{trial},7,5\n", encoding="utf-8"
+        )
+        frames.append(AnnotatedFrame(trial, 5, ((10.0, 10.0), (15.0, 15.0), (20.0, 20.0))))
+        rows.append(ManifestRow(trial, 5, subset))
+    return {
+        "annotations_path": write_annotations_csv(frames, source / "anotacoes.csv"),
+        "split_path": write_manifest(rows, source / "divisao.csv"),
+        "frames_dir": source,
+        "output_root": tmp_path / "datasets",
+        "maze_config_id": 7,
+    }
+
+
+@pytest.fixture
+def fake_exporter():
+    """SLP falso somente para testar falhas/integridade, sem depender do backend."""
+    import json
+
+    def export(frames, root, output):
+        assert all((root / frame["image_path"]).is_file() for frame in frames)
+        output.write_text(json.dumps(frames), encoding="utf-8")
+
+    return export

@@ -16,6 +16,7 @@ import numpy as np
 import psycopg
 import typer
 
+from barnes.cli_pose import register_pose_commands
 from barnes.db.calibration import (
     CalibrationRequiredError,
     get_calibration,
@@ -24,9 +25,16 @@ from barnes.db.calibration import (
     save_verification,
     validate_frame_size,
 )
+from barnes.db.catalog import list_catalog
 from barnes.db.connection import DatabaseConfigError, apply_migrations, get_connection
+from barnes.db.executions import get_execution, record_processing_execution
 from barnes.db.maze_configs import get_maze_config, insert_maze_config
-from barnes.db.trial_results import get_trial_result, list_trial_results, upsert_trial_result
+from barnes.db.trial_results import (
+    get_trial_result,
+    insert_trial_result,
+    list_trial_result_history,
+    list_trial_results,
+)
 from barnes.db.trials import (
     get_trial,
     get_trial_maze_config_id,
@@ -51,7 +59,14 @@ from barnes.io.calibration import (
 )
 from barnes.io.calibration_ui import CalibrationCancelled, collect_segments
 from barnes.io.trim import TrialInterval, TrialIntervalError, build_trial_interval
-from barnes.io.video import VideoLoadError, VideoMetadata, load_trial_video, read_frame
+from barnes.io.video import (
+    FileStatus,
+    VideoLoadError,
+    VideoMetadata,
+    load_trial_video,
+    read_frame,
+    verify_video_file,
+)
 from barnes.metrics import process_trial
 from barnes.pose.annotations import (
     ANNOTATIONS_CSV,
@@ -60,6 +75,7 @@ from barnes.pose.annotations import (
     validate_complete,
     write_annotations_csv,
 )
+from barnes.pose.dataset import file_sha256, git_revision_record
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
 from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
 from barnes.pose.sampling import (
@@ -77,6 +93,7 @@ from barnes.pose.split import (
     summarize,
     write_manifest,
 )
+from barnes.provenance import PACKAGE_DIR, GitState, thresholds_snapshot
 
 app = typer.Typer()
 
@@ -98,7 +115,13 @@ app.add_typer(scale_app, name="scale")
 metrics_app = typer.Typer(help="Métricas calculadas com a escala calibrada (US-02).")
 app.add_typer(metrics_app, name="metrics")
 
-pose_app = typer.Typer(help="Conjunto anotado para o modelo de pose (US-06).")
+execution_app = typer.Typer(help="Proveniência das execuções registradas (US-27).")
+app.add_typer(execution_app, name="execution")
+
+catalog_app = typer.Typer(help="Catálogo de trials processados (US-27).")
+app.add_typer(catalog_app, name="catalog")
+
+pose_app = typer.Typer(help="Anotação, treino, avaliação e inferência local de pose (US-06/07/08).")
 app.add_typer(pose_app, name="pose")
 
 
@@ -1077,11 +1100,14 @@ def process(
     ] = None,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Calcular métricas de uma trajetória já extraída e registrar a escala usada (RN03/RN05).
+    """Calcular métricas de uma trajetória já extraída e registrar a execução (US-02, US-27).
 
     Usa a montagem do próprio trial e só as amostras dentro do intervalo útil
-    gravado nele (US-03 RN02).
+    gravado nele (US-03 RN02). O vídeo informado precisa ter o hash do trial
+    catalogado (US-27 RN04); a execução — limiares, parâmetros, commit e
+    estado sujo — e as métricas são gravadas juntas (US-27 RN01/RN02).
     """
+    started_at = datetime.now(UTC)
     with _command_errors():
         # Sem trial válido, intervalo ou escala, nem o vídeo é decodificado nem o CSV é lido.
         with get_connection(dsn) as conn:
@@ -1099,6 +1125,21 @@ def process(
                     "com `barnes video load`."
                 )
             calibration = require_calibration(conn, stored.maze_config_id)
+        check = verify_video_file(video, stored.content_hash)
+        if check.status is not FileStatus.OK:
+            raise ValueError(
+                f"O vídeo informado não é o catalogado no trial #{trial}: o conteúdo "
+                "difere do registrado (hash). Confira --video; reprocessar com outro "
+                "arquivo produziria métricas atribuídas ao trial errado."
+            )
+        moved = video.resolve() != Path(stored.filepath).resolve()
+        if moved:
+            typer.echo(
+                f"Aviso: trial #{trial} catalogado em {stored.filepath}, mas o mesmo vídeo "
+                f"(hash idêntico) foi informado em {video}. O caminho novo fica registrado "
+                "na execução.",
+                err=True,
+            )
         reference = read_frame(video, frame)
         frame_size = (reference.shape[1], reference.shape[0])
         if frame_size != (stored.width_px, stored.height_px):
@@ -1117,33 +1158,198 @@ def process(
             interval=stored.interval,
             ideal_distance_px=ideal_distance_px,
         )
+        thresholds = thresholds_snapshot()
+        source = git_revision_record(PACKAGE_DIR)
+        git = GitState.from_record(source)
+        px_per_10cm = 10 / calibration.cm_per_px
+        parameters = {
+            "comando": "metrics process",
+            "video": str(video),
+            "video_catalogado": str(stored.filepath),
+            "video_movido": moved,
+            "trajectory": str(trajectory),
+            "trajectory_sha256": file_sha256(trajectory),
+            "frame": frame,
+            "ideal_distance_px": ideal_distance_px,
+            "px_per_10cm": px_per_10cm,
+            "interval": asdict(stored.interval),
+        }
         with get_connection(dsn) as conn:
-            upsert_trial_result(
+            # Execução e métricas na mesma transação: nunca uma sem a outra.
+            execucao_id = record_processing_execution(
+                conn,
+                trial_id=trial,
+                maze_config_id=stored.maze_config_id,
+                parameters=parameters,
+                thresholds=thresholds,
+                git=git,
+                video_hash=check.actual_hash,
+                started_at=started_at,
+                duration_seconds=(datetime.now(UTC) - started_at).total_seconds(),
+                metadata={"source": source},
+            )
+            insert_trial_result(
                 conn,
                 trial,
+                execucao_id=execucao_id,
                 distance_cm=metrics["distance_cm"],
                 speed_mean_cm=metrics["mean_speed_cm_s"],
                 route_efficiency=metrics.get("route_efficiency"),
-                px_per_10cm_used=10 / calibration.cm_per_px,
+                px_per_10cm_used=px_per_10cm,
                 calculated_at=datetime.now(UTC),
             )
-        typer.echo(json.dumps(metrics, ensure_ascii=False, indent=2))
+        if not git.reproducible:
+            typer.echo(
+                f"Aviso: execução #{execucao_id} registrada com repositório "
+                f"{'sujo (alterações não commitadas)' if git.dirty else 'em estado desconhecido'}"
+                " — o resultado não é reproduzível pelo commit.",
+                err=True,
+            )
+        typer.echo(json.dumps(metrics | {"execucao_id": execucao_id}, ensure_ascii=False, indent=2))
 
 
 @metrics_app.command("executions")
 def executions(
     trial: Annotated[int | None, typer.Option("--trial", help="Filtrar por id do trial.")] = None,
+    history: Annotated[
+        bool,
+        typer.Option("--history", help="Com --trial: todos os cálculos, não só o atual (US-27)."),
+    ] = False,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Consultar resultados calculados e se ficaram obsoletos após recalibração (RN05)."""
+    """Consultar resultados calculados e se ficaram obsoletos após recalibração (RN05).
+
+    Cada resultado traz `execucao_id`; `barnes execution show ID` mostra modelo,
+    limiares, parâmetros e commit daquela execução (US-27).
+    """
     with _command_errors():
+        if history and trial is None:
+            raise ValueError("--history exige --trial.")
         with get_connection(dsn) as conn:
-            if trial is not None:
+            if history:
+                rows = list_trial_result_history(conn, trial)
+            elif trial is not None:
                 result = get_trial_result(conn, trial)
                 rows = [] if result is None else [result]
             else:
                 rows = list_trial_results(conn)
         typer.echo(json.dumps([asdict(row) for row in rows], ensure_ascii=False, indent=2, default=str))
+
+
+@execution_app.command("show")
+def execution_show(
+    execution_id: Annotated[int, typer.Argument(help="Id da execução (execucao.id).")],
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Mostrar tudo o que uma execução registrou: modelo, limiares, parâmetros e commit (US-27).
+
+    É o que basta para reprocessar um resultado antigo (Cenário 2): fazer
+    checkout de `git_commit`, restaurar `limiares` em `configs/default.yaml` e
+    repetir o comando com `parametros`. `reproduzivel` é falso se o
+    repositório estava sujo ou sem git na hora da execução (RN05).
+    """
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            stored = get_execution(conn, execution_id)
+        if not stored.reproducible:
+            typer.echo(
+                f"Aviso: execução #{execution_id} não é reproduzível pelo commit "
+                "(repositório sujo, sem git ou anterior à US-27).",
+                err=True,
+            )
+        typer.echo(
+            json.dumps(
+                asdict(stored) | {"reproduzivel": stored.reproducible},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
+
+
+@catalog_app.command("list")
+def catalog_list(
+    experiment_id: Annotated[
+        int | None, typer.Option("--experiment-id", help="Só os trials deste experimento.")
+    ] = None,
+    verify_hash: Annotated[
+        bool,
+        typer.Option(
+            "--verificar-hash",
+            help="Reler cada vídeo e comparar o conteúdo (lento). Padrão: só existência e tamanho.",
+        ),
+    ] = False,
+    no_file_check: Annotated[
+        bool, typer.Option("--sem-arquivo", help="Não conferir os vídeos no disco.")
+    ] = False,
+    search_dirs: Annotated[
+        list[Path] | None,
+        typer.Option("--procurar-em", help="Pasta extra onde procurar vídeos movidos (repetível)."),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Saída em JSON.")] = False,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Listar trials com animal, sessão, situação, cobertura de pose e conferência do vídeo.
+
+    Um vídeo movido, renomeado, substituído ou ausente é sinalizado com o id
+    do trial (US-27 RN04); a listagem não altera nada no banco.
+    """
+    if verify_hash and no_file_check:
+        raise typer.BadParameter("--verificar-hash e --sem-arquivo são exclusivos.")
+    verify = None if no_file_check else ("hash" if verify_hash else "size")
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            entries = list_catalog(
+                conn, experiment_id=experiment_id, verify=verify, search_dirs=search_dirs or ()
+            )
+        if as_json:
+            typer.echo(json.dumps([_catalog_json(e) for e in entries], ensure_ascii=False,
+                                  indent=2, default=str))
+        else:
+            _print_catalog(entries)
+        divergent = [e for e in entries if e.diverges]
+        for entry in divergent:
+            typer.echo(f"Divergência no trial #{entry.trial_id}: {entry.arquivo.describe()}.",
+                       err=True)
+        if divergent:
+            typer.echo(
+                f"{len(divergent)} trial(s) com vídeo divergente do catalogado. Não reprocesse "
+                "antes de conferir o arquivo.",
+                err=True,
+            )
+
+
+def _catalog_json(entry) -> dict:
+    data = asdict(entry)
+    data["arquivo"] = None if entry.arquivo is None else entry.arquivo.status.value
+    data["arquivo_detalhe"] = None if entry.arquivo is None else entry.arquivo.describe()
+    data["arquivo_divergente"] = entry.diverges
+    return data
+
+
+def _print_catalog(entries) -> None:
+    if not entries:
+        typer.echo("Nenhum trial catalogado.")
+        return
+    header = ("trial", "animal", "sessão", "fase", "nº", "situação", "cobertura", "execução",
+              "arquivo")
+    rows = [
+        (
+            f"#{e.trial_id}",
+            e.animal or "—",
+            str(e.sessao),
+            e.fase,
+            str(e.trial_no_dia),
+            e.situacao.value,
+            "—" if e.cobertura_pose is None else f"{e.cobertura_pose:.1%}",
+            "—" if e.execucao_id is None else f"#{e.execucao_id}",
+            "—" if e.arquivo is None else e.arquivo.status.value,
+        )
+        for e in entries
+    ]
+    widths = [max(len(r[i]) for r in (header, *rows)) for i in range(len(header))]
+    for row in (header, *rows):
+        typer.echo("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)))
 
 
 ANNOTATIONS_DIR = Path("data/annotations")
@@ -1329,6 +1535,8 @@ def pose_report(
             raise typer.Exit(code=1)
         typer.echo("Cobertura OK: as três regiões têm quadros anotados.")
 
+
+register_pose_commands(pose_app, _command_errors)
 
 if __name__ == "__main__":
     app()

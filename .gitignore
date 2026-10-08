@@ -5,8 +5,12 @@ __pycache__/
 
 # Ambientes virtuais
 .venv/
+.venv-pose-check/
 venv/
 env/
+
+# Configuração local (credenciais) — ver .env.example
+.env
 
 # Dados do projeto
 data/

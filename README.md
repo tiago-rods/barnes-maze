@@ -28,8 +28,8 @@ O que só ele pode entregar, e que a anotação manual não consegue produzir:
 barnes-maze/
 ├── configs/
 │   ├── default.yaml              # limiares operacionais — valores vêm de G3
-│   └── montagens/
-│       └── lnbio_barnes.yaml     # geometria por arranjo labirinto + câmera
+│   ├── pose/single_animal.yaml   # perfil inicial de treino SLEAP-NN
+│   └── montagens/README.md       # geometria persistida no PostgreSQL
 ├── src/barnes/
 │   ├── io/                       # vídeo, escala px→cm, fps, recorte do trial
 │   ├── pose/                     # inferência SLEAP, série x, y, θ, t
@@ -125,12 +125,18 @@ partir de `docs/DER.md`.
 Para desenvolvimento local, suba um Postgres descartável com Docker Compose:
 
 ```bash
-docker compose up -d
-export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
+cp .env.example .env      # uma vez — o .env não é commitado
+docker compose up -d      # Postgres na porta 5433 (não colide com um nativo na 5432)
 uv run barnes db migrate
+uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_test
 ```
 
-(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL`.)
+(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL` no
+`.env`.) O banco `barnes_test` é só da suíte de testes
+(`BARNES_TEST_DATABASE_URL`); os testes nunca tocam o banco de trabalho. Numa
+próxima sessão: abra o Docker Desktop e rode `docker compose up -d`. A
+distribuição do banco para a máquina do laboratório ainda está em aberto —
+ver o rascunho em `docs/manual-usuario.md` §2.2.2.
 
 Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
 ordem e registrados em `schema_migrations` — rodar o comando de novo não
@@ -168,7 +174,20 @@ do vídeo permanece nas demais histórias do projeto.
 
 ```bash
 uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1
-uv run barnes metrics executions --trial 1
+uv run barnes metrics executions --trial 1 [--history]
+```
+
+## Proveniência e catálogo (US-27)
+
+Cada `metrics process` grava uma linha em `execucao` com limiares
+(`configs/default.yaml`), parâmetros, commit e se havia alterações não
+commitadas, e as métricas apontam para ela — métrica sem execução é recusada
+pelo próprio banco. O vídeo é conferido pelo hash antes do cálculo.
+
+```bash
+uv run barnes execution show 42          # tudo o que a execução 42 usou
+uv run barnes catalog list               # trial, animal, sessão, situação, cobertura, arquivo
+uv run barnes catalog list --verificar-hash --procurar-em D:/videos   # vídeos movidos/alterados
 ```
 
 Sem escala para a montagem, o cálculo é bloqueado. O procedimento completo,
@@ -200,6 +219,28 @@ Para verificar a implementação:
 uv run python -m pytest
 uv run python -m ruff check .
 ```
+
+## Treino, avaliação e inferência de pose (US-07/US-08)
+
+SLEAP-NN 0.3.1 / PyTorch, versões fixadas em `pyproject.toml` e `uv.lock`.
+O fluxo prepara pacotes de quadros rotulados por montagem, treina e versiona
+pesos em `models/`, avalia erro global e por região e executa inferência local
+por trial. Hiperparâmetros, dados, ambiente, máquina e tempos ficam nos
+manifestos e na tabela `execucao` (migração `0006`).
+
+```powershell
+uv run --no-sync barnes pose hardware --out data/pose/hardware.json
+uv run --no-sync barnes pose prepare-training --maze-config-id 1
+uv run --no-sync barnes pose train --dataset data/pose/datasets/dataset-<id>
+uv run --no-sync barnes pose evaluate --model models/<id> --dataset data/pose/datasets/dataset-<id>
+uv run --no-sync barnes pose infer --model models/<id> --trial 1
+```
+
+Instalação CUDA, fallback/D4, parâmetros, recuperação e aceite offline estão
+em [Treino e avaliação de pose](docs/pose-treino-avaliacao.md). Os caminhos
+`<id>` são preenchidos com as saídas reais dos comandos. Treino requer dados
+anotados e NVIDIA elegível; a implementação não inclui pesos treinados do
+laboratório. Pose bruta é a entrada das próximas histórias de trajetória.
 
 ## Antes de escrever código
 

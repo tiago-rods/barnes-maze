@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 import psycopg
 
@@ -58,9 +59,11 @@ def insert_trial(
                 day_number, trial_number_in_day, content_hash, width_px,
                 height_px, fps_declared, fps_real, fps_is_variable,
                 frame_count, duration_s, rotation_deg, start_time_seconds,
-                end_time_seconds, interval_manually_adjusted
+                end_time_seconds, interval_manually_adjusted, file_size_bytes
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             RETURNING id
             """,
             (
@@ -83,6 +86,7 @@ def insert_trial(
                 interval.start_s if interval is not None else None,
                 interval.end_s if interval is not None else None,
                 interval.manually_adjusted if interval is not None else False,
+                video.file_size_bytes,
             ),
         )
         return cur.fetchone()[0]
@@ -152,6 +156,10 @@ class StoredTrial:
         height_px: Altura do vídeo, em pixels.
         interval: Intervalo útil gravado (US-03 RN04), ou `None` se o trial
             foi carregado sem recorte (anterior à US-03).
+        filepath: Caminho do vídeo quando foi catalogado.
+        content_hash: Identidade do vídeo (US-01 RN05) — a prova contra
+            arquivo movido ou substituído (US-27 RN04).
+        file_size_bytes: Tamanho catalogado, ou `None` se anterior à US-27.
     """
 
     id: int
@@ -159,6 +167,9 @@ class StoredTrial:
     width_px: int
     height_px: int
     interval: TrialInterval | None
+    filepath: Path | None = None
+    content_hash: str | None = None
+    file_size_bytes: int | None = None
 
 
 def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
@@ -174,7 +185,8 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
         cur.execute(
             """
             SELECT maze_config_id, width_px, height_px, fps_real,
-                   start_time_seconds, end_time_seconds, interval_manually_adjusted
+                   start_time_seconds, end_time_seconds, interval_manually_adjusted,
+                   filepath, content_hash, file_size_bytes
             FROM trials WHERE id = %s
             """,
             (trial_id,),
@@ -182,13 +194,15 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
         row = cur.fetchone()
     if row is None:
         raise ValueError(f"Trial {trial_id} não encontrado.")
-    maze_config_id, width, height, fps_real, start_s, end_s, manual = row
+    maze_config_id, width, height, fps_real, start_s, end_s, manual, path, digest, size = row
     interval = (
         None
         if start_s is None or end_s is None
         else interval_from_seconds(start_s, end_s, fps_real, manually_adjusted=manual)
     )
-    return StoredTrial(trial_id, maze_config_id, width, height, interval)
+    return StoredTrial(
+        trial_id, maze_config_id, width, height, interval, Path(path), digest, size
+    )
 
 
 def get_trial_maze_config_id(conn: psycopg.Connection, trial_id: int) -> int:
