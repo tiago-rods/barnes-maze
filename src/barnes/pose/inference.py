@@ -6,7 +6,6 @@ import csv
 import importlib.metadata
 import json
 import math
-import subprocess
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -19,7 +18,14 @@ import numpy as np
 
 from barnes.io.trim import TrialInterval
 from barnes.pose.annotations import KEYPOINTS, AnnotatedFrame, trial_key
-from barnes.pose.dataset import contained_path, file_sha256, load_dataset_manifest, write_json
+from barnes.pose.dataset import (
+    RunForRegistration,
+    contained_path,
+    file_sha256,
+    git_revision_record,
+    load_dataset_manifest,
+    write_json,
+)
 from barnes.pose.offline import offline_network
 from barnes.pose.training import (
     SLEAP_IO_VERSION,
@@ -27,6 +33,13 @@ from barnes.pose.training import (
     environment_record,
     load_model_manifest,
 )
+
+# Valores do campo "kind" nos registros locais (execucao.json), distintos do
+# vocabulário do CLI (database/migrations 0006: treino/avaliacao/inferencia) —
+# cli_pose.py traduz entre os dois; nada deve literalizar "inferencia"/"teste"
+# de novo fora daqui.
+INFERENCE_RECORD_KIND = "inferencia"
+TEST_SET_RECORD_KIND = "teste"
 
 
 class InferenceError(ValueError):
@@ -144,36 +157,13 @@ def _sequential_frames(video: Path, start: int, end: int) -> Iterator[tuple[int,
 def _source_record() -> dict:
     """Identifica o código executado, inclusive alterações ainda sem commit."""
     package = Path(__file__).resolve().parents[1]
-    source = {
+    return {
         "python_files_sha256": {
             path.relative_to(package).as_posix(): file_sha256(path)
             for path in sorted(package.rglob("*.py"))
         },
-        "git_commit": None,
-        "git_dirty": None,
+        **git_revision_record(package),
     }
-    try:
-        source["git_commit"] = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=package,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        ).stdout.strip()
-        source["git_dirty"] = bool(
-            subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=package,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=5,
-            ).stdout.strip()
-        )
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return source
 
 
 def _new_record(
@@ -246,7 +236,7 @@ def load_inference_record(run_dir: str | Path, verify: bool = True) -> dict:
             not isinstance(record, dict)
             or record.get("schema_version") != 1
             or record.get("status") not in {"completed", "failed"}
-            or record.get("kind") not in {"inferencia", "teste"}
+            or record.get("kind") not in {INFERENCE_RECORD_KIND, TEST_SET_RECORD_KIND}
         ):
             raise ValueError("Execução incompleta ou estrutura incompatível.")
         duration = record.get("duration_seconds")
@@ -262,7 +252,7 @@ def load_inference_record(run_dir: str | Path, verify: bool = True) -> dict:
         artifacts = record.get("artifacts")
         if not isinstance(artifacts, dict):
             raise TypeError("Registro sem hashes de artefatos.")
-        required = "pose.csv" if record["kind"] == "inferencia" else "predicoes.csv"
+        required = "pose.csv" if record["kind"] == INFERENCE_RECORD_KIND else "predicoes.csv"
         if record["status"] == "completed" and required not in artifacts:
             raise ValueError(f"Execução concluída sem artefato obrigatório: {required}.")
         for relative, expected in artifacts.items():
@@ -272,6 +262,31 @@ def load_inference_record(run_dir: str | Path, verify: bool = True) -> dict:
         return record
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise InferenceError(f"Registro de inferência inválido: {exc}", run_dir=run_dir) from exc
+
+
+def load_inference_run_record(run_dir: str | Path, kind: str) -> RunForRegistration:
+    """Carrega uma inferência/avaliação já existente, pronta para registro em execucao.
+
+    ``kind`` usa o vocabulário do CLI ("inferencia" ou "avaliacao"); o registro
+    local grava "kind" como INFERENCE_RECORD_KIND/TEST_SET_RECORD_KIND (acima),
+    então a tradução entre os dois vocabulários acontece aqui, não no CLI.
+    """
+    run_dir = Path(run_dir).resolve()
+    document = load_inference_record(run_dir)
+    if kind == "avaliacao" and (
+        document.get("status") == "completed" or (run_dir / "avaliacao.json").is_file()
+    ):
+        evaluation = json.loads((run_dir / "avaliacao.json").read_text(encoding="utf-8"))
+        if not isinstance(evaluation, dict):
+            raise InferenceError(f"Esperado objeto JSON: {run_dir / 'avaliacao.json'}")
+        document = dict(document, evaluation=evaluation)
+    if document.get("status") not in ("completed", "failed"):
+        raise InferenceError("A execução ainda não terminou; não pode ser registrada como concluída.")
+    expected = {"inferencia": INFERENCE_RECORD_KIND, "avaliacao": TEST_SET_RECORD_KIND}.get(kind)
+    if expected and document.get("kind") != expected:
+        raise InferenceError(f"O diretório não pertence a uma execução de {kind}.")
+    document = dict(document, run_id=run_dir.name)
+    return RunForRegistration(document, "execucao.json", document.get("duration_seconds"))
 
 
 def infer_trial(
@@ -352,7 +367,9 @@ def infer_trial(
         raise InferenceError("O intervalo útil não contém nenhum quadro completo.")
     if not video.is_file():
         raise InferenceError(f"Vídeo local não encontrado: {video}")
-    run_dir, record = _new_record(Path(output_root), model, "inferencia", device, batch_size)
+    run_dir, record = _new_record(
+        Path(output_root), model, INFERENCE_RECORD_KIND, device, batch_size
+    )
     record.update(
         trial_id=trial_id,
         video=str(video),
@@ -458,7 +475,9 @@ def predict_test_set(
     selected = [f for f in dataset["frames"] if f["subset"] == "teste"]
     if not selected:
         raise InferenceError("Conjunto sem quadros de teste.")
-    run_dir, record = _new_record(Path(output_root), model, "teste", device, batch_size)
+    run_dir, record = _new_record(
+        Path(output_root), model, TEST_SET_RECORD_KIND, device, batch_size
+    )
     record.update(
         processed_frames=0,
         missing_points=0,
