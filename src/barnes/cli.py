@@ -25,6 +25,7 @@ from barnes.db.calibration import (
     save_verification,
     validate_frame_size,
 )
+from barnes.db.catalog import list_catalog
 from barnes.db.connection import DatabaseConfigError, apply_migrations, get_connection
 from barnes.db.executions import get_execution, record_processing_execution
 from barnes.db.maze_configs import get_maze_config, insert_maze_config
@@ -115,6 +116,9 @@ app.add_typer(metrics_app, name="metrics")
 
 execution_app = typer.Typer(help="Proveniência das execuções registradas (US-27).")
 app.add_typer(execution_app, name="execution")
+
+catalog_app = typer.Typer(help="Catálogo de trials processados (US-27).")
+app.add_typer(catalog_app, name="catalog")
 
 pose_app = typer.Typer(help="Anotação, treino, avaliação e inferência local de pose (US-06/07/08).")
 app.add_typer(pose_app, name="pose")
@@ -1259,6 +1263,91 @@ def execution_show(
                 default=str,
             )
         )
+
+
+@catalog_app.command("list")
+def catalog_list(
+    experiment_id: Annotated[
+        int | None, typer.Option("--experiment-id", help="Só os trials deste experimento.")
+    ] = None,
+    verify_hash: Annotated[
+        bool,
+        typer.Option(
+            "--verificar-hash",
+            help="Reler cada vídeo e comparar o conteúdo (lento). Padrão: só existência e tamanho.",
+        ),
+    ] = False,
+    no_file_check: Annotated[
+        bool, typer.Option("--sem-arquivo", help="Não conferir os vídeos no disco.")
+    ] = False,
+    search_dirs: Annotated[
+        list[Path] | None,
+        typer.Option("--procurar-em", help="Pasta extra onde procurar vídeos movidos (repetível)."),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Saída em JSON.")] = False,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Listar trials com animal, sessão, situação, cobertura de pose e conferência do vídeo.
+
+    Um vídeo movido, renomeado, substituído ou ausente é sinalizado com o id
+    do trial (US-27 RN04); a listagem não altera nada no banco.
+    """
+    if verify_hash and no_file_check:
+        raise typer.BadParameter("--verificar-hash e --sem-arquivo são exclusivos.")
+    verify = None if no_file_check else ("hash" if verify_hash else "size")
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            entries = list_catalog(
+                conn, experiment_id=experiment_id, verify=verify, search_dirs=search_dirs or ()
+            )
+        if as_json:
+            typer.echo(json.dumps([_catalog_json(e) for e in entries], ensure_ascii=False,
+                                  indent=2, default=str))
+        else:
+            _print_catalog(entries)
+        divergent = [e for e in entries if e.diverges]
+        for entry in divergent:
+            typer.echo(f"Divergência no trial #{entry.trial_id}: {entry.arquivo.describe()}.",
+                       err=True)
+        if divergent:
+            typer.echo(
+                f"{len(divergent)} trial(s) com vídeo divergente do catalogado. Não reprocesse "
+                "antes de conferir o arquivo.",
+                err=True,
+            )
+
+
+def _catalog_json(entry) -> dict:
+    data = asdict(entry)
+    data["arquivo"] = None if entry.arquivo is None else entry.arquivo.status.value
+    data["arquivo_detalhe"] = None if entry.arquivo is None else entry.arquivo.describe()
+    data["arquivo_divergente"] = entry.diverges
+    return data
+
+
+def _print_catalog(entries) -> None:
+    if not entries:
+        typer.echo("Nenhum trial catalogado.")
+        return
+    header = ("trial", "animal", "sessão", "fase", "nº", "situação", "cobertura", "execução",
+              "arquivo")
+    rows = [
+        (
+            f"#{e.trial_id}",
+            e.animal or "—",
+            str(e.sessao),
+            e.fase,
+            str(e.trial_no_dia),
+            e.situacao.value,
+            "—" if e.cobertura_pose is None else f"{e.cobertura_pose:.1%}",
+            "—" if e.execucao_id is None else f"#{e.execucao_id}",
+            "—" if e.arquivo is None else e.arquivo.status.value,
+        )
+        for e in entries
+    ]
+    widths = [max(len(r[i]) for r in (header, *rows)) for i in range(len(header))]
+    for row in (header, *rows):
+        typer.echo("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)))
 
 
 ANNOTATIONS_DIR = Path("data/annotations")

@@ -406,3 +406,22 @@ def test_process_flags_moved_video_and_records_new_path(args, trial_id, video, t
         stored = get_execution(conn, json.loads(result.stdout)["execucao_id"])
     assert stored.parametros["video_movido"] is True
     assert stored.parametros["video"] == str(moved)
+
+
+def test_catalog_list_flags_moved_video_by_trial(trial_id, video, tmp_path):
+    # Cenário 3 pela CLI: o catálogo sinaliza a divergência e identifica o trial.
+    listed = runner.invoke(cli.app, ["catalog", "list", "--json"])
+    assert listed.exit_code == 0, listed.output
+    row = next(r for r in json.loads(listed.stdout) if r["trial_id"] == trial_id)
+    assert (row["situacao"], row["arquivo"]) == ("carregado", "presente")
+
+    destination = tmp_path / "movidos"
+    destination.mkdir()
+    video.rename(destination / "renomeado.mp4")
+    moved = runner.invoke(
+        cli.app, ["catalog", "list", "--procurar-em", str(destination)]
+    )
+    assert moved.exit_code == 0, moved.output
+    assert f"Divergência no trial #{trial_id}" in moved.stderr
+    assert "renomeado.mp4" in moved.stderr
+    assert f"#{trial_id}" in moved.stdout
