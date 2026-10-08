@@ -7,8 +7,10 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,6 +32,19 @@ class DatasetError(ValueError):
     """Dados não permitem treino reproduzível sem vazamento."""
 
 
+@dataclass(frozen=True)
+class RunForRegistration:
+    """Execução local já concluída, pronta para barnes.db.pose_executions.record_execution.
+
+    Produzida por training.py/inference.py (uma por "kind"), nunca por cli_pose.py —
+    mantém a leitura/validação do manifesto no módulo do estágio, não no CLI.
+    """
+
+    document: dict
+    artifact_filename: str
+    duration_seconds: float | None
+
+
 def file_sha256(path: str | Path) -> str:
     """Calcula SHA-256 sem carregar arquivos grandes na memória."""
     digest = hashlib.sha256()
@@ -47,6 +62,37 @@ def write_json(path: Path, value: dict) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+
+
+def git_revision_record(repo_dir: Path, *, timeout: float = 5) -> dict:
+    """Identifica o commit e alterações não commitadas; None se git não disponível/travado.
+
+    Usado por training.py e inference.py para marcar a proveniência do código
+    executado (US-07/08) — um único lugar evita que as duas chamadas de
+    subprocess divirjam (ex.: uma delas sem timeout, travando indefinidamente).
+    """
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=timeout,
+            ).stdout.strip()
+        )
+        return {"git_commit": commit, "git_dirty": dirty}
+    except (OSError, subprocess.SubprocessError):
+        return {"git_commit": None, "git_dirty": None}
 
 
 def contained_path(root: Path, relative: str) -> Path:
