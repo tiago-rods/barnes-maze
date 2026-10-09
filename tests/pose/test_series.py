@@ -1,4 +1,4 @@
-"""Conversão px→cm e orientação da cabeça θ (US-09, SCRUM-117/119/122, Cenário 2).
+"""Série (x, y, θ, t) a partir da pose inferida (US-09, SCRUM-117/118/119/121/122).
 
 Sem banco nem GPU: escala fixa injetada e trajetórias sintéticas.
 """
@@ -11,7 +11,16 @@ import numpy as np
 import pytest
 
 from barnes.geometry.holes import generate_holes
-from barnes.pose.series import head_angle_deg, px_to_cm
+from barnes.io.trim import interval_from_seconds
+from barnes.pose.series import (
+    POSE_CSV_COLUMNS,
+    SeriesError,
+    build_series,
+    head_angle_deg,
+    px_to_cm,
+    read_pose_csv,
+)
+from barnes.pose.trajectory import read_metadata, read_trajectory, write_trajectory
 
 DIRECTIONS_DEG = [0, 45, 90, 135, 180, 225, 270, 315]
 
@@ -138,3 +147,131 @@ def test_theta_is_scale_invariant():
     c, s = px_to_cm(center, 0.17), px_to_cm(snout, 0.17)
     in_cm = head_angle_deg(c[:, 0], c[:, 1], s[:, 0], s[:, 1])
     assert np.allclose(in_px, in_cm)
+
+
+# --- build_series: ausência marcada (SCRUM-121) e aviso de fps (SCRUM-118) ------
+
+FPS = 10.0
+INTERVAL = interval_from_seconds(1.0, 1.4, FPS, manually_adjusted=True)  # quadros 10..14
+
+
+def _write_pose_csv(path, rows):
+    """Escreve um pose.csv no formato de `pose infer`; None = célula vazia (ausente)."""
+    lines = [",".join(POSE_CSV_COLUMNS)]
+    for frame, points in rows:
+        cells = ["abc123", str(frame), str(frame / FPS)]
+        for point in ("focinho", "centro_corpo", "base_cauda"):
+            x, y, conf = points.get(point, (None, None, None))
+            cells += ["" if v is None else str(v) for v in (x, y, conf)]
+        lines.append(",".join(cells))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _moving_right(frame):
+    """Animal andando para a direita: centro em x = 10·quadro, focinho 20 px à frente."""
+    x = 10.0 * frame
+    return {
+        "focinho": (x + 20, 100.0, 0.9),
+        "centro_corpo": (x, 100.0, 0.8),
+        "base_cauda": (x - 20, 100.0, 0.7),
+    }
+
+
+def _series(pose, **overrides):
+    kwargs = {
+        "trial_id": 5,
+        "execucao_id": 9,
+        "expected_frames": (10, 14),
+        "fps": FPS,
+        "interval": INTERVAL,
+        "fps_variable": False,
+        "cm_per_px": 0.1,
+        "content_hash": "f" * 64,
+        "model_id": "sleap-maze-1-abc",
+    } | overrides
+    return build_series(pose, **kwargs)
+
+
+def test_series_has_one_row_per_frame_in_cm_degrees_and_seconds(tmp_path):
+    # Cenário 1 (parte calculada): uma linha por quadro, x/y em cm, θ em graus, t em s.
+    pose = read_pose_csv(_write_pose_csv(tmp_path / "pose.csv",
+                                         [(f, _moving_right(f)) for f in range(10, 15)]))
+    table = _series(pose)
+    assert table.column("quadro").to_pylist() == [10, 11, 12, 13, 14]
+    assert table.column("t_s").to_pylist() == pytest.approx([0.0, 0.1, 0.2, 0.3, 0.4])
+    assert table.column("centro_corpo_x_cm_image").to_pylist() == pytest.approx(
+        [10.0, 11.0, 12.0, 13.0, 14.0]
+    )
+    assert table.column("focinho_y_cm_image").to_pylist() == pytest.approx([10.0] * 5)
+    assert table.column("theta_deg_image").to_pylist() == pytest.approx([0.0] * 5)
+    assert all(table.column("pose_valida").to_pylist())
+    assert not any(table.column("interpolado").to_pylist())
+    meta = read_metadata(table)
+    assert (meta["cm_per_px"], meta["px_per_10cm"]) == (0.1, pytest.approx(100.0))
+
+
+def test_missing_snout_keeps_the_row_marked_absent_without_repeating_previous(tmp_path):
+    # Cenário 3: o modelo não detectou o focinho no quadro 12.
+    rows = [(f, _moving_right(f)) for f in range(10, 15)]
+    rows[2][1]["focinho"] = (None, None, None)
+    table = _series(read_pose_csv(_write_pose_csv(tmp_path / "pose.csv", rows)))
+
+    assert table.num_rows == 5  # a linha existe
+    row = {name: table.column(name)[2].as_py() for name in table.column_names}
+    assert row["quadro"] == 12
+    assert math.isnan(row["focinho_x_cm_image"]) and math.isnan(row["focinho_y_cm_image"])
+    assert math.isnan(row["focinho_confianca"])
+    assert row["focinho_valido"] is False
+    assert row["pose_valida"] is False
+    assert math.isnan(row["theta_deg_image"])
+    # O resto do quadro continua: centro e cauda detectados não são descartados.
+    assert row["centro_corpo_valido"] is True
+    assert row["centro_corpo_x_cm_image"] == pytest.approx(12.0)
+    # Nada copiado do quadro 11.
+    assert row["focinho_x_cm_image"] != table.column("focinho_x_cm_image")[1].as_py()
+
+
+def test_half_detected_point_is_absent_on_both_axes(tmp_path):
+    rows = [(f, _moving_right(f)) for f in range(10, 15)]
+    rows[0][1]["base_cauda"] = (80.0, None, 0.3)  # só x: ponto inválido
+    table = _series(read_pose_csv(_write_pose_csv(tmp_path / "pose.csv", rows)))
+    assert math.isnan(table.column("base_cauda_x_cm_image")[0].as_py())
+    assert table.column("base_cauda_valido")[0].as_py() is False
+    assert table.column("pose_valida")[0].as_py() is True  # θ não depende da cauda
+
+
+def test_missing_frame_in_pose_is_an_error_not_a_silent_gap(tmp_path):
+    rows = [(f, _moving_right(f)) for f in (10, 11, 13, 14)]
+    pose = read_pose_csv(_write_pose_csv(tmp_path / "pose.csv", rows))
+    with pytest.raises(SeriesError, match=r"\[12\]"):
+        _series(pose)
+
+
+def test_variable_fps_warning_reaches_every_row_and_metadata(tmp_path):
+    pose = read_pose_csv(_write_pose_csv(tmp_path / "pose.csv",
+                                         [(f, _moving_right(f)) for f in range(10, 15)]))
+    table = _series(pose, fps_variable=True)
+    assert all(table.column("fps_variavel").to_pylist())
+    assert read_metadata(table)["fps_variavel"] is True
+
+
+def test_series_round_trips_through_the_contract(tmp_path):
+    pose = read_pose_csv(_write_pose_csv(tmp_path / "pose.csv",
+                                         [(f, _moving_right(f)) for f in range(10, 15)]))
+    path = write_trajectory(_series(pose), tmp_path / "trial_5.parquet")
+    assert read_trajectory(path).num_rows == 5
+
+
+def test_pose_csv_with_other_header_is_rejected(tmp_path):
+    path = tmp_path / "pose.csv"
+    path.write_text("x_px,y_px,time_s\n1,2,0\n", encoding="utf-8")
+    with pytest.raises(SeriesError, match="Cabeçalho"):
+        read_pose_csv(path)
+
+
+def test_invalid_scale_is_reported_as_series_error(tmp_path):
+    pose = read_pose_csv(_write_pose_csv(tmp_path / "pose.csv",
+                                         [(f, _moving_right(f)) for f in range(10, 15)]))
+    with pytest.raises(SeriesError, match="cm_per_px"):
+        _series(pose, cm_per_px=0)

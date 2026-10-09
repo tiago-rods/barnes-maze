@@ -42,11 +42,7 @@ SCHEMA = pa.schema(
         ("execucao_id", pa.int32()),
         ("quadro", pa.int32()),
         ("t_s", pa.float64()),
-        *[
-            (f"{point}_{axis}_cm_image", pa.float64())
-            for point in KEYPOINTS
-            for axis in ("x", "y")
-        ],
+        *[(f"{point}_{axis}_cm_image", pa.float64()) for point in KEYPOINTS for axis in ("x", "y")],
         *[(f"{point}_confianca", pa.float64()) for point in KEYPOINTS],
         *[(f"{point}_valido", pa.bool_()) for point in KEYPOINTS],
         ("pose_valida", pa.bool_()),
@@ -209,4 +205,3 @@ def read_trajectory(path: str | Path) -> pa.Table:
     table = pq.read_table(Path(path))
     validate_trajectory(table)
     return table
-
