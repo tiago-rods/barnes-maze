@@ -46,6 +46,7 @@ def record_processing_execution(
     started_at: datetime,
     model_id: str | None = None,
     duration_seconds: float | None = None,
+    artifact_path: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> int:
     """Acrescenta uma execução de processamento e devolve seu id (RN01/RN05).
@@ -64,6 +65,7 @@ def record_processing_execution(
         model_id: Modelo de pose usado, quando o processamento parte de uma
             inferência (US-09 em diante); `None` para trajetória já extraída.
         duration_seconds: Duração do processamento, se medida.
+        artifact_path: Arquivo gerado (ex.: o Parquet da trajetória, US-09).
         metadata: Informações extras (ex.: o registro de `git_revision_record`).
 
     Returns:
@@ -86,11 +88,11 @@ def record_processing_execution(
             """
             INSERT INTO execucao (
                 kind, model_id, maze_config_id, trial_id, status, duration_seconds,
-                metadata, git_commit, git_dirty, limiares, limiares_sha256,
+                artifact_path, metadata, git_commit, git_dirty, limiares, limiares_sha256,
                 parametros, video_hash, iniciado_em
             ) VALUES (
                 'processamento', %s, %s, %s, 'concluido', %s,
-                %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             RETURNING id
             """,
@@ -99,6 +101,7 @@ def record_processing_execution(
                 maze_config_id,
                 trial_id,
                 duration_seconds,
+                artifact_path,
                 Jsonb(record),
                 git.commit,
                 git.dirty,

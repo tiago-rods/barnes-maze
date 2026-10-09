@@ -182,3 +182,16 @@ def test_cheap_check_flags_missing_and_resized_video(conn, experiment, add_trial
 
     assert _entry(entries, ausente).arquivo.status is FileStatus.AUSENTE
     assert _entry(entries, redimensionado).arquivo.status is FileStatus.ALTERADO
+
+
+def test_trial_with_trajectory_and_no_metrics_is_listed_as_trajectory(conn, experiment, add_trial):
+    # US-09: depois de `pose series`, o catálogo mostra a série gerada e o arquivo.
+    experiment_id, _ = experiment
+    trial, _ = add_trial()
+    conn.execute(
+        "UPDATE trials SET trajectory_path = 'data/interim/trial_x.parquet' WHERE id = %s",
+        (trial,),
+    )
+    row = _entry(list_catalog(conn, experiment_id=experiment_id), trial)
+    assert row.situacao is Situation.TRAJETORIA
+    assert str(row.trajetoria).endswith("trial_x.parquet")

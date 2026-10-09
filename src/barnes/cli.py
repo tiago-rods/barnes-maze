@@ -40,6 +40,7 @@ from barnes.db.trials import (
     get_trial_maze_config_id,
     get_trial_rotations,
     insert_trial,
+    set_trajectory_path,
     set_trial_rotation,
 )
 from barnes.geometry.holes import Hole, MazeGeometry, generate_holes
@@ -76,6 +77,7 @@ from barnes.pose.annotations import (
     write_annotations_csv,
 )
 from barnes.pose.dataset import file_sha256, git_revision_record
+from barnes.pose.inference import INFERENCE_RECORD_KIND, load_inference_record
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
 from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
 from barnes.pose.sampling import (
@@ -84,6 +86,7 @@ from barnes.pose.sampling import (
     read_sampled_maze_config,
     sample_frames,
 )
+from barnes.pose.series import build_series, read_pose_csv
 from barnes.pose.split import (
     SPLIT_CSV,
     build_manifest,
@@ -93,6 +96,7 @@ from barnes.pose.split import (
     summarize,
     write_manifest,
 )
+from barnes.pose.trajectory import trajectory_path, write_trajectory
 from barnes.provenance import PACKAGE_DIR, GitState, thresholds_snapshot
 
 app = typer.Typer()
@@ -1331,8 +1335,8 @@ def _print_catalog(entries) -> None:
     if not entries:
         typer.echo("Nenhum trial catalogado.")
         return
-    header = ("trial", "animal", "sessão", "fase", "nº", "situação", "cobertura", "execução",
-              "arquivo")
+    header = ("trial", "animal", "sessão", "fase", "nº", "situação", "cobertura", "fps",
+              "execução", "arquivo")
     rows = [
         (
             f"#{e.trial_id}",
@@ -1342,6 +1346,7 @@ def _print_catalog(entries) -> None:
             str(e.trial_no_dia),
             e.situacao.value,
             "—" if e.cobertura_pose is None else f"{e.cobertura_pose:.1%}",
+            "variável" if e.fps_variavel else "ok",
             "—" if e.execucao_id is None else f"#{e.execucao_id}",
             "—" if e.arquivo is None else e.arquivo.status.value,
         )
@@ -1360,6 +1365,134 @@ AnnotationsPath = Annotated[
     Path, typer.Option("--annotations", help="Conjunto anotado no formato interno.")
 ]
 ManifestPath = Annotated[Path, typer.Option("--manifest", help="Manifesto da divisão.")]
+
+
+@pose_app.command("series")
+def pose_series(
+    trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
+    inference: Annotated[
+        Path,
+        typer.Option(
+            "--inference",
+            help="Diretório da execução de `barnes pose infer` (com execucao.json e pose.csv).",
+        ),
+    ],
+    out: Annotated[
+        Path, typer.Option("--out", help="Pasta das trajetórias (um .parquet por trial).")
+    ] = Path("data/interim"),
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Gerar a série (x, y, theta, t) do trial a partir da pose inferida (US-09).
+
+    Lê o `pose.csv` de uma inferência concluída do próprio trial (hash e montagem
+    conferidos), converte para cm com a escala da montagem (US-02), calcula theta pelo
+    eixo centro do corpo -> focinho e grava `<out>/trial_<id>.parquet` no contrato
+    de `docs/contrato-trajetoria.md`. Quadro sem pose fica marcado como ausente. A
+    execução (US-27) e o caminho do arquivo são gravados na mesma transação.
+    """
+    started_at = datetime.now(UTC)
+    with _command_errors():
+        record = load_inference_record(inference)  # confere os hashes dos artefatos
+        if record["kind"] != INFERENCE_RECORD_KIND or record["status"] != "completed":
+            raise ValueError(
+                f"{inference} não é uma inferência de trial concluída (status: "
+                f"{record['status']}). Rode `barnes pose infer` de novo."
+            )
+        if record.get("trial_id") != trial:
+            raise ValueError(
+                f"A inferência em {inference} é do trial #{record.get('trial_id')}, não do #{trial}."
+            )
+        with get_connection(dsn) as conn:
+            stored = get_trial(conn, trial)
+            calibration = require_calibration(conn, stored.maze_config_id)
+        if stored.interval is None:
+            raise ValueError(f"O trial #{trial} não tem intervalo útil registrado (US-03).")
+        if record.get("content_hash") != stored.content_hash:
+            raise ValueError(
+                f"A inferência foi feita sobre um vídeo com outro conteúdo que o do trial "
+                f"#{trial} (hash diverge): a pose não é deste trial."
+            )
+        if record.get("maze_config_id") != stored.maze_config_id:
+            raise ValueError(
+                f"A inferência usou um modelo da montagem #{record.get('maze_config_id')}, "
+                f"mas o trial #{trial} é da montagem #{stored.maze_config_id}."
+            )
+        if not math.isclose(record["fps"], stored.fps_real, rel_tol=1e-9):
+            raise ValueError(
+                f"A inferência usou fps {record['fps']}, mas o trial #{trial} registra "
+                f"{stored.fps_real}: refaça a inferência."
+            )
+        # A pose está em pixels do vídeo original; a escala só vale nessa resolução.
+        validate_frame_size(calibration, (stored.width_px, stored.height_px))
+        frames = record["processed_interval_frames"]
+        pose_csv = Path(inference) / "pose.csv"
+        pose = read_pose_csv(pose_csv)
+        if stored.fps_is_variable:
+            typer.echo(
+                f"Aviso: o vídeo do trial #{trial} tem fps variável (US-01) — os tempos t_s "
+                "da série são aproximados. O aviso vai junto no arquivo (fps_variavel).",
+                err=True,
+            )
+
+        destination = trajectory_path(out, trial)
+        source = git_revision_record(PACKAGE_DIR)
+        git = GitState.from_record(source)
+        parameters = {
+            "comando": "pose series",
+            "inference_run": str(Path(inference).resolve()),
+            "inference_run_id": Path(inference).resolve().name,
+            "pose_csv_sha256": file_sha256(pose_csv),
+            "processed_interval_frames": frames,
+            "cm_per_px": calibration.cm_per_px,
+            "px_per_10cm": 10 / calibration.cm_per_px,
+            "fps_real": stored.fps_real,
+            "fps_variavel": bool(stored.fps_is_variable),
+            "interval": asdict(stored.interval),
+            "saida": str(destination),
+        }
+        with get_connection(dsn) as conn:
+            # Execução, arquivo e trials.trajectory_path juntos: uma falha ao gravar
+            # o Parquet desfaz a execução.
+            execucao_id = record_processing_execution(
+                conn,
+                trial_id=trial,
+                maze_config_id=stored.maze_config_id,
+                parameters=parameters,
+                thresholds=thresholds_snapshot(),
+                git=git,
+                video_hash=stored.content_hash,
+                started_at=started_at,
+                model_id=record["model_id"],
+                artifact_path=str(destination),
+                metadata={"source": source},
+            )
+            table = build_series(
+                pose,
+                trial_id=trial,
+                execucao_id=execucao_id,
+                expected_frames=(frames["start"], frames["end"]),
+                fps=stored.fps_real,
+                interval=stored.interval,
+                fps_variable=bool(stored.fps_is_variable),
+                cm_per_px=calibration.cm_per_px,
+                content_hash=stored.content_hash,
+                model_id=record["model_id"],
+                generated_at=started_at,
+            )
+            write_trajectory(table, destination)
+            set_trajectory_path(conn, trial, str(destination))
+        without_pose = table.num_rows - sum(table.column("pose_valida").to_pylist())
+        if not git.reproducible:
+            typer.echo(
+                f"Aviso: execução #{execucao_id} registrada com repositório "
+                f"{'sujo (alterações não commitadas)' if git.dirty else 'em estado desconhecido'}"
+                " — o resultado não é reproduzível pelo commit.",
+                err=True,
+            )
+        typer.echo(
+            f"Trajetória: {destination} | {table.num_rows} quadros, {without_pose} sem pose "
+            f"válida | execução #{execucao_id}"
+        )
 
 
 @pose_app.command("sample")
