@@ -161,3 +161,32 @@ Toda coluna que carrega uma posição traz no nome o sufixo do referencial em
 que está expressa, por exemplo `target_hole_platform` e
 `target_angle_deg_room`. Uma coluna de posição sem sufixo é um erro de
 exportação.
+
+### 6.5 Orientação da cabeça θ (US-09)
+
+A orientação da cabeça é o ângulo do vetor **centro do corpo → focinho**, no quadro do
+vídeo (sufixo `_image`), com **a mesma convenção dos buracos** (§6.3, `holes.angle_deg`):
+
+| | |
+|---|---|
+| Eixos | os da imagem: origem no canto superior esquerdo, **y cresce para baixo** |
+| Origem do ângulo | **0° aponta para a direita da imagem (+x)** |
+| Sentido | **horário na tela**: 90° = para baixo, 180° = esquerda, 270° = para cima |
+| Faixa | [0, 360) |
+| Fórmula | `θ = atan2(y_focinho − y_centro, x_focinho − x_centro)`, em graus, mod 360 |
+| Sem θ | quando falta focinho ou centro do corpo, ou os dois coincidem: θ = NaN, `pose_valida = false` |
+
+Consequência prática: um focinho apontando do centro da plataforma para o buraco *k*
+tem θ = `holes.angle_deg` desse buraco. O ângulo cabeça→buraco da US-11 pode ser
+calculado pela mesma fórmula e comparado diretamente com θ.
+
+A conversão para cm não altera θ: a escala da US-02 é um fator único para os dois
+eixos. θ fica no referencial da imagem. Para comparar orientações entre trials ou
+montagens, converta para o referencial da sala (§6.3) subtraindo o ângulo de imagem do
+buraco 0 e somando a rotação do trial.
+
+Verificação (US-09 Cenário 2): em trajetórias sintéticas retas nas 8 direções, θ
+coincide com a direção de deslocamento (< 1e-6° sem ruído; desvio mediano ≤ 5° com
+ruído de 1 px num eixo de corpo de 20 px). É tolerância de **teste** do cálculo, não
+limiar do laboratório. O contrato completo da série está em
+[`contrato-trajetoria.md`](contrato-trajetoria.md).
