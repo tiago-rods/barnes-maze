@@ -94,10 +94,16 @@ meta = read_metadata(table)
 df = table.to_pandas()
 ```
 
+Coordenada ausente é **NaN, não NULL**. Em SQL, NaN contamina agregações
+(`avg(theta_deg_image)` dá NaN), então filtre com `WHERE pose_valida` (ou
+`*_valido`) antes de agregar.
+
 ```sql
 -- DuckDB, sem validar (para explorar):
 SELECT count(*) AS quadros, sum(CASE WHEN pose_valida THEN 0 ELSE 1 END) AS sem_pose
 FROM 'data/interim/trial_12.parquet';
+
+SELECT avg(theta_deg_image) FROM 'data/interim/trial_12.parquet' WHERE pose_valida;
 ```
 
 ## Quem consome e como

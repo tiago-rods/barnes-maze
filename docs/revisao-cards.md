@@ -145,3 +145,22 @@ Decisões que estreitam o card (detalhes em [DER](DER.md) e no
   do estudo, e os demais desenvolvem com o Postgres do Docker. Docker (licença do
   Docker Desktop, WSL2) e SQLite (reescrita das migrações e de `db/`) foram
   avaliados e ficam como alternativas. Passo a passo no manual, §2.2.2.
+
+## US-09 — série de posição e orientação da cabeça (outubro de 2026)
+
+Decisões (contrato completo em [contrato-trajetoria.md](contrato-trajetoria.md)):
+
+- **Inferência reaproveitada.** A "inferência em lote sobre o trial recortado"
+  (SCRUM-116) é o `pose infer` da US-07/08; a US-09 lê o `pose.csv` dele
+  (`barnes pose series`) em vez de inferir de novo.
+- **Escala por montagem, não por orientação de câmera** (decisão da US-02): a
+  conversão px→cm usa `maze_configs` do trial.
+- **Sem corte por confiança.** "Ponto válido" = coordenadas finitas; os scores vão
+  no arquivo. Um limiar de confiança seria configuração de qualidade de pose (US-10),
+  não decisão da US-09.
+- **Posição em cm nos eixos da imagem** (sufixo `_image`, origem no canto do quadro);
+  θ na convenção de `holes.angle_deg` (0° = +x, sentido horário na tela).
+- **Tolerância do Cenário 2** é de teste do cálculo (< 1e-6° sem ruído; mediana ≤ 5°
+  com ruído de 1 px), não limiar do laboratório.
+- **SCRUM-123 pendente**: não há modelo treinado nem os 3 vídeos representativos
+  (ver `docs/status-us07-us08.md`).

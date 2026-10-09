@@ -240,7 +240,16 @@ Instalação CUDA, fallback/D4, parâmetros, recuperação e aceite offline est�
 em [Treino e avaliação de pose](docs/pose-treino-avaliacao.md). Os caminhos
 `<id>` são preenchidos com as saídas reais dos comandos. Treino requer dados
 anotados e NVIDIA elegível; a implementação não inclui pesos treinados do
-laboratório. Pose bruta é a entrada das próximas histórias de trajetória.
+laboratório.
+
+A pose bruta (`pose.csv`, em pixels) vira a **série de trajetória** da US-09 —
+uma linha por quadro do intervalo útil, posição em cm, orientação da cabeça θ em
+graus e t desde a soltura —, gravada em `data/interim/trial_<id>.parquet` sob o
+contrato de [`docs/contrato-trajetoria.md`](docs/contrato-trajetoria.md):
+
+```powershell
+uv run barnes pose series --trial 1 --inference data/pose/inference/inferencia-<id>
+```
 
 ## Antes de escrever código
 
