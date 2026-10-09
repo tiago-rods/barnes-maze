@@ -244,6 +244,20 @@ distance/speed/route-efficiency conversions it gates) are implemented;
 evaluation/offline inference. `cli_pose.py` orchestrates these commands;
 `db/pose_executions.py` records immutable `execucao` rows (migration 0006).
 
+US-09 trajectory (`pose/series.py` + `pose/trajectory.py`): `barnes pose series`
+turns an inference run's `pose.csv` (pixels, `time_s` from video start) into
+`data/interim/trial_<id>.parquet` — the input contract of the whole Epic D
+(events), US-10 and metrics. The schema is a fixed `pyarrow.Schema` checked
+**on write and on read** (`TrajectoryContractError`); `docs/contrato-trajetoria.md`
+is its human copy — change both together and bump `CONTRACT_VERSION` on any
+incompatible change. Missing pose is NaN + `*_valido=false`, never forward-filled
+(filling is US-10, which sets `interpolado`). θ (`theta_deg_image`) =
+`atan2(dy, dx)` centro→focinho in image axes = `holes.angle_deg` convention.
+Positions are cm in image axes (`_image`, origin top-left). `t_s` is from the
+useful-interval start. Typer `--help` crashes on the Windows cp1252 console with
+characters like θ or → in a command's docstring/help — keep CLI help text
+cp1252-safe (use "theta", "->").
+
 US-27 provenance (`0007`): every stage that writes results must first write
 an `execucao` row — `kind='processamento'` via
 `db/executions.record_processing_execution` — **in the same transaction** as

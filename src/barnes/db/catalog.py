@@ -8,6 +8,7 @@ no mesmo espírito da obsolescência da US-02:
 - ``sem_recorte``: trial sem intervalo útil (US-03) — nada pode ser processado;
 - ``carregado``: com intervalo, ainda sem inferência de pose nem métricas;
 - ``pose_inferida``: há inferência de pose concluída, ainda sem métricas;
+- ``trajetoria``: a série de pose (US-09) foi gerada, ainda sem métricas;
 - ``processado``: há métricas e a mais recente usa a escala atual da montagem;
 - ``obsoleto``: há métricas, mas a escala da montagem mudou depois (US-02 RN05).
 
@@ -36,6 +37,7 @@ class Situation(StrEnum):
     SEM_RECORTE = "sem_recorte"
     CARREGADO = "carregado"
     POSE_INFERIDA = "pose_inferida"
+    TRAJETORIA = "trajetoria"
     PROCESSADO = "processado"
     OBSOLETO = "obsoleto"
 
@@ -58,6 +60,9 @@ class CatalogEntry:
         cobertura_pose: Fração de quadros com pose válida (US-10), ou `None`.
         execucao_id: Execução da métrica mais recente, se houver.
         calculado_em: Quando a métrica mais recente foi calculada.
+        fps_variavel: Aviso de fps variável da US-01 — tempos do trial são
+            aproximados (US-09).
+        trajetoria: Arquivo atual da trajetória de pose (US-09), se gerado.
         arquivo: Resultado da conferência do vídeo, se pedida.
     """
 
@@ -74,6 +79,8 @@ class CatalogEntry:
     cobertura_pose: float | None
     execucao_id: int | None
     calculado_em: datetime | None
+    fps_variavel: bool = False
+    trajetoria: Path | None = None
     file_size_bytes: int | None = None
     arquivo: FileCheck | None = None
 
@@ -86,6 +93,7 @@ class CatalogEntry:
 _QUERY = """
     SELECT t.id, t.experiment_id, s.name, t.day_number, t.phase, t.trial_number_in_day,
            t.filename, t.filepath, t.content_hash, t.file_size_bytes,
+           t.fps_is_variable, t.trajectory_path,
            t.start_time_seconds IS NULL OR t.end_time_seconds IS NULL AS sem_recorte,
            EXISTS (
                SELECT 1 FROM execucao e
@@ -112,12 +120,19 @@ _QUERY = """
 
 
 def _situation(
-    *, sem_recorte: bool, pose_inferida: bool, has_metrics: bool, obsoleto: bool
+    *,
+    sem_recorte: bool,
+    pose_inferida: bool,
+    has_trajectory: bool,
+    has_metrics: bool,
+    obsoleto: bool,
 ) -> Situation:
     if has_metrics:
         return Situation.OBSOLETO if obsoleto else Situation.PROCESSADO
     if sem_recorte:
         return Situation.SEM_RECORTE
+    if has_trajectory:
+        return Situation.TRAJETORIA
     return Situation.POSE_INFERIDA if pose_inferida else Situation.CARREGADO
 
 
@@ -159,7 +174,7 @@ def list_catalog(
     for row in rows:
         (
             trial_id, exp_id, animal, day, phase, number, filename, filepath, digest, size,
-            sem_recorte, pose_inferida, cobertura, execucao_id, calculado_em, obsoleto,
+            fps_variable, trajectory, sem_recorte, pose_inferida, cobertura, execucao_id, calculado_em, obsoleto,
         ) = row
         entries.append(
             CatalogEntry(
@@ -175,12 +190,15 @@ def list_catalog(
                 situacao=_situation(
                     sem_recorte=sem_recorte,
                     pose_inferida=pose_inferida,
+                    has_trajectory=trajectory is not None,
                     has_metrics=execucao_id is not None,
                     obsoleto=obsoleto,
                 ),
                 cobertura_pose=cobertura,
                 execucao_id=execucao_id,
                 calculado_em=calculado_em,
+                fps_variavel=bool(fps_variable),
+                trajetoria=None if trajectory is None else Path(trajectory),
                 file_size_bytes=size,
             )
         )

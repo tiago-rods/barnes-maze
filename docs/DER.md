@@ -93,7 +93,7 @@ erDiagram
         int frame_count
         float duration_s
         datetime loaded_at "US-01 — quando a carga do vídeo foi feita"
-        string trajectory_path "caminho do .parquet de pose/eventos gerado para o trial"
+        string trajectory_path "US-09 — data/interim/trial_<id>.parquet atual (contrato em docs/contrato-trajetoria.md)"
         float rotation_deg "US-05 RN01 — rotação da plataforma, 0-360, sem default (NULL = não registrada)"
         float cobertura_pose "US-27/US-10 — fração 0-1 de quadros com pose válida; NULL até a US-10"
         int cobertura_execucao_id FK "US-27 — execução (do mesmo trial) que calculou a cobertura"
@@ -107,7 +107,7 @@ erDiagram
         int trial_id FK "obrigatório na inferência e no processamento; nulo no treino"
         string status "concluido|falhou; nova tentativa = nova linha"
         float duration_seconds "finito e >=0; obrigatório na inferência concluída"
-        string artifact_path "pesos, relatório ou predições locais"
+        string artifact_path "pesos, relatório, predições locais ou trajetória .parquet (processamento US-09)"
         json metadata "manifesto: dados, parâmetros, ambiente, máquina, commit, hashes e resultados"
         datetime recorded_at "instante do registro no banco (data da execução)"
         string git_commit "US-27 RN01 — HEAD do código executado; NULL sem git/legado"

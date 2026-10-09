@@ -23,7 +23,7 @@ diagnóstico de hardware, fallback/D4, registro no banco e validação offline.
 | Python | 3.11 |
 | GPU | Não obrigatória para inferência |
 | Interface de calibração | Ambiente gráfico com teclado, mouse e OpenCV |
-| Banco de dados | PostgreSQL — ver seção 2 |
+| Banco de dados | PostgreSQL instalado nativamente — ver seção 2.2.2 |
 
 ## 2. Instalação
 
@@ -93,66 +93,63 @@ Numa sessão seguinte, basta abrir o Docker Desktop e rodar `docker compose up -
 para não colidir com um PostgreSQL já instalado na 5432 (mude com
 `BARNES_PG_PORT`). O banco `barnes_test` é só da suíte de testes.
 
-#### 2.2.2 Distribuição para a máquina do laboratório — RASCUNHO (US-27, SCRUM-148)
+#### 2.2.2 Banco da máquina do laboratório — PostgreSQL nativo (US-27, SCRUM-148)
 
-> **Decisão em aberto — não decidida pela equipe.** PostgreSQL é um
-> **servidor**, não um arquivo: precisa estar instalado e rodando na máquina do
-> laboratório. Isso atinge dois critérios de aceite da US-30 — instalação feita
-> por **pessoa de fora** seguindo só este manual, e operação **offline**. As
-> opções abaixo são para revisão; a escolha depende do perfil do operador e da
-> TI do LNBio.
+> **Decisão (SCRUM-148): PostgreSQL instalado nativamente no Windows (opção A).**
+> PostgreSQL é um servidor, não um arquivo (US-27 RN07): precisa estar instalado
+> e rodando na máquina que guarda os dados. A instalação nativa é a via padrão,
+> sobe sozinha com o Windows, funciona **offline** e tem licença permissiva
+> (PostgreSQL License). No projeto, a máquina de referência é o PC onde o banco
+> real já roda (o do Tiago) — é ele quem processa com os dados do estudo. Os
+> demais integrantes desenvolvem com o banco local do Docker (seção 2.2.1), com
+> as mesmas migrações.
 
-| Critério | A. PostgreSQL nativo | B. Docker Desktop | C. SQLite (plano B) |
-|---|---|---|---|
-| Instalação por pessoa de fora | média: instalador com várias telas + 1 script | média: Docker + reinício + 1 comando | fácil: nada além do `barnes` |
-| Funciona offline | sim | sim, depois de baixar a imagem uma vez | sim |
-| Exige administrador | sim (instalação) | sim (instalação, WSL2) | não |
-| Licença | PostgreSQL License (permissiva) | Docker Desktop: verificar termos para a instituição | domínio público |
-| Trabalho de código | nenhum | nenhum | alto: reescrever migrações e `db/` |
-| Igual ao ambiente de desenvolvimento | parcialmente | sim | não |
+**Instalação (uma vez, como administrador):**
 
-**A. PostgreSQL instalado como serviço do Windows** (instalador oficial da
-EDB). Um script do projeto criaria o usuário e o banco `barnes` e rodaria
-`barnes db migrate`.
+1. Baixe o instalador oficial do PostgreSQL para Windows (EDB, versão 16 ou
+   mais recente) e execute-o. Mantenha a porta **5432**, defina e **anote** a
+   senha do superusuário `postgres`. O Stack Builder, oferecido no fim, não é
+   necessário.
+2. Crie o usuário e o banco do projeto, no PowerShell (troque a versão no
+   caminho se for outra, e `SENHA` por uma senha sua):
 
-- Prós: solução padrão e documentada; sobe sozinho com o Windows; não exige
-  virtualização; licença permissiva; desempenho nativo; atende ao offline sem
-  ressalvas.
-- Contras: o instalador pede senha do superusuário, porta e componentes —
-  pontos onde uma pessoa de fora pode errar; fica um serviço permanente na
-  máquina; atualizações de versão são manuais.
-- Variante: se o LNBio já tiver um PostgreSQL mantido pela TI, o `barnes` só
-  aponta para ele (`BARNES_DATABASE_URL`). Zero instalação, mas depende da rede
-  interna — confirmar se isso conta como "offline" para a US-30.
+   ```powershell
+   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE ROLE barnes LOGIN PASSWORD 'SENHA';"
+   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE barnes OWNER barnes;"
+   ```
 
-**B. Docker Desktop com o `docker-compose.yml` do repositório.**
+3. Na pasta do projeto, copie `.env.example` para `.env` e ajuste a linha da
+   conexão para o banco nativo:
 
-- Prós: é exatamente o ambiente que a equipe usa e testa; depois do Docker,
-  um único comando (`docker compose up -d`); versão do Postgres fixada; fácil
-  de descartar e recriar.
-- Contras: exige virtualização habilitada (WSL2), direitos de administrador e
-  reinício; o Docker Desktop precisa estar aberto para o banco funcionar; a
-  imagem precisa ser baixada uma vez (ou levada em arquivo com `docker save`/
-  `docker load`); consome mais memória. **Licença:** o Docker Desktop é gratuito
-  só para uso pessoal, educacional e organizações pequenas — **confirmar se o
-  LNBio/CNPEM se enquadra** ou se exige assinatura. Alternativas com licença
-  Apache-2.0 (Rancher Desktop, Podman) rodam o mesmo arquivo, mas não foram
-  testadas.
+   ```text
+   BARNES_DATABASE_URL=postgresql://barnes:SENHA@localhost:5432/barnes
+   ```
 
-**C. Voltar para SQLite** (plano B previsto no escopo).
+4. Crie as tabelas e confira:
 
-- Prós: o banco é um único arquivo, sem servidor nem instalação; backup é
-  copiar o arquivo; offline trivial; adequado ao volume do estudo (milhões de
-  linhas) e a um único operador.
-- Contras: reescrever as migrações (o SQLite não tem `JSONB`, `IDENTITY`,
-  gatilhos em PL/pgSQL, `ALTER TABLE ... DROP CONSTRAINT` nem regex nos
-  `CHECK`) e a camada `src/barnes/db/` (hoje `psycopg`); refazer os testes de
-  banco; perder o acesso simultâneo de mais de uma máquina; migrar os dados de
-  quem já usa o PostgreSQL.
+   ```powershell
+   barnes db migrate
+   barnes catalog list     # "Nenhum trial catalogado." num banco novo
+   ```
 
-_Pendente: escolher a opção com a equipe/cliente, registrar a decisão em
-`docs/revisao-cards.md` e transformar a opção escolhida em passo a passo
-testado por uma pessoa de fora (US-30)._
+**A cada atualização do código** (antes de processar):
+
+```powershell
+git pull
+uv sync
+barnes db migrate        # aplica só as migrações novas; seguro repetir
+```
+
+`barnes db migrate` só funciona como esperado num banco criado por ele mesmo
+(tabela `schema_migrations`). Um banco montado à mão precisa ser recriado pelos
+passos acima.
+
+**Alternativas avaliadas e não adotadas:**
+
+| Opção | Por que não |
+|---|---|
+| B. Docker Desktop com `docker-compose.yml` | Exige virtualização (WSL2), reinício e o Docker aberto; a licença gratuita pode não cobrir uma instituição do porte do LNBio/CNPEM. Continua sendo o ambiente de **desenvolvimento** (seção 2.2.1). |
+| C. Voltar para SQLite (plano B do escopo) | Exigiria reescrever as migrações (sem `JSONB`, `IDENTITY`, gatilhos PL/pgSQL, `DROP CONSTRAINT`) e a camada `src/barnes/db/`. Fica como contingência se a instalação nativa se mostrar inviável para o operador (US-27 RN07). |
 
 ## 3. Configurar uma montagem
 
@@ -590,6 +587,7 @@ O catálogo mostra trial, animal, sessão (o dia), fase, ordem no dia,
 | `sem_recorte` | sem intervalo útil (US-03); nada pode ser processado |
 | `carregado` | pronto, ainda sem pose nem métricas |
 | `pose_inferida` | há inferência de pose concluída, sem métricas |
+| `trajetoria` | a série de pose foi gerada (`pose series`, seção 4.6), sem métricas |
 | `processado` | métricas calculadas com a escala atual da montagem |
 | `obsoleto` | métricas calculadas com uma escala que já foi trocada — reprocesse |
 
@@ -609,6 +607,35 @@ A saída traz o modelo de pose (se houve), os limiares, os parâmetros, o commit
 e `reproduzivel`. Se `reproduzivel` for `false`, o código tinha alterações não
 commitadas (ou não havia git) — o commit sozinho não reproduz aquele resultado.
 
+### 4.6 Série de posição e orientação da cabeça (US-09)
+
+Depois da inferência de pose do trial (`barnes pose infer`, US-07/08; ver o
+[guia de pose](pose-treino-avaliacao.md)), gere a série que as próximas etapas
+usam:
+
+```powershell
+barnes pose series --trial 12 --inference data\pose\inference\inferencia-<id>
+```
+
+`--inference` é o diretório que o `pose infer` imprimiu (com `execucao.json` e
+`pose.csv`). O comando confere se a inferência é **do mesmo trial e do mesmo
+vídeo** (hash), da mesma montagem e com o mesmo fps; exige a escala calibrada da
+montagem (US-02) e grava **`data\interim\trial_12.parquet`** — um arquivo por trial,
+sobrescrito ao reprocessar (o histórico fica nas execuções).
+
+O arquivo tem **uma linha por quadro do intervalo útil**, com o focinho, o centro do
+corpo e a base da cauda em **cm**, a orientação da cabeça **θ em graus** (0° = direita
+da imagem, sentido horário na tela) e o tempo **t em segundos desde a soltura**. As
+colunas e regras estão em [contrato-trajetoria.md](contrato-trajetoria.md).
+
+- **Quadro sem pose não some nem é preenchido**: a linha existe, com as coordenadas
+  ausentes e `pose_valida = false`. O preenchimento de lacunas é da US-10.
+- **fps variável** (aviso da US-01): o comando avisa no terminal, e o aviso vai no
+  arquivo (`fps_variavel`) e no catálogo (coluna **fps**). Os tempos desse trial são
+  aproximados.
+- Cada geração registra uma execução (US-27) com o modelo usado; consulte com
+  `barnes execution show <id>`. O caminho do arquivo fica no catálogo.
+
 ## 5. Saídas
 
 Na US-02, os resultados são exibidos no terminal e persistidos no mesmo
@@ -619,6 +646,7 @@ respectivas histórias:
 
 | Arquivo | Conteúdo |
 |---|---|
+| `data/interim/trial_<id>.parquet` | série de pose por quadro: posição (cm), θ, t (US-09, seção 4.6) |
 | CSV por trial | métricas do trial |
 | CSV consolidado | todos os trials |
 | `trials.csv` / `probes.csv` | formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |

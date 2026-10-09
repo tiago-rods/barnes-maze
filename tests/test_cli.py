@@ -8,6 +8,7 @@ skipped automatically otherwise (same convention as tests/db/).
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import cv2
@@ -24,7 +25,8 @@ from barnes.db.trials import insert_trial
 from barnes.io.calibration_ui import CalibrationCancelled
 from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
-from barnes.pose.dataset import git_revision_record
+from barnes.pose.dataset import file_sha256, git_revision_record
+from barnes.pose.trajectory import read_metadata, read_trajectory
 from barnes.provenance import PACKAGE_DIR, thresholds_snapshot
 
 pytestmark = pytest.mark.skipif(
@@ -428,3 +430,131 @@ def test_catalog_list_flags_moved_video_by_trial(trial_id, video, tmp_path):
     assert f"Divergência no trial #{trial_id}" in moved.stderr
     assert "renomeado.mp4" in moved.stderr
     assert f"#{trial_id}" in moved.stdout
+
+
+# --- US-09: `pose series` gera a trajetória no contrato -----------------------
+
+
+def _fake_inference_run(root, *, trial_id, maze_config_id, content_hash, fps, frames,
+                        missing_snout=()):
+    """Diretório de `pose infer` com registro e pose.csv verificáveis (hashes reais).
+
+    O animal anda para a direita (θ = 0°); `missing_snout` lista quadros sem focinho.
+    """
+    root.mkdir(parents=True)
+    header = ["trial", "quadro", "time_s"] + [
+        f"{p}_{s}" for p in ("focinho", "centro_corpo", "base_cauda")
+        for s in ("x_image", "y_image", "confidence")
+    ]
+    lines = [",".join(header)]
+    for frame in range(frames[0], frames[1] + 1):
+        x = 100.0 + 4 * frame
+        snout = ["", "", ""] if frame in missing_snout else [x + 20, 240.0, 0.9]
+        values = [*snout, x, 240.0, 0.8, x - 20, 240.0, 0.7]
+        lines.append(",".join(map(str, ["abc", frame, frame / fps, *values])))
+    (root / "pose.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    record = {
+        "schema_version": 1, "status": "completed", "kind": "inferencia",
+        "model_id": "sleap-maze-test", "dataset_id": "ds-test", "maze_config_id": maze_config_id,
+        "trial_id": trial_id, "content_hash": content_hash, "fps": fps,
+        "processed_interval_frames": {"start": frames[0], "end": frames[1]},
+        "duration_seconds": 0.5, "artifacts": {"pose.csv": file_sha256(root / "pose.csv")},
+    }
+    (root / "execucao.json").write_text(json.dumps(record), encoding="utf-8")
+    return root
+
+
+def _trial_row(trial_id):
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT maze_config_id, content_hash, fps_real, trajectory_path FROM trials "
+            "WHERE id = %s", (trial_id,)
+        ).fetchone()
+
+
+def _series_args(run, trial_id, out):
+    return ["pose", "series", "--trial", str(trial_id), "--inference", str(run), "--out", str(out)]
+
+
+def test_pose_series_writes_contract_parquet_and_registers_execution(args, trial_id, tmp_path):
+    # Cenário 1: Parquet com uma linha por quadro do intervalo útil (0..4 s a 10 fps =
+    # quadros 0..40), x/y em cm, θ em graus, t em segundos; Cenário 3: quadro 7 sem focinho.
+    calibrate(args)  # 10 px por cm
+    maze, digest, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 40), missing_snout={7})
+    result = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert result.exit_code == 0, result.output + repr(result.exception)
+
+    path = tmp_path / "interim" / f"trial_{trial_id}.parquet"
+    table = read_trajectory(path)
+    data, meta = table.to_pydict(), read_metadata(table)
+    assert data["quadro"] == list(range(41))
+    assert data["t_s"][-1] == pytest.approx(4.0)
+    assert data["centro_corpo_x_cm_image"][0] == pytest.approx(10.0)  # 100 px / 10
+    assert data["theta_deg_image"][0] == pytest.approx(0.0)
+    assert data["pose_valida"][7] is False
+    assert math.isnan(data["theta_deg_image"][7])
+    assert data["theta_deg_image"][8] == pytest.approx(0.0)
+
+    execucao_id = meta["execucao_id"]
+    assert set(data["execucao_id"]) == {execucao_id}
+    with get_connection() as conn:
+        stored = get_execution(conn, execucao_id)
+    assert stored.kind == "processamento"
+    assert stored.model_id == "sleap-maze-test"
+    assert stored.artifact_path == str(path)
+    assert stored.parametros["inference_run_id"] == "run"
+    assert _trial_row(trial_id)[3] == str(path)
+
+
+def test_pose_series_refuses_inference_of_another_trial(args, trial_id, tmp_path):
+    calibrate(args)
+    maze, digest, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id + 1, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 40))
+    result = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert result.exit_code != 0
+    assert f"#{trial_id + 1}" in result.output
+    assert not (tmp_path / "interim").exists()
+
+
+def test_pose_series_refuses_pose_of_other_video_content(args, trial_id, tmp_path):
+    calibrate(args)
+    maze, _, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
+                              content_hash="0" * 64, fps=fps, frames=(0, 40))
+    result = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert result.exit_code != 0
+    assert "hash" in result.output
+
+
+def test_pose_series_without_scale_is_refused(trial_id, tmp_path):
+    maze, digest, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 40))
+    result = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert result.exit_code == 2
+    assert "calibração" in result.output
+
+
+def test_pose_series_carries_variable_fps_warning_to_outputs(args, trial_id, tmp_path):
+    # SCRUM-118: fps variável da US-01 → aviso no terminal, no arquivo e no catálogo.
+    calibrate(args)
+    with get_connection() as conn:
+        conn.execute("UPDATE trials SET fps_is_variable = TRUE WHERE id = %s", (trial_id,))
+    maze, digest, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 40))
+    result = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert result.exit_code == 0, result.output
+    assert "fps variável" in result.stderr
+
+    table = read_trajectory(tmp_path / "interim" / f"trial_{trial_id}.parquet")
+    assert all(table.column("fps_variavel").to_pylist())
+    assert read_metadata(table)["fps_variavel"] is True
+
+    listed = runner.invoke(cli.app, ["catalog", "list", "--json", "--sem-arquivo"])
+    row = next(r for r in json.loads(listed.stdout) if r["trial_id"] == trial_id)
+    assert row["fps_variavel"] is True
+    assert row["trajetoria"].endswith(f"trial_{trial_id}.parquet")
