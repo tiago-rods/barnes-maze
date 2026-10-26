@@ -18,7 +18,6 @@ from __future__ import annotations
 import csv
 import math
 import random
-from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +25,7 @@ import cv2
 import numpy as np
 
 from barnes.geometry.holes import MazeGeometry
-from barnes.io.video import VideoLoadError, read_frame
+from barnes.io.video import VideoLoadError, iter_frames, read_frame
 from barnes.pose.annotations import FRAMES_DIR, frame_filename, trial_key
 from barnes.pose.protocol import AnnotationProtocol
 from barnes.pose.regions import Region, classify_region
@@ -126,7 +125,7 @@ def build_background(video_path: str | Path, start_frame: int, end_frame: int) -
     count = min(_BACKGROUND_FRAMES, end_frame - start_frame + 1)
     indices = np.linspace(start_frame, end_frame, num=max(count, 1)).round().astype(int)
     frames = []
-    # Seek é aceitável aqui (diferente de `_iter_frames`): um quadro vizinho
+    # Seek é aceitável aqui (diferente de `iter_frames`): um quadro vizinho
     # no lugar do pedido não muda a mediana do fundo.
     for index in sorted(set(indices.tolist())):
         try:
@@ -175,35 +174,6 @@ def estimate_animal_position(
     return moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]
 
 
-def _iter_frames(
-    video_path: Path, start_frame: int, end_frame: int, wanted: Callable[[int], bool]
-) -> Iterator[tuple[int, np.ndarray]]:
-    """Percorre o vídeo em sequência desde o quadro 0, entregando os quadros pedidos.
-
-    Nunca posiciona por `CAP_PROP_POS_FRAMES`: em H.264 com B-frames (caso dos
-    vídeos do LNBio, ver US-01) o seek pode cair num quadro vizinho. A
-    varredura e a exportação usam este mesmo caminho, então o PNG exportado é
-    exatamente o quadro em que a posição foi estimada, e `quadro` é o índice
-    real no vídeo — o que US-07/US-08 assumem ao voltar ao vídeo original.
-    Os quadros antes de `start_frame` só são pulados com `grab()`, sem
-    conversão de imagem.
-    """
-    capture = cv2.VideoCapture(str(video_path))
-    try:
-        if not capture.isOpened():
-            raise VideoLoadError(f"Não foi possível abrir o vídeo: {video_path}")
-        for index in range(end_frame + 1):
-            if index >= start_frame and wanted(index):
-                ok, frame = capture.read()
-                if not ok:
-                    return
-                yield index, frame
-            elif not capture.grab():
-                return
-    finally:
-        capture.release()
-
-
 def _scan(
     video_path: Path,
     geometry: MazeGeometry,
@@ -215,7 +185,7 @@ def _scan(
 ) -> tuple[list[SampledFrame], int]:
     candidates: list[SampledFrame] = []
     scanned = 0
-    for index, frame in _iter_frames(
+    for index, frame in iter_frames(
         video_path, start_frame, end_frame, lambda i: (i - start_frame) % scan_step == 0
     ):
         scanned += 1
@@ -357,7 +327,7 @@ def export_frames(
     `<out_dir>/<trial>/amostragem.csv`, em que `<trial>` é a chave curta do
     hash de conteúdo do vídeo (`trial_key`) — o mesmo critério de identidade
     de trial usado no banco (`trials.content_hash`). Os quadros são lidos na
-    mesma passada sequencial da varredura (`_iter_frames`), sem seek.
+    mesma passada sequencial da varredura (`iter_frames`), sem seek.
 
     Args:
         video_path: Caminho do vídeo do trial.
@@ -388,7 +358,7 @@ def export_frames(
     wanted = {sampled.frame_index for sampled in frames}
     written = set()
     if wanted:
-        for index, image in _iter_frames(
+        for index, image in iter_frames(
             Path(video_path), min(wanted), max(wanted), wanted.__contains__
         ):
             target = frames_dir / frame_filename(index)

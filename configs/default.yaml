@@ -48,9 +48,18 @@ trial:
   recorte_fim_s: null
 
 # --- Qualidade de pose (US-10) ------------------------------------------------
+# Como `anotacao:` abaixo, NÃO são limiares de métrica do G3: são parâmetros de
+# tratamento da pose, decisão da equipe registrada em docs/revisao-cards.md
+# (US-10) e em docs/contrato-trajetoria.md. Valores propostos pelo grupo.
 pose:
   cobertura_minima: 0.98      # critério de aceite da seção 10 — proposto pelo grupo
-  lacuna_curta_max_quadros: null    # até aqui interpola; acima, marca para revisão
+  # Lacuna curta: até este número de quadros seguidos sem um ponto, entre dois
+  # quadros com o ponto. É interpolada. Lacuna longa: qualquer uma maior, ou
+  # qualquer uma na borda do intervalo útil. É sinalizada para revisão humana.
+  lacuna_curta_max_quadros: 5       # 0,2 s a 25 fps — proposto pelo grupo
+  suavizacao:
+    metodo: mediana           # mediana móvel: robusta a um quadro isolado errado
+    janela_quadros: 5         # ímpar; 1 = sem suavização — proposto pelo grupo
 
 # --- Anotação de pose (US-06) -------------------------------------------------
 # Diferente das seções acima, NÃO são limiares de métrica do G3: são parâmetros

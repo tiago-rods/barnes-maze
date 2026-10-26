@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -318,5 +318,47 @@ def read_frame(path: str | Path, frame_index: int = 0) -> np.ndarray:
         return frame
     except cv2.error as exc:
         raise VideoLoadError(f"Erro ao decodificar o vídeo {path}: {exc}") from exc
+    finally:
+        capture.release()
+
+
+def iter_frames(
+    video_path: str | Path, start_frame: int, end_frame: int, wanted: Callable[[int], bool]
+) -> Iterator[tuple[int, np.ndarray]]:
+    """Percorre o vídeo em sequência desde o quadro 0, entregando os quadros pedidos.
+
+    Nunca posiciona por `CAP_PROP_POS_FRAMES`: em H.264 com B-frames (caso dos
+    vídeos do LNBio, ver US-01) o seek pode cair num quadro vizinho. Quem
+    precisa do quadro **exato** de um índice — a exportação de quadros para
+    anotação (US-06) e a revisão de pose (US-10) — usa este caminho, então o
+    índice entregue é o índice real no vídeo, o mesmo que a inferência usou.
+    Os quadros antes de `start_frame`, e os não pedidos, só são pulados com
+    `grab()`, sem conversão de imagem.
+
+    Args:
+        video_path: Caminho do vídeo.
+        start_frame: Primeiro índice que pode ser entregue.
+        end_frame: Último índice que pode ser entregue, inclusive.
+        wanted: Diz, para cada índice, se o quadro deve ser entregue.
+
+    Yields:
+        `(índice, quadro BGR)`, em ordem crescente. Termina em silêncio se o
+        vídeo acabar antes de `end_frame` — quem chama confere o que recebeu.
+
+    Raises:
+        VideoLoadError: Se o vídeo não abrir.
+    """
+    capture = cv2.VideoCapture(str(video_path))
+    try:
+        if not capture.isOpened():
+            raise VideoLoadError(f"Não foi possível abrir o vídeo: {video_path}")
+        for index in range(end_frame + 1):
+            if index >= start_frame and wanted(index):
+                ok, frame = capture.read()
+                if not ok:
+                    return
+                yield index, frame
+            elif not capture.grab():
+                return
     finally:
         capture.release()

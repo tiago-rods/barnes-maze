@@ -9,8 +9,11 @@ em `docs/contrato-trajetoria.md` — mantenha os dois em sincronia e, para
 qualquer mudança incompatível, incremente `CONTRACT_VERSION`.
 
 Ausência é dado: ponto não detectado fica NaN com `*_valido = false`, nunca
-preenchido com o quadro anterior (US-09 RN05). Preencher é da US-10, que marca
-`interpolado = true`.
+preenchido com o quadro anterior (US-09 RN05). Preencher é da US-10
+(`barnes.pose.quality`), que marca `interpolado = true` e grava o relatório de
+qualidade no metadado opcional `pos_processamento`. Linha interpolada sem esse
+metadado é recusada: um preenchimento sem registro é exatamente o que a US-09
+RN05 proíbe.
 """
 
 from __future__ import annotations
@@ -67,6 +70,10 @@ REQUIRED_METADATA = (
     "convencao_angular",
     "gerado_em",
 )
+
+# Metadado opcional (US-10): relatório de qualidade do pós-processamento —
+# parâmetros, cobertura, trechos sinalizados. Mudança compatível do contrato v1.
+POSTPROCESSING_KEY = "pos_processamento"
 
 
 class TrajectoryContractError(ValueError):
@@ -177,6 +184,15 @@ def validate_trajectory(table: pa.Table) -> dict[str, Any]:
         )
     if ((theta[finite_theta] < 0) | (theta[finite_theta] >= 360)).any():
         raise TrajectoryContractError("theta_deg_image deve estar em [0, 360).")
+
+    postprocessing = metadata.get(POSTPROCESSING_KEY)
+    if postprocessing is not None and not isinstance(postprocessing, dict):
+        raise TrajectoryContractError(f"Metadado {POSTPROCESSING_KEY} deve ser um objeto JSON.")
+    if col["interpolado"].any() and postprocessing is None:
+        raise TrajectoryContractError(
+            f"Há linhas interpoladas sem o metadado {POSTPROCESSING_KEY}: todo preenchimento "
+            "precisa estar registrado (US-09 RN05, US-10)."
+        )
     return metadata
 
 

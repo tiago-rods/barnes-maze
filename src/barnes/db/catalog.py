@@ -29,6 +29,7 @@ from typing import Literal
 import psycopg
 
 from barnes.io.video import FileCheck, verify_video_file
+from barnes.pose.quality import PoseQuality
 
 
 class Situation(StrEnum):
@@ -57,13 +58,17 @@ class CatalogEntry:
         filepath: Caminho catalogado do vídeo.
         content_hash: Identidade do vídeo (US-01 RN05).
         situacao: Situação de processamento derivada.
-        cobertura_pose: Fração de quadros com pose válida (US-10), ou `None`.
+        cobertura_pose: Fração dos quadros com os três pontos de pose (US-10
+            RN03), ou `None` se a série ainda não foi gerada.
         execucao_id: Execução da métrica mais recente, se houver.
         calculado_em: Quando a métrica mais recente foi calculada.
         fps_variavel: Aviso de fps variável da US-01 — tempos do trial são
             aproximados (US-09).
         trajetoria: Arquivo atual da trajetória de pose (US-09), se gerado.
         arquivo: Resultado da conferência do vídeo, se pedida.
+        qualidade_pose: Qualidade de pose derivada da cobertura (US-10 RN06,
+            VIEW `qualidade_pose`): suficiente, revisão pendente ou
+            insuficiente; `None` sem série.
     """
 
     trial_id: int
@@ -83,6 +88,7 @@ class CatalogEntry:
     trajetoria: Path | None = None
     file_size_bytes: int | None = None
     arquivo: FileCheck | None = None
+    qualidade_pose: PoseQuality | None = None
 
     @property
     def diverges(self) -> bool:
@@ -100,6 +106,7 @@ _QUERY = """
                WHERE e.trial_id = t.id AND e.kind = 'inferencia' AND e.status = 'concluido'
            ) AS pose_inferida,
            t.cobertura_pose,
+           qp.qualidade,
            ultima.execucao_id, ultima.calculated_at,
            (ultima.id IS NOT NULL AND (
                ultima.calculated_at IS NULL
@@ -109,6 +116,7 @@ _QUERY = """
     FROM trials t
     JOIN maze_configs mc ON mc.id = t.maze_config_id
     LEFT JOIN subjects s ON s.experiment_id = t.experiment_id
+    LEFT JOIN qualidade_pose qp ON qp.trial_id = t.id
     LEFT JOIN LATERAL (
         SELECT tr.id, tr.execucao_id, tr.calculated_at, tr.px_per_10cm_used
         FROM trial_results tr
@@ -174,7 +182,8 @@ def list_catalog(
     for row in rows:
         (
             trial_id, exp_id, animal, day, phase, number, filename, filepath, digest, size,
-            fps_variable, trajectory, sem_recorte, pose_inferida, cobertura, execucao_id, calculado_em, obsoleto,
+            fps_variable, trajectory, sem_recorte, pose_inferida, cobertura, qualidade,
+            execucao_id, calculado_em, obsoleto,
         ) = row
         entries.append(
             CatalogEntry(
@@ -200,6 +209,7 @@ def list_catalog(
                 fps_variavel=bool(fps_variable),
                 trajetoria=None if trajectory is None else Path(trajectory),
                 file_size_bytes=size,
+                qualidade_pose=None if qualidade is None else PoseQuality(qualidade),
             )
         )
     if verify is None:

@@ -591,7 +591,12 @@ O catálogo mostra trial, animal, sessão (o dia), fase, ordem no dia,
 | `processado` | métricas calculadas com a escala atual da montagem |
 | `obsoleto` | métricas calculadas com uma escala que já foi trocada — reprocesse |
 
-A cobertura de pose aparece como `—` até a US-10. A coluna **arquivo** mostra
+A **cobertura** de pose aparece depois do `barnes pose series` (seção 4.6), como `—`
+antes disso. A coluna **qualidade** mostra `suficiente`, `revisão pendente` (há trechos
+sinalizados ainda não revisados, seção 4.7) ou `INSUFICIENTE` (cobertura abaixo do
+mínimo de `configs/default.yaml` mesmo depois da revisão). A mesma marcação vai no
+`--json` (`qualidade_pose`) e nas métricas (`metrics process`, `metrics executions`).
+A coluna **arquivo** mostra
 `ok`/`presente` quando o vídeo confere; `movido`, `alterado` ou `ausente`
 aparecem também como aviso no fim da listagem, com o id do trial. **Não
 reprocesse um trial com vídeo divergente** antes de conferir o arquivo.
@@ -607,7 +612,7 @@ A saída traz o modelo de pose (se houve), os limiares, os parâmetros, o commit
 e `reproduzivel`. Se `reproduzivel` for `false`, o código tinha alterações não
 commitadas (ou não havia git) — o commit sozinho não reproduz aquele resultado.
 
-### 4.6 Série de posição e orientação da cabeça (US-09)
+### 4.6 Série de posição e orientação da cabeça (US-09, US-10)
 
 Depois da inferência de pose do trial (`barnes pose infer`, US-07/08; ver o
 [guia de pose](pose-treino-avaliacao.md)), gere a série que as próximas etapas
@@ -628,13 +633,68 @@ corpo e a base da cauda em **cm**, a orientação da cabeça **θ em graus** (0�
 da imagem, sentido horário na tela) e o tempo **t em segundos desde a soltura**. As
 colunas e regras estão em [contrato-trajetoria.md](contrato-trajetoria.md).
 
-- **Quadro sem pose não some nem é preenchido**: a linha existe, com as coordenadas
-  ausentes e `pose_valida = false`. O preenchimento de lacunas é da US-10.
+- **Quadro sem pose não some nem é preenchido em silêncio**: a linha sempre existe.
+  O comando trata as falhas de pose (US-10) com os parâmetros da seção `pose:` de
+  `configs/default.yaml`:
+  - **suaviza** cada ponto com mediana móvel (`suavizacao.janela_quadros`, padrão 5),
+    o que remove um quadro isolado errado;
+  - **interpola** lacunas **curtas**, de até `lacuna_curta_max_quadros` quadros (padrão
+    5, 0,2 s a 25 fps) com o ponto presente antes e depois. Essas linhas ficam com
+    `interpolado = true`;
+  - **sinaliza para revisão** as lacunas **longas** e as que tocam o início ou o fim do
+    intervalo útil. Essas ficam ausentes (`pose_valida = false`) até a revisão (seção 4.7).
+- O terminal mostra a **cobertura de pose**: fração dos quadros com focinho, centro do
+  corpo e base da cauda, contando interpolados e corrigidos. Mostra também a cobertura só
+  da detecção, o mínimo (padrão 0,98) e a **qualidade**. Se houver trecho sinalizado, o
+  comando avisa e indica `barnes pose review --trial 12`.
 - **fps variável** (aviso da US-01): o comando avisa no terminal, e o aviso vai no
   arquivo (`fps_variavel`) e no catálogo (coluna **fps**). Os tempos desse trial são
-  aproximados.
-- Cada geração registra uma execução (US-27) com o modelo usado; consulte com
-  `barnes execution show <id>`. O caminho do arquivo fica no catálogo.
+  aproximados. Se houve interpolação, o relatório de qualidade leva essa ressalva (US-10 RN07).
+- Cada geração registra uma execução (US-27) com o modelo usado e os parâmetros de
+  tratamento; consulte com `barnes execution show <id>`. O caminho do arquivo e a
+  cobertura ficam no catálogo.
+- Rodar o comando de novo é seguro: a série é sempre refeita a partir do `pose.csv`, com
+  as correções manuais já registradas, então nada é suavizado duas vezes nem perdido.
+
+Requer o banco migrado até a `0008` (`barnes db migrate`).
+
+### 4.7 Revisão dos trechos sinalizados (US-10)
+
+```powershell
+barnes pose review --trial 12
+barnes pose review --trial 12 --video D:\videos\trial12.mp4   # vídeo em outro lugar
+barnes pose review --trial 12 --todos     # inclui trechos já revisados antes
+barnes pose review --trial 12 --margem 25 # mais quadros de contexto (padrão 10)
+```
+
+A janela abre **direto no primeiro trecho pendente** e só mostra os trechos
+sinalizados, com alguns quadros de contexto. Não é preciso varrer o vídeo. O cabeçalho
+mostra o trecho, os quadros, os pontos que faltam, o quadro atual e o ponto que o
+próximo clique marca. Os pontos que a série já tem aparecem como círculos vazados, e
+as marcações do operador como círculos cheios numerados.
+
+| Tecla | Ação |
+|---|---|
+| `n` / `p` | próximo / anterior trecho |
+| `d` / `a` | próximo / anterior quadro (dentro do trecho e da margem) |
+| `1` / `2` / `3` | marcar focinho / centro do corpo / base da cauda |
+| clique esquerdo | marca o ponto ativo no quadro |
+| clique direito, Backspace | desfaz a última marcação |
+| Enter | dá o trecho por revisado e vai ao próximo |
+| `s` | salva e sai |
+| Esc, `x`, fechar a janela | cancela sem gravar nada |
+
+Não é preciso marcar todos os quadros de uma lacuna longa. Marque o ponto em quadros
+espaçados de até 5 quadros: os vãos entre as marcações viram lacunas curtas e são
+interpolados. Se o animal não aparece (por exemplo, dentro da caixa de fuga), dê o
+trecho por revisado sem marcar nada. Ele deixa de ficar pendente, e a cobertura mostra
+o que faltou.
+
+Ao salvar, o comando grava, numa **execução própria** (US-27): as correções (tabela
+`correcao_pose`), os trechos revisados, a nova série e a nova cobertura. Assim o número
+final é auditável (`barnes execution show <id>`). Se a cobertura continuar abaixo do
+mínimo, o trial fica marcado como **qualidade insuficiente** no catálogo e nas métricas.
+O vídeo usado na revisão precisa ter o mesmo conteúdo (hash) do catalogado.
 
 ## 5. Saídas
 
@@ -646,11 +706,15 @@ respectivas histórias:
 
 | Arquivo | Conteúdo |
 |---|---|
-| `data/interim/trial_<id>.parquet` | série de pose por quadro: posição (cm), θ, t (US-09, seção 4.6) |
+| `data/interim/trial_<id>.parquet` | série de pose por quadro: posição (cm), θ, t, `interpolado`, e o relatório de qualidade nos metadados (US-09/US-10, seções 4.6 e 4.7) |
 | CSV por trial | métricas do trial |
 | CSV consolidado | todos os trials |
 | `trials.csv` / `probes.csv` | formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |
 | Curvas e trajetória desenhada | |
+
+Todo trial com cobertura de pose calculada leva, nas saídas, a cobertura e a marcação de
+qualidade (`suficiente`, `revisao_pendente`, `insuficiente`). Um trial de qualidade
+insuficiente nunca aparece sem a marcação (US-10 RN06).
 
 Colunas com posição trazem no nome o referencial em que estão expressas
 (US-05 RN05): `_platform` para índice de buraco, `_room` para ângulo fixo

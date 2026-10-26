@@ -533,6 +533,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [RN04] A revisão permite navegação direta aos trechos sinalizados, sem varrer o vídeo inteiro.
 - [RN05] Toda correção manual é registrada na tabela `execucao`, para que o número final seja auditável.
 - [RN06] Trials abaixo do limiar de cobertura, mesmo após revisão, são marcados como de qualidade insuficiente e essa marcação acompanha o trial nas saídas.
+- [RN07] Interpolação sobre trecho de fps instável é menos exata; isso fica registrado junto do relato de qualidade.
 
 #### Critérios de Aceite (Cenários Executáveis / BDD)
 - **Cenário 1: Fluxo principal — lacuna curta interpolada**

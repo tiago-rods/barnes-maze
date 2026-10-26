@@ -1,20 +1,35 @@
-# Roteiro de demonstração ao cliente (LNBio): Sprint 1
+# Roteiro de demonstração ao cliente (LNBio): Sprints 1 e 2
 
-Comandos, na ordem, para demonstrar **todos os cards do Sprint 1 (US-01 a US-06)**.
-Cada passo indica o cenário de aceite do card (`docs/CARDS.md`, com os ajustes de
-`docs/revisao-cards.md`) que ele demonstra.
+Comandos, na ordem, para demonstrar **os cards do Sprint 1 (US-01 a US-06)** e
+**os do Sprint 2 entregues até agora (US-07, US-08, US-09, US-10 e US-27)**. O
+US-11, também do Sprint 2, ainda não foi feito. Cada passo indica o cenário de
+aceite do card (`docs/CARDS.md`, com os ajustes de `docs/revisao-cards.md`) que
+ele demonstra.
 
-| Card | Tema | Seção |
-|---|---|---|
-| US-01 | Leitura do vídeo e metadados | B.4 |
-| US-02 | Escala px→cm e métricas em cm | B.5 e B.8 |
-| US-03 | Recorte do intervalo útil | B.6 e B.8 |
-| US-04 | Montagem do labirinto | B.3 |
-| US-05 | Rotação e referencial da sala | B.7 |
-| US-06 | Anotação para o modelo de pose | B.9 |
+| Sprint | Card | Tema | Seção |
+|---|---|---|---|
+| 1 | US-01 | Leitura do vídeo e metadados | B.4 |
+| 1 | US-02 | Escala px→cm e métricas em cm | B.5 e B.8 |
+| 1 | US-03 | Recorte do intervalo útil | B.6 e B.8 |
+| 1 | US-04 | Montagem do labirinto | B.3 |
+| 1 | US-05 | Rotação e referencial da sala | B.7 |
+| 1 | US-06 | Anotação para o modelo de pose | B.9 |
+| 2 | US-07 | Ambiente e treino do modelo de pose | B.10 |
+| 2 | US-08 | Avaliação por região e inferência local | B.11 |
+| 2 | US-09 | Série de posição e orientação da cabeça | B.12 |
+| 2 | US-10 | Suavização, interpolação e revisão de falhas de pose | B.13 |
+| 2 | US-27 | Proveniência das execuções e catálogo de trials | B.8, B.14 |
 
 A ordem das seções segue a dependência entre os cards, não o número deles: a
-montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela.
+montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela,
+e o catálogo (US-27) fecha a demonstração, quando já há métricas, série de pose e
+revisão para mostrar.
+
+**O que não dá para mostrar com dados reais ainda (diga isso ao cliente):** não
+existe modelo de pose treinado. A anotação real (US-06) não aconteceu, e o treino
+exige uma GPU NVIDIA (US-07). Por isso, no US-07 e no US-08 a demonstração mostra
+o planejamento, as recusas e os testes. No US-09 e no US-10, a série e a revisão
+rodam de verdade sobre uma **pose simulada** a partir do vídeo real (B.12).
 
 **Antes de começar, saiba que:**
 
@@ -36,10 +51,19 @@ montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela.
 ### A.1 Ambiente
 
 Entre na pasta do projeto, que deve estar na branch que será demonstrada (o
-`develop` atualizado, com o US-06 e as correções da revisão da Sprint 1).
+`develop` atualizado, com os cards do Sprint 2 já integrados).
 
 ```powershell
 cd barnes-maze
+```
+
+**Faça commit de tudo antes da reunião.** Cada execução registra o commit e se
+havia alterações não commitadas (US-27). Com o repositório sujo, todas as execuções
+da demonstração aparecem como "não reproduzíveis", e o Cenário 4 do US-27 (B.14)
+perde o contraste. O esperado aqui é a lista vazia:
+
+```powershell
+git status --short
 ```
 
 Suba o Postgres e instale as dependências. O extra `anotacao` (leitor do
@@ -72,14 +96,27 @@ $env:BARNES_DATABASE_URL = "postgresql://barnes:barnes@localhost:5432/barnes_dem
 uv run barnes db migrate
 ```
 
-Esperado: a lista das migrações aplicadas, da `0001` até a `0005_geometry_px_double.sql`.
+Esperado: a lista das migrações aplicadas, da `0001` até a `0008_us10_correcao_pose.sql`.
 
-Apague também os quadros exportados numa demonstração anterior do US-06 (eles
-ficam em disco, não no banco, e a B.9 recusa reamostrar um trial que já tem
-quadros):
+O banco de **testes** (`barnes_test`, criado pelo Docker na primeira subida) também
+precisa das migrações, para que os testes de banco rodem na B.1 em vez de serem
+pulados. Use a mesma porta da URL acima:
 
 ```powershell
-Remove-Item -Recurse -Force data\demo_anotacao -ErrorAction SilentlyContinue
+uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5432/barnes_test
+```
+```powershell
+$env:BARNES_TEST_DATABASE_URL = "postgresql://barnes:barnes@localhost:5432/barnes_test"
+```
+
+Apague também os arquivos de uma demonstração anterior. Eles ficam em disco, não
+no banco: os quadros exportados no US-06 (a B.9 recusa reamostrar um trial que já
+tem quadros), os relatórios e a pose simulada do Sprint 2 (os comandos de
+diagnóstico e de plano não sobrescrevem um relatório existente) e as séries de
+pose da demonstração:
+
+```powershell
+Remove-Item -Recurse -Force data\demo_anotacao, data\pose\demo, data\demo_interim -ErrorAction SilentlyContinue
 ```
 
 ### A.3 Arquivos usados na demonstração
@@ -128,6 +165,18 @@ Pasta dos quadros exportados para anotação no US-06:
 $anot = "data\demo_anotacao"
 ```
 
+Pastas do Sprint 2. Os relatórios de máquina, os planos de treino e a pose simulada
+ficam em `$posedemo`. As séries de pose da demonstração ficam em `$interim`, fora da
+`data\interim` do desenvolvimento, para não sobrescrever a série de um trial do
+banco de desenvolvimento que tenha o mesmo número:
+
+```powershell
+$posedemo = "data\pose\demo"
+```
+```powershell
+$interim = "data\demo_interim"
+```
+
 ### A.4 Medidas físicas do labirinto
 
 Use as medidas reais do LNBio. Enquanto a pendência **B2** não for respondida,
@@ -159,12 +208,21 @@ uv run pytest -q
 uv run ruff check src/ tests/
 ```
 
-Esperado: todos os testes passando, nenhum pulado, e `All checks passed!`.
+Esperado: nenhum teste falhando, `All checks passed!` e **3 testes pulados**, por
+motivos que não são defeito:
+
+- 2 exigem o SLEAP-NN instalado (extra `pose`, que só se instala na máquina NVIDIA
+  de treino, US-07);
+- 1 exige `AF_UNIX`, que o Windows não oferece (proteção offline da inferência, US-08).
+
+Se aparecerem dezenas de pulados com `Requer BARNES_TEST_DATABASE_URL`, o banco de
+testes não foi configurado: refaça a parte da A.2 sobre o `barnes_test`.
 
 O que dizer: cada regra de negócio dos cards tem teste automático, e o código
 segue um padrão verificado por ferramenta. Os casos que não dá para reproduzir
 ao vivo (fps variável, erro < 3% com escala conhecida, ida e volta em todos os
-buracos) estão nos testes mostrados em cada card abaixo.
+buracos, treino e avaliação do modelo de pose) estão nos testes mostrados em cada
+card abaixo.
 
 ### B.2 Cadastro do experimento
 
@@ -176,6 +234,13 @@ $user = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t 
 ```
 ```powershell
 $exp = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "INSERT INTO experiments (user_id, name) VALUES ($user, 'Experimento demonstração') RETURNING id").Trim()
+```
+
+O animal do experimento (1 experimento = 1 animal). Ele aparece no catálogo do
+US-27 (B.14):
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "INSERT INTO subjects (experiment_id, name) VALUES ($exp, 'Camundongo demo')"
 ```
 ```powershell
 "usuário $user, experimento $exp"
@@ -505,10 +570,14 @@ uv run barnes metrics executions --trial $t1
 
 O que mostrar: a distância em cm, a velocidade média em cm/s, o intervalo útil
 usado (`interval_start_s`/`interval_end_s`) e o resultado marcado como **atual**.
+O `execucao_id` é a execução registrada automaticamente junto com as métricas
+(US-27 Cenário 1): o que ela guarda é mostrado na B.14.
 Como o recorte do trial 1 começa em 0 s (veja a auditoria da B.6), o esperado é
 `"samples_outside_interval": 0`. Se a detecção automática tiver marcado outro
 início nesse vídeo, as amostras anteriores a ele ficam de fora, e é esse o
-comportamento correto.
+comportamento correto. `cobertura_pose` e `qualidade_pose` saem `null`: esses
+trials não têm série de pose (`pose series`, US-09/US-10), e a trajetória da demo
+vem de um CSV.
 
 **US-03 RN02 — nada fora do intervalo útil entra nas métricas.** O trial 2 foi
 gravado com o recorte começando em 2 s (B.6). A mesma trajetória tem uma amostra
@@ -714,43 +783,674 @@ grupo até a D4 ser respondida.
 
 ---
 
-## B.10 — US-07/US-08: diagnóstico e fluxo com dados reais
+### B.10 US-07 — Ambiente e treino do modelo de pose
 
-Os rótulos simulados de B.9 demonstram US-06 e não comprovam qualidade de pose.
-Os comandos e pré-requisitos estão no [guia de treino e avaliação](pose-treino-avaliacao.md).
-Usar somente dados realmente anotados para o aceite científico.
+O que dizer antes: o US-07 entrega o **ferramental** de treino: diagnóstico da
+máquina, escolha do local de treino, pacote congelado dos dados anotados, treino
+SLEAP com registro completo e versionamento dos pesos. O modelo em si **ainda
+não foi treinado**. Faltam a anotação real (US-06) e uma máquina NVIDIA elegível.
+Nada nesta seção é um modelo de verdade, e os rótulos simulados da B.9 não servem
+para treinar.
+
+**Diagnóstico da máquina (SCRUM-100).** Confere GPU NVIDIA (mínimo 4 GiB de
+VRAM), RAM (mínimo 16 GB), driver e versões, e grava o relatório mesmo quando a
+máquina é recusada:
 
 ```powershell
-uv run --no-sync barnes pose hardware --out data/pose/hardware-demo.json
+uv run barnes pose hardware --out $posedemo\hardware.json
 ```
 
-Código 1 com diagnóstico de NVIDIA ausente é esperado em máquina inelegível.
-O relatório é salvo mesmo nesse caso. Na máquina elegível, após completar
-anotações reais e instalar `uv sync --locked --extra pose`:
+Esperado numa máquina sem NVIDIA: o nome da máquina, a RAM e o motivo da recusa
+(`nvidia-smi não encontrado nesta máquina.`), com saída de erro. Numa máquina
+elegível, o esperado é `RAM/VRAM aprovadas`. Nesse caso, o plano abaixo escolhe
+`grupo` direto e os passos de fallback não se aplicam: mostre-os pelos testes do
+fim desta seção.
+
+**Cenário 3 — sem GPU, o fallback é planejado e registrado, e nenhum vídeo sai do
+laboratório.** A ordem de preferência é grupo → GPU institucional → Kaggle → Colab.
+Cada plano é gravado num arquivo próprio, e nenhum arquivo é enviado para lugar
+algum.
+
+Disponibilidade da GPU institucional ainda não confirmada. O esperado é
+`Plano: pending`, pedindo para confirmar. Disponibilidade desconhecida **não**
+conta como indisponível:
 
 ```powershell
-uv run --no-sync barnes db migrate
-uv run --no-sync barnes pose prepare-training --maze-config-id $maze --annotations "$anot/anotacoes.csv" --manifest "$anot/divisao.csv" --samples $anot
-# Preencher os caminhos com os IDs mostrados, antes dos comandos seguintes:
-$dataset = "data/pose/datasets/dataset-<id-real>"
-uv run --no-sync barnes pose train --dataset $dataset
-$model = "models/sleap-maze-<id-real>"
-uv run --no-sync barnes pose evaluate --model $model --dataset $dataset
-uv run --no-sync barnes pose infer --model $model --trial $t1
-uv run --no-sync barnes pose executions --trial $t1
+uv run barnes pose plan-training --report $posedemo\hardware.json --out $posedemo\plano-1.json
 ```
 
-A avaliação reprovada sai com código 1 e preserva JSON/Markdown e solicitação
-local US-06 se borda reprovar. O teste offline real exige repetir `infer`
-com rede desconectada no laboratório, dependências instaladas e Postgres
-local; registrar máquina, operador, procedimento e ID da execução no aceite.
+GPU institucional disponível. O esperado é `Plano: selected | local: institucional`:
+
+```powershell
+uv run barnes pose plan-training --report $posedemo\hardware.json --institutional sim --out $posedemo\plano-2.json
+```
+
+Sem GPU institucional, só sobra a nuvem, e a nuvem exige a resposta **D4**
+favorável. Sem ela, o esperado é `Plano: blocked` e `Nuvem bloqueada: exige
+resposta D4 favorável e sua referência.`:
+
+```powershell
+uv run barnes pose plan-training --report $posedemo\hardware.json --institutional nao --kaggle sim --out $posedemo\plano-3.json
+```
+
+Com uma referência de D4 (aqui **fictícia**, só para mostrar a regra; a D4 real
+continua pendente), o esperado é `Plano: selected | local: kaggle`:
+
+```powershell
+uv run barnes pose plan-training --report $posedemo\hardware.json --institutional nao --kaggle sim --d4-reference "SIMULADO - so para a demonstracao" --out $posedemo\plano-4.json
+```
+```powershell
+Get-Content $posedemo\plano-4.json
+```
+
+O que mostrar no arquivo: `"uploads_performed": false`,
+`"allowed_cloud_data": "quadros_rotulados"` e a política `Nuvem: somente quadros
+rotulados com D4 favorável; nunca vídeos.` (RN04). O sistema não cria conta nem
+envia nada; a transferência, quando autorizada, é manual e leva só o pacote de
+quadros rotulados.
+
+**O treino exige GPU.** Numa máquina sem NVIDIA, o treino é recusado antes de
+qualquer outra coisa, e nenhum diretório de modelo é criado. O esperado é
+`Erro: Treino bloqueado: nvidia-smi não encontrado nesta máquina. ...`. Numa
+máquina elegível, a recusa é por falta do pacote de dados, que aqui não existe:
+
+```powershell
+uv run barnes pose train --dataset $posedemo\sem-pacote
+```
+
+**Cenários 1 e 2 — treino concluído e reprodutível**, nos testes. Eles cobrem o
+pacote congelado dos dados (`pose prepare-training`), um treino real de uma época
+com o SLEAP-NN em CPU (pulado se o extra `pose` não estiver instalado), o
+manifesto com hiperparâmetros, versão dos dados, ambiente, máquina e commit, os
+pesos verificados por hash em `models/` e o registro em `execucao`:
+
+```powershell
+uv run pytest tests/pose/test_environment.py tests/pose/test_dataset.py tests/pose/test_training.py tests/pose/test_cli_training.py -v
+```
+
+O que mostrar no documento: `configs/pose/single_animal.yaml` (hiperparâmetros
+iniciais da equipe) e, no [guia de treino e avaliação](pose-treino-avaliacao.md),
+a seção "Treinar uma vez por montagem", com o que fica gravado em cada
+`models/sleap-maze-<montagem>-<id>/`.
+
+---
+
+### B.11 US-08 — Avaliação por região e inferência local
+
+O que dizer antes: avaliação e inferência estão implementadas, mas **dependem do
+modelo do US-07**. Sem modelo, o erro real por região e a inferência sem rede na
+máquina do laboratório não podem ser mostrados. O que dá para mostrar ao vivo é a
+recusa de um modelo que não terminou de treinar. O resto está nos testes.
+
+**Inferência recusa modelo incompleto.** Um treino interrompido não vira modelo.
+Simule a pasta de um treino que parou no meio:
+
+```powershell
+New-Item -ItemType Directory -Force $posedemo\modelo-interrompido | Out-Null
+```
+```powershell
+Set-Content -Path $posedemo\modelo-interrompido\manifest.json -Value '{"schema_version": 1, "status": "running"}' -Encoding ascii
+```
+
+O esperado é `Erro: Modelo local inválido: Modelo sem treino concluído ou
+manifesto incompatível.`, sem ler o vídeo:
+
+```powershell
+uv run barnes pose infer --model $posedemo\modelo-interrompido --trial $t1
+```
+
+**Cenários 1, 2 e 3 — critério de meio corpo, erro por região e borda
+reprovada.** O erro de cada ponto é dividido pelo comprimento do corpo anotado no
+quadro (focinho até base da cauda). O aceite é estrito: abaixo de 0,5 para cada
+ponto e no agregado, no global e em cada região (centro, borda e proximidade de
+buraco). Se a borda reprovar, a avaliação reprova o card e grava localmente
+`us06-borda.json`/`.md`, pedindo uma nova rodada de anotação em trials novos,
+sem mexer no conjunto de teste:
+
+```powershell
+uv run pytest tests/pose/test_evaluation.py -v
+```
+
+**Cenário 4 — inferência local e sem rede, com tempo por trial.** A inferência lê
+o vídeo em sequência (sem seek, por causa dos B-frames), confere hash, resolução e
+montagem do trial, processa só o intervalo útil e registra o tempo. Durante o
+treino e a inferência, conexões externas são bloqueadas:
+
+```powershell
+uv run pytest tests/pose/test_inference.py tests/pose/test_offline.py -v
+```
+
+O que dizer, com transparência: o bloqueio de rede é feito pelo próprio programa.
+Ele não prova que a máquina do laboratório estava desconectada. A validação real
+exige rodar `pose infer` na máquina do laboratório com a rede física desligada e
+registrar máquina, operador, data e duração ([guia](pose-treino-avaliacao.md),
+seção "Inferência por trial e validação sem rede").
+
+---
+
+### B.12 US-09 — Série de posição e orientação da cabeça
+
+O que dizer antes: a série é gerada a partir do `pose.csv` que o `pose infer`
+(US-08) produz. Como ainda não há modelo, esta seção usa uma **inferência
+simulada**, no mesmo formato. O centro do corpo vem da segmentação por contraste
+do US-06 (a mesma da amostragem), e focinho e base da cauda ficam no eixo do
+movimento. Os pontos podem ficar um pouco fora do animal, e **isso precisa ser
+dito ao cliente**. A simulação também injeta três falhas de pose, usadas no US-10
+(B.13):
+
+- focinho ausente por 3 quadros: lacuna curta, que será interpolada;
+- focinho ausente por 15 quadros: lacuna longa, que será corrigida na revisão;
+- base da cauda ausente por cerca de 7% do intervalo: lacuna longa, que será
+  revisada sem correção.
+
+**Inferência simulada** do trial 1. Lê o vídeo inteiro uma vez e pode levar alguns
+segundos:
+
+```powershell
+$inf = "$posedemo\inferencia-simulada-t$t1"
+```
+```powershell
+@'
+import json, math, pathlib, sys, time
+import numpy as np
+from barnes.db.connection import get_connection
+from barnes.db.maze_configs import get_maze_config
+from barnes.db.pose_executions import get_inference_trial
+from barnes.io.video import iter_frames
+from barnes.pose.annotations import KEYPOINTS, trial_key
+from barnes.pose.dataset import file_sha256
+from barnes.pose.sampling import build_background, estimate_animal_position
+from barnes.pose.series import POSE_CSV_COLUMNS
+started = time.perf_counter()
+trial, out = int(sys.argv[1]), pathlib.Path(sys.argv[2])
+with get_connection() as conn:
+    t = get_inference_trial(conn, trial)
+    geometry = get_maze_config(conn, t.maze_config_id)
+iv, fps, n = t.interval, t.fps_real, t.frame_count
+# Os mesmos quadros que o `pose infer` processaria (barnes.pose.inference.infer_trial).
+first = max(iv.start_frame, math.ceil(iv.start_s * fps))
+last = min(iv.end_frame, math.floor(iv.end_s * fps), n - 1)
+if first > 0 and (first - 1) / fps >= iv.start_s:
+    first -= 1
+if last + 1 < n and (last + 1) / fps <= iv.end_s:
+    last += 1
+frames = np.arange(first, last + 1)
+m = len(frames)
+if m < 120:
+    sys.exit("Intervalo util curto demais para a simulacao (menos de 120 quadros).")
+# Centro do corpo pela segmentacao por contraste do US-06.
+background = build_background(t.filepath, first, last)
+center = {}
+for index, image in iter_frames(t.filepath, first, last, lambda i: True):
+    center[index] = estimate_animal_position(image, background, geometry)
+found = np.array([center.get(int(f)) is not None for f in frames])
+if not found.any():
+    sys.exit("O contraste nao encontrou o animal em nenhum quadro do intervalo.")
+# Quadros em que o contraste falhou sao preenchidos aqui: as unicas falhas da pose
+# simulada sao as tres lacunas injetadas abaixo.
+cx = np.interp(frames, frames[found], [center[int(f)][0] for f in frames[found]])
+cy = np.interp(frames, frames[found], [center[int(f)][1] for f in frames[found]])
+# Eixo do corpo = direcao do movimento em 0,2 s; parado, mantem a direcao anterior.
+k = max(1, round(fps / 5))
+ahead, behind = np.minimum(np.arange(m) + k, m - 1), np.maximum(np.arange(m) - k, 0)
+dx, dy = cx[ahead] - cx[behind], cy[ahead] - cy[behind]
+angle = np.arctan2(dy, dx)
+for i in range(1, m):
+    if math.hypot(dx[i], dy[i]) < 1.0:
+        angle[i] = angle[i - 1]
+half = 0.1 * geometry.platform_radius_px
+ux, uy = np.cos(angle), np.sin(angle)
+points = {
+    "focinho": [cx + half * ux, cy + half * uy],
+    "centro_corpo": [cx.copy(), cy.copy()],
+    "base_cauda": [cx - half * ux, cy - half * uy],
+}
+def gap(fraction, length):
+    start = int(fraction * m)
+    return start, start + length - 1
+gaps = [
+    ("focinho", gap(0.20, 3), "curta: sera interpolada"),
+    ("focinho", gap(0.45, 15), "longa: corrigir na revisao (B.13)"),
+    ("base_cauda", gap(0.75, max(15, round(0.07 * m))), "longa: revisar sem corrigir (B.13)"),
+]
+for point, (a, b), _ in gaps:
+    points[point][0][a:b + 1] = np.nan
+    points[point][1][a:b + 1] = np.nan
+out.mkdir(parents=True, exist_ok=True)
+pose_csv = out / "pose.csv"
+with pose_csv.open("w", encoding="utf-8", newline="") as f:
+    f.write(",".join(POSE_CSV_COLUMNS) + "\n")
+    for i, frame in enumerate(frames):
+        row = [trial_key(t.content_hash), str(int(frame)), str(float(frame) / fps)]
+        for p in KEYPOINTS:
+            x, y = float(points[p][0][i]), float(points[p][1][i])
+            row += ["", "", ""] if math.isnan(x) else [str(x), str(y), "0.9"]
+        f.write(",".join(row) + "\n")
+record = {
+    "schema_version": 1, "status": "completed", "kind": "inferencia",
+    "model_id": "simulado-demo", "dataset_id": "simulado-demo",
+    "maze_config_id": t.maze_config_id, "trial_id": trial,
+    "content_hash": t.content_hash, "video": str(t.filepath), "fps": fps,
+    "processed_interval_frames": {"start": int(first), "end": int(last)},
+    "duration_seconds": time.perf_counter() - started,
+    "artifacts": {"pose.csv": file_sha256(pose_csv)},
+    "simulado": "POSE SIMULADA para a demonstracao: nao e saida de um modelo treinado.",
+}
+(out / "execucao.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+print("Inferencia SIMULADA em %s | quadros %d a %d" % (out, first, last))
+for point, (a, b), what in gaps:
+    print("  lacuna injetada: %s, quadros %d-%d (%d quadros), %s"
+          % (point, frames[a], frames[b], b - a + 1, what))
+'@ | uv run python - $t1 $inf
+```
+
+**Anote os quadros da lacuna longa do focinho**: a revisão da B.13 abre nela.
+
+**Cenário 1 — série gerada.** Gera a série do trial 1 a partir da inferência
+(simulada). O comando confere se a inferência é do mesmo trial, do mesmo vídeo
+(hash), da mesma montagem e com o mesmo fps, e converte para cm com a escala da
+montagem (US-02):
+
+```powershell
+uv run barnes pose series --trial $t1 --inference $inf --out $interim
+```
+
+O esperado: `Trajetória: data\demo_interim\trial_<id>.parquet | ... quadros, 15
+sem pose válida | execução #...`. Também aparece a linha de cobertura do US-10 e o
+aviso de 2 trechos sinalizados para revisão (B.13).
+
+Para conferir o conteúdo do arquivo, guarde este leitor numa variável. Ele é
+usado de novo na B.13:
+
+```powershell
+$mostrar_serie = @'
+import sys
+from barnes.pose.trajectory import read_metadata, read_trajectory
+table = read_trajectory(sys.argv[1])  # le e confere o contrato da trajetoria
+d, meta = table.to_pydict(), read_metadata(table)
+q = d["quadro"]
+print("contrato v%s | trial %s | execucao %s | modelo %s" % (
+    meta["contrato_versao"], meta["trial_id"], meta["execucao_id"], meta["model_id"]))
+print("%d linhas = quadros %d a %d | t_s de %.2f a %.2f s | escala %.4f cm/px | fps variavel: %s"
+      % (len(q), q[0], q[-1], d["t_s"][0], d["t_s"][-1], meta["cm_per_px"], meta["fps_variavel"]))
+def show(title, row):
+    print("\n" + title)
+    print(" quadro    t_s  focinho_x  focinho_y   theta  pose_valida  cauda_valida  interpolado")
+    for i in range(max(row - 2, 0), min(row + 5, len(q))):
+        print("%7d %6.2f %10.1f %10.1f %7.1f %12s %13s %12s" % (
+            q[i], d["t_s"][i], d["focinho_x_cm_image"][i], d["focinho_y_cm_image"][i],
+            d["theta_deg_image"][i], d["pose_valida"][i], d["base_cauda_valido"][i],
+            d["interpolado"][i]))
+for title, column, value in (
+    ("Lacuna curta: preenchida e marcada (US-10 Cenario 1)", "interpolado", True),
+    ("Sem focinho: ausente, sem repetir o quadro anterior (US-09 Cenario 3)", "pose_valida", False),
+    ("Sem base da cauda", "base_cauda_valido", False),
+):
+    row = next((i for i, v in enumerate(d[column]) if v == value), None)
+    if row is not None:
+        show(title, row)
+rep = meta.get("pos_processamento")
+if rep:
+    print("\ncobertura %.3f (so deteccao %.3f, minimo %.2f) | qualidade: %s" % (
+        rep["cobertura"], rep["cobertura_deteccao"], rep["cobertura_minima"], rep["qualidade"]))
+    for s in rep["trechos_sinalizados"]:
+        print("trecho sinalizado: quadros %d-%d, faltam %s, %s" % (
+            s["inicio"], s["fim"], ", ".join(s["pontos"]),
+            "PENDENTE" if s["pendente"] else "revisado"))
+'@
+```
+```powershell
+$serie = "$interim\trial_$t1.parquet"
+```
+```powershell
+$mostrar_serie | uv run python - $serie
+```
+
+O que mostrar:
+
+- **uma linha por quadro do intervalo útil**, com `t_s` começando em 0 na soltura
+  (US-03), posição em **cm** e θ em **graus** (Cenário 1);
+- a convenção de θ: 0° aponta para a direita da imagem e cresce no sentido horário
+  na tela, a mesma dos buracos (US-04);
+- **Cenário 3 — quadro sem pose**: na lacuna longa do focinho, a linha existe com
+  `nan`, `pose_valida = False` e `interpolado = False`. O quadro anterior não é
+  repetido.
+
+**A série fica registrada.** A execução (US-27) guarda o modelo usado (aqui
+`simulado-demo`, o que deixa claro que a pose é simulada), o hash do `pose.csv`, a
+escala, o intervalo e os parâmetros de tratamento do US-10:
+
+```powershell
+$exec_serie = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "SELECT cobertura_execucao_id FROM trials WHERE id = $t1").Trim()
+```
+```powershell
+uv run barnes execution show $exec_serie
+```
+
+**A pose de um trial não serve para outro.** O esperado é `Erro: A inferência em
+... é do trial #<t1>, não do #<t2>.`:
+
+```powershell
+uv run barnes pose series --trial $t2 --inference $inf --out $interim
+```
+
+**Cenário 2 — θ concorda com a direção do deslocamento**, nos testes, com
+trajetórias retas nas 8 direções (erro < 1e-6° sem ruído; mediana ≤ 5° com ruído
+de 1 px). Os testes também cobrem a conversão px→cm e o contrato do arquivo,
+conferido na escrita e na leitura:
+
+```powershell
+uv run pytest tests/pose/test_series.py tests/pose/test_trajectory.py tests/pose/test_series_from_inference.py -v
+```
+
+O que mostrar no documento: `docs/contrato-trajetoria.md`, o contrato do arquivo
+que o Épico D (eventos por buraco) vai ler.
+
+---
+
+### B.13 US-10 — Suavização, interpolação e revisão de falhas de pose
+
+O que dizer antes: o `pose series` da B.12 já tratou a pose. Ele aplica as
+correções manuais registradas, suaviza com mediana móvel, interpola as lacunas
+curtas e sinaliza as longas para revisão humana. Os limites estão em
+`configs/default.yaml` e são **propostos pelo grupo**:
+
+```powershell
+Select-String -Path configs\default.yaml -Pattern "cobertura_minima|lacuna_curta_max_quadros|metodo|janela_quadros"
+```
+
+Lacuna curta: até 5 quadros (0,2 s a 25 fps) com o ponto presente antes e depois.
+Lacuna longa: qualquer uma maior, ou que toque o início ou o fim do intervalo.
+Cobertura: fração dos quadros com focinho, centro e base da cauda, contando os
+interpolados e os corrigidos. Critério do projeto: ≥ 0,98.
+
+**Cenário 1 — lacuna curta interpolada, sem pedir revisão.** Já apareceu na saída
+da B.12: as 3 linhas da lacuna curta estão preenchidas com `interpolado = True`, e
+a lista de trechos sinalizados traz só as duas lacunas longas.
+
+**Cenário 2 — lacuna longa: a revisão vai direto ao trecho, permite a correção e
+registra a intervenção.**
+
+🖱️ Na janela:
+1. ela abre **direto no trecho 1** (o focinho, nos quadros anotados na B.12), sem
+   passar pelo resto do vídeo. O cabeçalho mostra `Trecho 1/2 (pendente)`, os
+   quadros, o ponto que falta e o ponto ativo. Os círculos vazados são os pontos
+   que a série já tem;
+2. **`d`** 5 vezes (6º quadro do trecho) e **clique no focinho** do animal;
+3. **`d`** mais 5 vezes (11º quadro) e **clique no focinho** de novo;
+4. **`Enter`**: dá o trecho 1 por revisado, e a janela pula para o trecho 2 (base
+   da cauda);
+5. diga que, neste trecho, a cauda está encoberta, e aperte **`Enter`** sem marcar
+   nada;
+6. **`s`** salva e fecha.
+
+`a`/`d` andam um quadro, `n`/`p` trocam de trecho, `1`/`2`/`3` escolhem o ponto, e o
+botão direito ou `Backspace` desfaz. `Esc` cancela **sem gravar nada**.
+
+```powershell
+uv run barnes pose review --trial $t1
+```
+
+O esperado: `Revisão registrada na execução #...: 2 ponto(s) corrigido(s), 2
+trecho(s) dado(s) por revisado(s).`, a nova cobertura (cerca de 93%) e o aviso
+`QUALIDADE INSUFICIENTE` (Cenário 3, abaixo).
+
+O que dizer: não foi preciso marcar os 15 quadros. Com duas marcações, a lacuna
+virou três lacunas de até 5 quadros, e essas foram interpoladas quando a série foi
+regenerada. Confira:
+
+```powershell
+$mostrar_serie | uv run python - $serie
+```
+
+O esperado: não há mais quadro sem focinho, e a lacuna do focinho saiu da lista de
+trechos sinalizados, porque foi preenchida. Só a base da cauda continua ausente, num
+trecho marcado como `revisado`.
+
+**A intervenção fica registrada (RN05).** Uma execução própria guarda os trechos
+revisados, o número de correções, o usuário do sistema e a nova cobertura. A
+tabela `correcao_pose` guarda cada ponto marcado:
+
+```powershell
+$rev = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "SELECT cobertura_execucao_id FROM trials WHERE id = $t1").Trim()
+```
+```powershell
+uv run barnes execution show $rev
+```
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT id, execucao_id, quadro, ponto, round(x_px::numeric,1) AS x_px, round(y_px::numeric,1) AS y_px FROM correcao_pose WHERE trial_id = $t1 ORDER BY id"
+```
+
+O que mostrar: `"comando": "pose review"`, `trechos_revisados`,
+`"correcoes_novas": 2` e, em `metadata.qualidade_pose`, a cobertura e os trechos.
+Uma correção não se edita. O esperado é `ERROR: Correções de pose são imutáveis;
+registre uma nova revisão.`:
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "UPDATE correcao_pose SET x_px = 0 WHERE trial_id = $t1"
+```
+
+**Cenário 3 — cobertura abaixo do critério: a marcação vai junto do trial nas
+saídas.** No catálogo, a cobertura do trial 1 aparece com a qualidade
+`INSUFICIENTE`:
+
+```powershell
+uv run barnes catalog list
+```
+
+Nas métricas, cada resultado leva `cobertura_pose` e `"qualidade_pose":
+"insuficiente"`. O `metrics process` também avisa no terminal:
+
+```powershell
+uv run barnes metrics executions --trial $t1
+```
+```powershell
+uv run barnes metrics process --video $v1 --trial $t1 --trajectory data\interim\traj_demo.csv
+```
+
+A marcação não é gravada como um "sim/não" à parte: ela é calculada da cobertura e
+do relatório da execução que a mediu, numa visão do banco. Assim, ela nunca fica
+diferente da cobertura:
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT * FROM qualidade_pose WHERE trial_id = $t1"
+```
+
+**Regenerar não perde a revisão.** A série é sempre refeita a partir do
+`pose.csv`, com todas as correções do banco. Gerar de novo dá a mesma cobertura,
+sem trecho pendente:
+
+```powershell
+uv run barnes pose series --trial $t1 --inference $inf --out $interim
+```
+
+O esperado na revisão é `Nenhum trecho pendente de revisão no trial #...`:
+
+```powershell
+uv run barnes pose review --trial $t1
+```
+
+**RN07 (fps instável) e os demais casos**, nos testes. Os vídeos da demonstração
+têm fps constante. Com fps variável, o relatório de qualidade leva a ressalva de
+que a interpolação é menos exata:
+
+```powershell
+uv run pytest tests/pose/test_quality.py tests/pose/test_review_ui.py tests/db/test_pose_corrections.py -v
+```
+
+O que mostrar no documento: a seção "Pós-processamento (US-10)" de
+`docs/contrato-trajetoria.md` e a §4.7 do manual (teclas da revisão).
+
+---
+
+### B.14 US-27 — Proveniência das execuções e catálogo de trials
+
+**Cenários 1 e 2 — toda execução é registrada, com o suficiente para reproduzir.**
+O histórico de métricas do trial 1 traz várias linhas (antes e depois da
+recalibração da B.8, e o reprocessamento da B.13), cada uma com o seu
+`execucao_id`:
+
+```powershell
+uv run barnes metrics executions --trial $t1 --history
+```
+```powershell
+$exec = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "SELECT execucao_id FROM trial_results WHERE trial_id = $t1 ORDER BY id DESC LIMIT 1").Trim()
+```
+```powershell
+uv run barnes execution show $exec
+```
+
+O que mostrar: `model_id` (nulo, porque estas métricas vêm de uma trajetória CSV,
+sem modelo de pose; nas execuções da B.12 e da B.13 aparece `simulado-demo`), os
+`limiares` vigentes (o `configs/default.yaml` inteiro, com o hash), os `parametros`
+(vídeo, hash da trajetória, escala, intervalo), o `git_commit`, `git_dirty: false`,
+a data e `"reproduzivel": true`. Para reproduzir: fazer checkout do commit,
+restaurar os limiares e repetir o comando com os parâmetros.
+
+Todas as execuções do trial, de todas as etapas:
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT id, kind, coalesce(model_id, '-') AS modelo, parametros->>'comando' AS comando, git_dirty AS sujo, recorded_at::timestamp(0) AS registrada FROM execucao WHERE trial_id = $t1 ORDER BY id"
+```
+
+**RN02 — métrica sem execução é erro de esquema.** O esperado é `ERROR: null
+value in column "execucao_id" ... violates not-null constraint`:
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "INSERT INTO trial_results (trial_id, distance_cm) VALUES ($t1, 1.0)"
+```
+
+**RN03 — catálogo.** Trial, animal, sessão (o dia), fase, ordem no dia, situação,
+cobertura e qualidade de pose, fps e situação do arquivo de vídeo:
+
+```powershell
+uv run barnes catalog list
+```
+
+O que mostrar: o animal `Camundongo demo` (B.2) e as situações `processado` (trials
+1 e 2, se o trial 2 tiver métricas) e `carregado` (trial da montagem sem escala). Só
+o trial 1 tem cobertura e qualidade (B.13). A sessão vem de uma visão derivada dos
+trials:
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT * FROM sessao WHERE experiment_id = $exp"
+```
+
+**Cenário 3 — vídeo movido ou substituído é sinalizado, com o trial.**
+
+Vídeo movido e renomeado:
+
+```powershell
+New-Item -ItemType Directory -Force data\raw\movidos | Out-Null
+```
+```powershell
+Move-Item $v1 data\raw\movidos\renomeado.mp4
+```
+
+O esperado é o aviso `Divergência no trial #<t1>: vídeo movido ou renomeado para
+data\raw\movidos\renomeado.mp4.` e a coluna **arquivo** com `movido`:
+
+```powershell
+uv run barnes catalog list --procurar-em data\raw\movidos
+```
+
+Reprocessar com o arquivo no lugar novo funciona, porque o conteúdo (hash) é o
+mesmo. O comando avisa, e o caminho novo fica registrado na execução:
+
+```powershell
+uv run barnes metrics process --video data\raw\movidos\renomeado.mp4 --trial $t1 --trajectory data\interim\traj_demo.csv
+```
+
+Devolva o vídeo ao lugar:
+
+```powershell
+Move-Item data\raw\movidos\renomeado.mp4 $v1
+```
+
+Vídeo substituído por outro conteúdo no mesmo caminho. O vídeo sintético é
+copiado antes, para ser restaurado depois:
+
+```powershell
+Copy-Item $vs "$vs.bak"
+```
+```powershell
+Copy-Item data\raw\corrompido.mp4 $vs -Force
+```
+
+O esperado é `Divergência no trial #<t0>: conteúdo de data\raw\sintetico_soltura.mp4
+difere do catalogado.`:
+
+```powershell
+uv run barnes catalog list
+```
+
+Restaure o vídeo e confira tudo pelo conteúdo completo. Esta opção relê cada
+vídeo e é mais lenta. O esperado é `ok` em todos os trials:
+
+```powershell
+Move-Item "$vs.bak" $vs -Force
+```
+```powershell
+uv run barnes catalog list --verificar-hash
+```
+
+A recusa de reprocessar um vídeo substituído está nos testes do fim desta seção.
+
+**Cenário 4 — repositório com alterações não commitadas.** Crie um arquivo novo,
+não commitado, na pasta do projeto:
+
+```powershell
+Set-Content -Path demo_alteracao_nao_commitada.txt -Value "simula uma alteracao nao commitada" -Encoding utf8
+```
+
+O esperado é o aviso `execução #... registrada com repositório sujo (alterações
+não commitadas) — o resultado não é reproduzível pelo commit.`:
+
+```powershell
+uv run barnes metrics process --video $v1 --trial $t1 --trajectory data\interim\traj_demo.csv
+```
+```powershell
+$sujo = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "SELECT max(id) FROM execucao WHERE trial_id = $t1").Trim()
+```
+```powershell
+uv run barnes execution show $sujo
+```
+
+O esperado: `"git_dirty": true` e `"reproduzivel": false`. Apague o arquivo:
+
+```powershell
+Remove-Item demo_alteracao_nao_commitada.txt
+```
+
+**Testes do US-27**: métrica e evento órfãos recusados pelo banco, execução
+imutável, catálogo, arquivo movido ou alterado, e repositório sujo ou sem git:
+
+```powershell
+uv run pytest tests/db/test_us27_schema.py tests/db/test_catalog.py tests/test_provenance.py tests/io/test_verify_video.py -v
+```
+
+O que dizer sobre o banco do laboratório: a decisão (SCRUM-148) é instalar o
+PostgreSQL nativo na máquina do laboratório (manual, §2.2.2). A demonstração usa o
+Docker só por conveniência.
+
+---
 
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:
 
 ```powershell
-Remove-Item Env:BARNES_DATABASE_URL
+Remove-Item Env:BARNES_DATABASE_URL, Env:BARNES_TEST_DATABASE_URL
+```
+
+Confira que o vídeo movido na B.14 voltou ao lugar e que o arquivo de "alteração
+não commitada" foi apagado. O esperado é `True` e a lista vazia:
+
+```powershell
+Test-Path $v1
+```
+```powershell
+git status --short
 ```
 
 Para apagar o banco de demonstração (opcional; ele é recriado na Parte A da
@@ -775,10 +1475,17 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | US-05 | Câmera deslocada entre dias | **Não é detectada automaticamente.** O procedimento é criar uma montagem nova e recalibrar a escala (manual, seção 3.7). Só um vídeo com resolução diferente é recusado automaticamente. |
 | US-06 | Rodada de anotação | O ferramental está pronto; a anotação na B.9 é simulada. A rodada real depende dos 3 trials de G1 e da resposta D4 (uso dos quadros e CEUA). |
 | US-04 | Raio do buraco | É ajustado a olho na janela (`[`/`]`). Não sai do diâmetro em cm, porque a escala só é calibrada depois da montagem existir. |
-| US-07/US-08 | Treino e qualidade reais | Comandos implementados; dependem de quadros anotados reais, NVIDIA e avaliação do modelo gerado. Testes sintéticos não concluem o aceite científico. |
-| US-08 | Inferência offline no laboratório | Fluxo local implementado; validação física com a rede desconectada permanece pendente. |
-| Geral | Trajetória a partir do vídeo | US-08 gera pose bruta dos três pontos. Correção/orientação e integração completa de trajetória ficam nas próximas histórias; métricas desta demonstração ainda usam CSV de exemplo. |
-| Geral | Cadastro de usuário e experimento | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |
+| US-07 | Modelo treinado | Ferramental pronto (diagnóstico, plano, pacote de dados, treino, registro). Falta o treino real: depende da anotação real (US-06), de uma máquina NVIDIA elegível (só esta máquina foi inventariada; faltam as dos outros integrantes) e, se for preciso usar nuvem, da D4. |
+| US-07 | GPU institucional (D2) | A disponibilidade ainda não foi confirmada. Por isso o plano fica `pending` (B.10). |
+| US-08 | Avaliação real por região | Critério e relatório por região implementados e testados com dados sintéticos. O erro real depende do modelo do US-07. |
+| US-08 | Inferência offline no laboratório | Fluxo local implementado. Falta a validação na máquina do laboratório com a rede física desligada, com o registro de máquina, operador e duração. |
+| US-09 | Série dos 3 trials representativos (SCRUM-123) | A série é gerada e conferida pelo contrato, mas nesta demonstração a pose é **simulada**. Falta gerá-la com o modelo real para os 3 trials de G1. |
+| US-10 | Limites de tratamento da pose | Lacuna curta de 5 quadros (0,2 s), mediana de 5 quadros e cobertura mínima de 0,98 são valores propostos pelo grupo. Pergunta ao LNBio: interpolar até 0,2 s é aceitável? |
+| US-10 | fps instável (RN07) | A US-01 detecta fps variável por trial, não por trecho. A ressalva vale para o trial inteiro. |
+| US-11 | Evento de descoberta | Card do Sprint 2 ainda não implementado. |
+| US-27 | Banco no laboratório | Decidido: PostgreSQL nativo na máquina do laboratório (SCRUM-148, manual §2.2.2). A instalação lá ainda não foi feita. |
+| Geral | Métricas a partir da pose | As métricas (US-02) ainda leem a trajetória de exemplo em CSV. Calcular a partir da série de pose é das próximas histórias (Épico E). |
+| Geral | Cadastro de usuário, experimento e animal | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |
 
 ## Se algo der errado
 
@@ -794,3 +1501,14 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | `pose report` diz "Montagem desconhecida" | O `--samples` não aponta para a pasta da B.9. Confira `$anot`. |
 | `uv sync` com erro de certificado TLS | Use `--system-certs`, como está na A.1. |
 | A janela OpenCV não aparece | Ela pode ter aberto atrás do terminal. Procure na barra de tarefas. |
+| `connection refused` em qualquer comando com o banco | A porta da URL (A.2) tem de ser a que o Docker publica: o valor de `BARNES_PG_PORT` no `.env`, ou 5433 se ele não estiver definido. Ajuste as duas URLs da A.2. |
+| B.1 com dezenas de testes pulados (`Requer BARNES_TEST_DATABASE_URL`) | Defina `$env:BARNES_TEST_DATABASE_URL` e rode o `db migrate --dsn ...barnes_test` da A.2. Se o banco `barnes_test` não existir, crie com `docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "CREATE DATABASE barnes_test"`. |
+| `Erro no banco de dados` no `pose series`, `pose review` ou `catalog list` | O banco não tem a migração `0008` (US-10). Rode `uv run barnes db migrate`. |
+| `Arquivo já existe` no `pose hardware` ou no `pose plan-training` (B.10) | Sobraram arquivos de um ensaio. Rode o `Remove-Item` da A.2, que apaga `data\pose\demo`. |
+| A inferência simulada (B.12) diz `Intervalo util curto demais` | O trial 1 tem menos de 120 quadros no intervalo útil. Use um vídeo mais longo no `$v1`. |
+| A inferência simulada diz `O contraste nao encontrou o animal` | A montagem do trial não cobre o animal ou o vídeo não tem contraste. Confira a montagem da B.3 com `uv run barnes maze show $maze`. |
+| Os pontos simulados ficam longe do animal na revisão (B.13) | É limitação da simulação por contraste, não do US-10. Diga isso e marque o focinho onde o animal está. |
+| `pose review` diz `Nenhum trecho pendente` logo na primeira vez | A revisão já foi salva num ensaio. Use `--todos` para rever os trechos revisados, ou refaça a demonstração desde a A.2. |
+| Saiu da revisão sem querer (`Esc` ou janela fechada) | Nada foi gravado. Rode `pose review` de novo: ela reabre no primeiro trecho pendente. |
+| Todas as execuções aparecem com `"reproduzivel": false` | O repositório já estava com alterações não commitadas. Faça commit antes da reunião (A.1). |
+| `Move-Item` da B.14 falha porque o vídeo já está em `data\raw\movidos` | Um ensaio anterior parou no meio. Devolva o vídeo com `Move-Item data\raw\movidos\renomeado.mp4 $v1`. |

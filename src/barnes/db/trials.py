@@ -163,6 +163,8 @@ class StoredTrial:
         fps_real: fps medido (US-01 RN02) — base de tempo da série de pose.
         fps_is_variable: Aviso de fps variável (US-01 RN03), que acompanha
             as saídas do trial (US-09).
+        trajectory_path: Arquivo atual da série de pose (US-09/US-10), ou
+            `None` se ainda não foi gerada.
     """
 
     id: int
@@ -175,6 +177,7 @@ class StoredTrial:
     file_size_bytes: int | None = None
     fps_real: float | None = None
     fps_is_variable: bool | None = None
+    trajectory_path: Path | None = None
 
 
 def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
@@ -191,7 +194,7 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
             """
             SELECT maze_config_id, width_px, height_px, fps_real,
                    start_time_seconds, end_time_seconds, interval_manually_adjusted,
-                   filepath, content_hash, file_size_bytes, fps_is_variable
+                   filepath, content_hash, file_size_bytes, fps_is_variable, trajectory_path
             FROM trials WHERE id = %s
             """,
             (trial_id,),
@@ -200,7 +203,7 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
     if row is None:
         raise ValueError(f"Trial {trial_id} não encontrado.")
     (maze_config_id, width, height, fps_real, start_s, end_s, manual, path, digest, size,
-     fps_variable) = row
+     fps_variable, trajectory) = row
     interval = (
         None
         if start_s is None or end_s is None
@@ -208,7 +211,7 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
     )
     return StoredTrial(
         trial_id, maze_config_id, width, height, interval, Path(path), digest, size,
-        fps_real, fps_variable,
+        fps_real, fps_variable, None if trajectory is None else Path(trajectory),
     )
 
 
@@ -223,6 +226,29 @@ def set_trajectory_path(conn: psycopg.Connection, trial_id: int, path: str) -> N
     """
     with conn.cursor() as cur:
         cur.execute("UPDATE trials SET trajectory_path = %s WHERE id = %s", (path, trial_id))
+        if cur.rowcount == 0:
+            raise ValueError(f"Trial {trial_id} não encontrado.")
+
+
+def set_pose_coverage(
+    conn: psycopg.Connection, trial_id: int, *, cobertura: float, execucao_id: int
+) -> None:
+    """Grava a cobertura de pose do trial e a execução que a calculou (US-10 RN03).
+
+    Não comita a transação — quem chama grava junto com a execução e a série.
+
+    Raises:
+        ValueError: Se a cobertura não estiver em [0, 1] ou o trial não existir.
+        psycopg.errors.ForeignKeyViolation: Se a execução não existir ou for de
+            outro trial (FK composta da 0007).
+    """
+    if isinstance(cobertura, bool) or not 0 <= cobertura <= 1:
+        raise ValueError("A cobertura de pose deve estar entre 0 e 1.")
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE trials SET cobertura_pose = %s, cobertura_execucao_id = %s WHERE id = %s",
+            (float(cobertura), execucao_id, trial_id),
+        )
         if cur.rowcount == 0:
             raise ValueError(f"Trial {trial_id} não encontrado.")
 

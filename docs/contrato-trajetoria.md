@@ -1,7 +1,8 @@
-# Contrato da trajetória de pose por trial (US-09)
+# Contrato da trajetória de pose por trial (US-09, US-10)
 
 **Versão do contrato: 1** · código: `src/barnes/pose/trajectory.py` (esquema verificado
-na escrita e na leitura) · gerado por `barnes pose series`.
+na escrita e na leitura) · gerado por `barnes pose series` e regenerado por
+`barnes pose review`.
 
 A trajetória de cada trial fica em **`data/interim/trial_<trial_id>.parquet`**, um
 arquivo por trial (US-09 RN04). Ela é a entrada de todo o Épico D (eventos por
@@ -29,20 +30,23 @@ nem quando a pose está ausente.
 | `centro_corpo_x_cm_image`, `centro_corpo_y_cm_image` | float64 | centro do corpo, em cm |
 | `base_cauda_x_cm_image`, `base_cauda_y_cm_image` | float64 | base da cauda, em cm |
 | `focinho_confianca`, `centro_corpo_confianca`, `base_cauda_confianca` | float64 | score bruto do modelo (NaN se o modelo não informou) |
-| `focinho_valido`, `centro_corpo_valido`, `base_cauda_valido` | bool | o ponto tem x e y |
+| `focinho_valido`, `centro_corpo_valido`, `base_cauda_valido` | bool | o ponto tem x e y (detectado, corrigido à mão ou interpolado) |
 | `pose_valida` | bool | focinho **e** centro do corpo válidos, e distintos: há θ |
 | `theta_deg_image` | float64 | orientação da cabeça, em graus, [0, 360); NaN sem `pose_valida` |
-| `interpolado` | bool | sempre `false` na US-09; a US-10 marca as linhas que preencher |
+| `interpolado` | bool | algum ponto desta linha foi preenchido por interpolação (US-10 RN01) |
 | `fps_variavel` | bool | o vídeo tem fps variável (US-01): **`t_s` é aproximado** (constante) |
 
 **Posição em cm nos eixos da imagem** (sufixo `_image`, US-05 RN05): a mesma origem
-dos pixels, no canto superior esquerdo do quadro, com **y crescendo para baixo**. É só o
-pixel multiplicado pela escala da montagem (US-02, `cm_per_px`). Para comparar com os
-buracos, converta `holes.x_px/y_px` com o mesmo `cm_per_px` dos metadados. Para o
-referencial da sala, use `barnes.geometry.reference_frame` (US-05).
+dos pixels, no canto superior esquerdo do quadro, com **y crescendo para baixo**. É o
+pixel, **suavizado** pela US-10 (ver abaixo), multiplicado pela escala da montagem
+(US-02, `cm_per_px`). Para comparar com os buracos, converta `holes.x_px/y_px` com o
+mesmo `cm_per_px` dos metadados. Para o referencial da sala, use
+`barnes.geometry.reference_frame` (US-05).
 
 **Ausência é dado** (US-09 RN05): ponto não detectado fica `NaN`, com `*_valido = false`.
-**Nunca** há repetição do quadro anterior nem valor nulo. Preencher é da US-10.
+**Nunca** há repetição do quadro anterior nem valor nulo. Só a US-10 preenche, e só
+lacunas curtas: a linha preenchida fica com `interpolado = true`, e o relatório do
+preenchimento vai no metadado `pos_processamento`.
 
 ## Orientação da cabeça θ
 
@@ -71,6 +75,14 @@ Gravados como JSON no esquema Parquet (chave `barnes.trajetoria`):
 `intervalo_inicio_s`, `intervalo_fim_s` (segundos desde o início do vídeo),
 `convencao_angular` (texto) e `gerado_em` (UTC).
 
+Opcional (US-10): `pos_processamento`, o relatório de qualidade da pose. Traz
+`cobertura` (os três pontos, contando interpolados e corrigidos), `cobertura_deteccao`
+(só o que o modelo detectou), `cobertura_minima`, `qualidade` (`suficiente`,
+`revisao_pendente` ou `insuficiente`), `quadros_interpolados`, `fracao_interpolada`,
+`quadros_corrigidos`, `correcoes_ignoradas`, `trechos_sinalizados` (lista de
+`{inicio, fim, pontos, pendente}`, em quadros do vídeo), `trechos_pendentes`, os
+`parametros` usados e `ressalva_fps_variavel` (texto ou `null`, US-10 RN07).
+
 ## Invariantes verificadas em código
 
 Um arquivo que viole qualquer uma é recusado com `TrajectoryContractError`, na escrita
@@ -82,7 +94,41 @@ Um arquivo que viole qualquer uma é recusado com `TrajectoryContractError`, na 
 - `quadro` contíguo e crescente; `t_s` finito e estritamente crescente;
 - `*_valido` verdadeiro exatamente quando x e y são finitos;
 - `pose_valida` só com focinho e centro válidos; θ finito exatamente quando
-  `pose_valida`, e sempre em [0, 360).
+  `pose_valida`, e sempre em [0, 360);
+- `pos_processamento`, se existir, é um objeto; e **linha com `interpolado` exige
+  `pos_processamento`** (todo preenchimento fica registrado).
+
+## Pós-processamento (US-10)
+
+`barnes pose series` monta a série sempre a partir do `pose.csv` da inferência, das
+correções manuais do trial (tabela `correcao_pose`) e dos parâmetros da seção `pose:` de
+`configs/default.yaml`. Por isso regenerar dá o mesmo resultado e nunca suaviza duas
+vezes. A ordem é sempre esta (`barnes.pose.quality.postprocess_pose`, em pixels, antes
+da conversão para cm):
+
+1. **Correções manuais** sobrepõem o ponto no quadro (vale a da revisão mais recente).
+   O ponto corrigido perde a confiança do modelo (`*_confianca` = NaN).
+2. **Suavização** por mediana móvel (`suavizacao.janela_quadros`, ímpar; 1 = nenhuma),
+   por ponto, só dentro de trechos contínuos com o ponto. A janela encolhe
+   simetricamente nas pontas do trecho e nunca atravessa uma lacuna. Remove um quadro
+   isolado muito fora e preserva movimento retilíneo. θ é recalculado dos pontos
+   suavizados.
+3. **Interpolação linear** (por índice de quadro) das lacunas **curtas**: até
+   `lacuna_curta_max_quadros` quadros seguidos sem um ponto, com o ponto presente nos
+   dois lados. A confiança continua NaN e a linha recebe `interpolado = true`.
+4. **Sinalização** das lacunas restantes: as **longas** (maiores que o limite) e as que
+   tocam a **borda** do intervalo útil, que não têm um dos lados para interpolar.
+   Lacunas de pontos diferentes que se encostam viram um trecho só. Um trecho fica
+   `pendente` até ser dado por revisado em `barnes pose review`.
+5. **Cobertura**: fração dos quadros do intervalo com os três pontos (detectados,
+   corrigidos ou interpolados). A qualidade é `revisao_pendente` enquanto houver trecho
+   pendente; sem pendência, é `insuficiente` abaixo de `cobertura_minima` e
+   `suficiente` caso contrário.
+
+As lacunas são detectadas **por ponto**: faltar só a base da cauda por dois quadros
+preenche só a base da cauda. Com `fps_variavel`, a interpolação é menos exata (os tempos
+já são aproximados), e o relatório leva `ressalva_fps_variavel` (US-10 RN07). A US-01 só
+detecta fps variável por trial, não por trecho.
 
 ## Como ler
 
@@ -110,13 +156,15 @@ SELECT avg(theta_deg_image) FROM 'data/interim/trial_12.parquet' WHERE pose_vali
 
 | História | Usa |
 |---|---|
-| US-10 (qualidade de pose) | `pose_valida`/`*_valido` para a cobertura; preenche lacunas e marca `interpolado`; `fps_variavel` acompanha o relato (US-10 RN07) |
-| US-11 (descoberta) | `focinho_*_cm_image` para a distância focinho→buraco; `theta_deg_image` para o ângulo cabeça→buraco; `quadro`/`t_s` vão para `evento_buraco` |
-| Métricas (US-15 em diante) | posições em cm e `t_s`; velocidade com ressalva quando `fps_variavel` |
+| US-10 (qualidade de pose) | produz a série: preenche lacunas curtas e marca `interpolado`, sinaliza as longas, grava `pos_processamento` e a cobertura em `trials.cobertura_pose`; `fps_variavel` acompanha o relato (RN07) |
+| US-11 (descoberta) | `focinho_*_cm_image` para a distância focinho→buraco; `theta_deg_image` para o ângulo cabeça→buraco; `quadro`/`t_s` vão para `evento_buraco`; `interpolado` para marcar evento sobre dado reconstruído |
+| Métricas (US-15 em diante) | posições em cm e `t_s`; velocidade com ressalva quando `fps_variavel`; fração interpolada (`interpolado`) junto da métrica (US-18 RN04); trial de qualidade insuficiente marcado (VIEW `qualidade_pose`) |
 
 ## Mudanças
 
 Mudança compatível (ex.: metadado novo opcional): mantém a versão e atualiza este
-documento. Mudança incompatível (renomear, remover ou mudar o tipo de uma coluna ou o
+documento. A US-10 foi uma mudança compatível: `interpolado` passou a ser usado como
+estava previsto, as posições passaram a ser suavizadas e entrou o metadado opcional
+`pos_processamento`. A versão continua 1. Mudança incompatível (renomear, remover ou mudar o tipo de uma coluna ou o
 significado de um campo): incremente `CONTRACT_VERSION` em `trajectory.py`, atualize
 este documento e avise as equipes de eventos, métricas e estratégia.
