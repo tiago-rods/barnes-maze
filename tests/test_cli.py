@@ -20,6 +20,7 @@ from barnes import cli
 from barnes.db.calibration import get_calibration
 from barnes.db.connection import get_connection
 from barnes.db.executions import get_execution
+from barnes.db.pose_corrections import list_pose_corrections
 from barnes.db.trial_results import get_trial_result
 from barnes.db.trials import insert_trial
 from barnes.io.calibration_ui import CalibrationCancelled
@@ -439,7 +440,8 @@ def _fake_inference_run(root, *, trial_id, maze_config_id, content_hash, fps, fr
                         missing_snout=()):
     """Diretório de `pose infer` com registro e pose.csv verificáveis (hashes reais).
 
-    O animal anda para a direita (θ = 0°); `missing_snout` lista quadros sem focinho.
+    O animal anda para a direita (θ = 0°), 4 px por quadro, focinho em x + 20 e
+    y = 240; `missing_snout` lista quadros sem focinho.
     """
     root.mkdir(parents=True)
     header = ["trial", "quadro", "time_s"] + [
@@ -477,12 +479,15 @@ def _series_args(run, trial_id, out):
 
 
 def test_pose_series_writes_contract_parquet_and_registers_execution(args, trial_id, tmp_path):
-    # Cenário 1: Parquet com uma linha por quadro do intervalo útil (0..4 s a 10 fps =
-    # quadros 0..40), x/y em cm, θ em graus, t em segundos; Cenário 3: quadro 7 sem focinho.
+    # US-09 Cenário 1: Parquet com uma linha por quadro do intervalo útil (0..4 s a 10 fps =
+    # quadros 0..40), x/y em cm, θ em graus, t em segundos. US-10: o quadro 7 sem focinho
+    # (lacuna curta) é interpolado e marcado; a lacuna longa 20..27 fica ausente (US-09
+    # Cenário 3) e é sinalizada para revisão; a cobertura vai para o trial.
     calibrate(args)  # 10 px por cm
     maze, digest, fps, _ = _trial_row(trial_id)
+    missing = {7, *range(20, 28)}
     run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
-                              content_hash=digest, fps=fps, frames=(0, 40), missing_snout={7})
+                              content_hash=digest, fps=fps, frames=(0, 40), missing_snout=missing)
     result = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
     assert result.exit_code == 0, result.output + repr(result.exception)
 
@@ -493,19 +498,37 @@ def test_pose_series_writes_contract_parquet_and_registers_execution(args, trial
     assert data["t_s"][-1] == pytest.approx(4.0)
     assert data["centro_corpo_x_cm_image"][0] == pytest.approx(10.0)  # 100 px / 10
     assert data["theta_deg_image"][0] == pytest.approx(0.0)
-    assert data["pose_valida"][7] is False
-    assert math.isnan(data["theta_deg_image"][7])
-    assert data["theta_deg_image"][8] == pytest.approx(0.0)
+    # Lacuna curta: preenchida e marcada (US-10 Cenário 1).
+    assert data["interpolado"][7] is True and data["pose_valida"][7] is True
+    assert data["focinho_x_cm_image"][7] == pytest.approx((100 + 4 * 7 + 20) / 10)
+    assert data["theta_deg_image"][7] == pytest.approx(0.0)
+    # Lacuna longa: ausente, sem repetir o quadro anterior (US-09 Cenário 3).
+    assert not any(data["interpolado"][20:28])
+    assert not any(data["pose_valida"][20:28])
+    assert math.isnan(data["theta_deg_image"][20])
+    assert sum(data["interpolado"]) == 1
 
     execucao_id = meta["execucao_id"]
     assert set(data["execucao_id"]) == {execucao_id}
+    report = meta["pos_processamento"]
+    assert report["trechos_sinalizados"] == [
+        {"inicio": 20, "fim": 27, "pontos": ["focinho"], "pendente": True}
+    ]
     with get_connection() as conn:
         stored = get_execution(conn, execucao_id)
+        coverage = conn.execute(
+            "SELECT cobertura_pose, cobertura_execucao_id FROM trials WHERE id = %s",
+            (trial_id,),
+        ).fetchone()
     assert stored.kind == "processamento"
     assert stored.model_id == "sleap-maze-test"
     assert stored.artifact_path == str(path)
     assert stored.parametros["inference_run_id"] == "run"
+    assert stored.parametros["pos_processamento"]["lacuna_curta_max_quadros"] == 5
+    assert stored.metadata["qualidade_pose"]["qualidade"] == "revisao_pendente"
     assert _trial_row(trial_id)[3] == str(path)
+    assert coverage == (pytest.approx(33 / 41), execucao_id)
+    assert f"barnes pose review --trial {trial_id}" in result.stderr
 
 
 def test_pose_series_refuses_inference_of_another_trial(args, trial_id, tmp_path):
@@ -558,3 +581,162 @@ def test_pose_series_carries_variable_fps_warning_to_outputs(args, trial_id, tmp
     row = next(r for r in json.loads(listed.stdout) if r["trial_id"] == trial_id)
     assert row["fps_variavel"] is True
     assert row["trajetoria"].endswith(f"trial_{trial_id}.parquet")
+
+
+# --- US-10: revisão dos trechos sinalizados e qualidade nas saídas -------------
+
+
+def _snout_px(frame):
+    """Onde `_fake_inference_run` poria o focinho no quadro: o que o operador marcaria."""
+    return 100.0 + 4 * frame + 20, 240.0
+
+
+def _review(trial_id, monkeypatch, act):
+    """Roda `pose review` com a janela simulada: `act(session, overlay)` faz a revisão."""
+    seen = {}
+
+    def fake_collect_review(frames, session, *, overlay=None, **kwargs):
+        seen["start"] = (session.segment.start_frame, session.segment.end_frame, session.frame)
+        seen["overlay"] = overlay
+        act(session)
+        return session.result()
+
+    monkeypatch.setattr(cli, "collect_review", fake_collect_review)
+    result = runner.invoke(cli.app, ["pose", "review", "--trial", str(trial_id)])
+    return result, seen
+
+
+def _catalog_row(trial_id):
+    listed = runner.invoke(cli.app, ["catalog", "list", "--json", "--sem-arquivo"])
+    assert listed.exit_code == 0, listed.output
+    return next(r for r in json.loads(listed.stdout) if r["trial_id"] == trial_id)
+
+
+def test_pose_review_goes_to_flagged_segment_and_records_corrections(
+    args, trial_id, tmp_path, monkeypatch
+):
+    # Cenário 2: lacuna longa (focinho 20..27) → a revisão abre direto no trecho, o
+    # operador marca dois quadros e a intervenção fica registrada na execução.
+    calibrate(args)
+    maze, digest, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 40),
+                              missing_snout=set(range(20, 28)))
+    series = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert series.exit_code == 0, series.output + repr(series.exception)
+    assert _catalog_row(trial_id)["qualidade_pose"] == "revisao_pendente"
+
+    def act(session):
+        for frame in (22, 25):  # marcações esparsas; os vãos curtos são interpolados
+            while session.frame < frame:
+                session.next_frame()
+            session.mark(*_snout_px(frame))
+        session.confirm_segment()
+
+    result, seen = _review(trial_id, monkeypatch, act)
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    assert seen["start"] == (20, 27, 20)  # RN04: direto no trecho sinalizado
+    assert seen["overlay"][20]["centro_corpo"] == pytest.approx((180.0, 240.0))  # em px
+    assert "Revisão registrada na execução" in result.stdout
+
+    path = tmp_path / "interim" / f"trial_{trial_id}.parquet"
+    table = read_trajectory(path)
+    data, meta = table.to_pydict(), read_metadata(table)
+    review_id = meta["execucao_id"]
+    assert all(data["pose_valida"][20:28])
+    assert data["focinho_x_cm_image"][22] == pytest.approx(_snout_px(22)[0] / 10)
+    assert [data["interpolado"][f] for f in range(20, 28)] == [
+        True, True, False, True, True, False, True, True
+    ]
+    with get_connection() as conn:
+        stored = get_execution(conn, review_id)
+        corrections = list_pose_corrections(conn, trial_id)
+        coverage = conn.execute(
+            "SELECT cobertura_pose, cobertura_execucao_id FROM trials WHERE id = %s",
+            (trial_id,),
+        ).fetchone()
+    assert stored.kind == "processamento"
+    assert stored.parametros["comando"] == "pose review"
+    assert stored.parametros["trechos_revisados"] == [{"inicio": 20, "fim": 27}]
+    assert stored.parametros["correcoes_novas"] == 2
+    assert stored.metadata["qualidade_pose"]["quadros_corrigidos"] == 2
+    assert [(c.execucao_id, c.quadro, c.ponto) for c in corrections] == [
+        (review_id, 22, "focinho"), (review_id, 25, "focinho")
+    ]
+    assert coverage == (pytest.approx(1.0), review_id)
+    assert _catalog_row(trial_id)["qualidade_pose"] == "suficiente"
+
+    # Regenerar a série reaplica as correções do banco: o resultado não depende da janela.
+    again = runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim"))
+    assert again.exit_code == 0, again.output
+    assert all(read_trajectory(path).column("pose_valida").to_pylist()[20:28])
+    assert _catalog_row(trial_id)["qualidade_pose"] == "suficiente"
+    nothing = runner.invoke(cli.app, ["pose", "review", "--trial", str(trial_id)])
+    assert nothing.exit_code == 0 and "Nenhum trecho pendente" in nothing.stdout
+
+
+def test_pose_review_cancelled_saves_nothing(args, trial_id, tmp_path, monkeypatch):
+    calibrate(args)
+    maze, digest, fps, _ = _trial_row(trial_id)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial_id, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 40),
+                              missing_snout=set(range(20, 28)))
+    assert runner.invoke(cli.app, _series_args(run, trial_id, tmp_path / "interim")).exit_code == 0
+
+    def cancel(frames, session, **kwargs):
+        session.mark(1.0, 1.0)
+        raise cli.ReviewCancelled("Revisão cancelada; nenhuma correção foi gravada.")
+
+    monkeypatch.setattr(cli, "collect_review", cancel)
+    result = runner.invoke(cli.app, ["pose", "review", "--trial", str(trial_id)])
+    assert result.exit_code == 130
+    with get_connection() as conn:
+        assert list_pose_corrections(conn, trial_id) == []
+    assert _catalog_row(trial_id)["qualidade_pose"] == "revisao_pendente"
+
+
+def test_pose_review_requires_a_series(trial_id):
+    result = runner.invoke(cli.app, ["pose", "review", "--trial", str(trial_id)])
+    assert result.exit_code == 1
+    assert "pose series" in result.output
+
+
+def test_trial_below_coverage_after_review_is_marked_in_outputs(
+    args, maze_config_id, tmp_path, monkeypatch
+):
+    # Cenário 3: 7 quadros sem focinho em 100, revisados sem correção (animal fora de
+    # vista) → cobertura 0,93 → qualidade insuficiente no catálogo e nas métricas.
+    calibrate(args)
+    other_video = tmp_path / "trial_100_quadros.mp4"
+    _write_video(other_video, frame_count=5)  # outro conteúdo, outro hash
+    trial = _insert_trial(
+        maze_config_id, other_video, interval_from_seconds(0.0, 9.9, 10.0, manually_adjusted=True)
+    )
+    maze, digest, fps, _ = _trial_row(trial)
+    run = _fake_inference_run(tmp_path / "run", trial_id=trial, maze_config_id=maze,
+                              content_hash=digest, fps=fps, frames=(0, 99),
+                              missing_snout=set(range(40, 47)))
+    assert runner.invoke(cli.app, _series_args(run, trial, tmp_path / "interim")).exit_code == 0
+
+    result, _ = _review(trial, monkeypatch, lambda session: session.confirm_segment())
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    assert "QUALIDADE INSUFICIENTE" in result.stderr
+
+    row = _catalog_row(trial)
+    assert row["cobertura_pose"] == pytest.approx(0.93)
+    assert row["qualidade_pose"] == "insuficiente"
+
+    video_args = ["--video", str(other_video), "--maze-config-id", str(maze_config_id)]
+    processed = _process(video_args, trial, _straight_trajectory(tmp_path))
+    assert processed.exit_code == 0, processed.output + repr(processed.exception)
+    assert "INSUFICIENTE" in processed.stderr
+    output = json.loads(processed.stdout)
+    assert (output["cobertura_pose"], output["qualidade_pose"]) == (
+        pytest.approx(0.93), "insuficiente"
+    )
+    exported = runner.invoke(cli.app, ["metrics", "executions", "--trial", str(trial)])
+    assert exported.exit_code == 0, exported.output
+    (metric,) = json.loads(exported.stdout)
+    assert (metric["cobertura_pose"], metric["qualidade_pose"]) == (
+        pytest.approx(0.93), "insuficiente"
+    )

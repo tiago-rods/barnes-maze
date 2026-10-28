@@ -11,6 +11,7 @@ import pytest
 from barnes.io.video import (
     VideoLoadError,
     is_fps_variable,
+    iter_frames,
     load_trial_video,
     read_frame,
     real_fps_from_timestamps,
@@ -166,4 +167,41 @@ def test_read_frame_decoder_error_releases_capture(video_capture) -> None:
     capture.read.side_effect = cv2.error("invalid codec")
     with pytest.raises(VideoLoadError, match="decodificar o vídeo"):
         read_frame(path)
+    capture.release.assert_called_once()
+
+
+# --- iter_frames: leitura sequencial, sem seek (US-06, US-10) -------------------
+
+
+def _numbered_video(path, frame_count: int):
+    """Quadro i em cinza uniforme 12·i: níveis afastados o bastante para o mp4v."""
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (64, 48))
+    try:
+        for index in range(frame_count):
+            writer.write(np.full((48, 64, 3), 12 * index, dtype=np.uint8))
+    finally:
+        writer.release()
+    return path
+
+
+def test_iter_frames_yields_exactly_the_wanted_indices_in_order(tmp_path) -> None:
+    video = _numbered_video(tmp_path / "numerado.mp4", 20)
+    wanted = {2, 9, 15}
+    frames = list(iter_frames(video, 2, 15, wanted.__contains__))
+    assert [index for index, _ in frames] == [2, 9, 15]
+    for index, image in frames:
+        assert float(np.mean(image)) == pytest.approx(12 * index, abs=4)
+
+
+def test_iter_frames_stops_quietly_at_the_end_of_the_video(make_mp4) -> None:
+    video = make_mp4(frame_count=5)
+    assert [index for index, _ in iter_frames(video, 0, 50, lambda i: i >= 3)] == [3, 4]
+
+
+def test_iter_frames_never_seeks(video_capture) -> None:
+    path, capture, _ = video_capture
+    capture.grab.return_value = True
+    list(iter_frames(path, 3, 5, lambda i: True))
+    capture.set.assert_not_called()
+    assert capture.grab.call_count == 3  # quadros 0, 1 e 2 pulados sem decodificar
     capture.release.assert_called_once()

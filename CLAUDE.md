@@ -75,6 +75,13 @@ uv run barnes pose check-split           # fails naming any trial in >1 set
 uv run barnes pose report [--maze-config-id N]   # per-trial montagem from amostragem.csv
 uv run barnes metrics executions [--trial N [--history]]
 
+# US-09/US-10 (pose series -> trajectory parquet; review of flagged pose gaps)
+uv run barnes pose series --trial N --inference DIR   # + smoothing, short-gap interpolation, coverage
+uv run barnes pose review --trial N [--video PATH] [--todos] [--margem 10]
+    # OpenCV window opened directly at the first pending flagged segment:
+    # n/p segment, a/d frame, 1/2/3 point, click = mark, right/Backspace = undo,
+    # Enter = segment reviewed, s = save, Esc/x = cancel (nothing saved)
+
 # US-27 (provenance + catalog)
 uv run barnes execution show ID      # model, thresholds, params, commit, dirty, "reproduzivel"
 uv run barnes catalog list [--experiment-id N] [--verificar-hash] [--procurar-em DIR] [--json]
@@ -132,8 +139,9 @@ file is applied and committed in its own transaction and recorded in a
 instead. Schema mirrors `docs/DER.md`: `users → experiments → subjects`
 (1 experiment = 1 subject, no reuse across experiments) and
 `experiments → maze_configs` / `→ trials`. `maze_configs → holes`.
-`trials → trial_results → hole_visits`, `trials → evento_buraco`, and every
-`trial_results`/`evento_buraco` row → `execucao` (US-27, see below). Ownership chain uses
+`trials → trial_results → hole_visits`, `trials → evento_buraco`,
+`trials → correcao_pose` (US-10), and every
+`trial_results`/`evento_buraco`/`correcao_pose` row → `execucao` (US-27, see below). Ownership chain uses
 `ON DELETE CASCADE` throughout (deleting an experiment wipes everything
 under it) — deliberate, not an oversight. Enumerated fields (`phase`,
 `search_strategy`) and range fields (`angle_deg`) have `CHECK` constraints;
@@ -219,11 +227,15 @@ Postgres instead (`maze_configs` + `holes`, see Database schema below) —
 Configure a montagem with `barnes maze create` and reload it with
 `barnes maze show <id>`; never hand-edit geometry into a file.
 
-The `anotacao:` section (US-06) is the one deliberate exception to "null until
-G3": its values are **annotation-protocol** parameters owned by the team
-(which frames get sampled, region boundaries, split proportions, seed), not
-lab metric thresholds. They are read via `barnes.pose.protocol` and documented
-in `docs/protocolo-anotacao.md` — keep the two in sync.
+The `anotacao:` section (US-06) and the `pose:` section (US-10) are the
+deliberate exceptions to "null until G3": their values are parameters owned by
+the team, not lab metric thresholds. `anotacao:` holds the **annotation protocol**
+(which frames get sampled, region boundaries, split proportions, seed), read
+via `barnes.pose.protocol` and documented in `docs/protocolo-anotacao.md`.
+`pose:` holds the **pose-quality treatment** (minimum coverage, short-gap limit,
+smoothing window), read via `barnes.pose.quality.load_quality_params` and
+documented in `docs/contrato-trajetoria.md` ("Pós-processamento") and
+`docs/revisao-cards.md`. Keep each section in sync with its doc.
 
 ### Seed scripts live outside the installed package
 
@@ -240,8 +252,10 @@ via `uv run python -m database.seeds.<name>` from the repo root, never as a
 (US-01), `geometry` (US-04, plus US-05 reference frames) and
 `io/calibration.py`/`metrics` (US-02, scale and the
 distance/speed/route-efficiency conversions it gates) are implemented;
-`pose` includes US-06 annotation plus US-07 dataset/training and US-08
-evaluation/offline inference. `cli_pose.py` orchestrates these commands;
+`pose` includes US-06 annotation plus US-07 dataset/training, US-08
+evaluation/offline inference, US-09 series and US-10 quality/review.
+`cli_pose.py` orchestrates the US-07/08 commands (`pose series`/`pose review`
+live in `cli.py`);
 `db/pose_executions.py` records immutable `execucao` rows (migration 0006).
 
 US-09 trajectory (`pose/series.py` + `pose/trajectory.py`): `barnes pose series`
@@ -250,13 +264,33 @@ turns an inference run's `pose.csv` (pixels, `time_s` from video start) into
 (events), US-10 and metrics. The schema is a fixed `pyarrow.Schema` checked
 **on write and on read** (`TrajectoryContractError`); `docs/contrato-trajetoria.md`
 is its human copy — change both together and bump `CONTRACT_VERSION` on any
-incompatible change. Missing pose is NaN + `*_valido=false`, never forward-filled
-(filling is US-10, which sets `interpolado`). θ (`theta_deg_image`) =
+incompatible change. Missing pose is NaN + `*_valido=false`, never forward-filled.
+θ (`theta_deg_image`) =
 `atan2(dy, dx)` centro→focinho in image axes = `holes.angle_deg` convention.
 Positions are cm in image axes (`_image`, origin top-left). `t_s` is from the
 useful-interval start. Typer `--help` crashes on the Windows cp1252 console with
 characters like θ or → in a command's docstring/help — keep CLI help text
 cp1252-safe (use "theta", "->").
+
+US-10 pose quality (`pose/quality.py`, pure, in **pixels** before `build_series`):
+`pose series` builds the series as a pure function of the inference's `pose.csv`
++ every manual correction of the trial (`correcao_pose`) + the `pose:` config, in
+the fixed order corrections → median smoothing (within present runs, symmetric
+shrinking window) → linear interpolation of short interior gaps (per point;
+`interpolado = true`) → flag remaining long/edge gaps → coverage (three points,
+interpolated and corrected frames count). Never smooth an already-written series:
+regenerate from `pose.csv` (that is why the review re-runs the same path,
+`_load_series_inputs`/`_write_series` in `cli.py`). The quality report goes to the
+Parquet metadata `pos_processamento` (a row with `interpolado` without it is a
+contract error) and to `execucao.metadata.qualidade_pose`; coverage to
+`trials.cobertura_pose`. `pose review` (`pose/review_ui.py`: pure `ReviewSession`
++ thin cv2 loop, like `io/calibration_ui.py`) writes corrections + the new series
++ coverage under one `execucao` with `parametros.comando = 'pose review'`
+(`trechos_revisados` there un-pend segments). The quality mark (RN06) is
+**derived** by the VIEW `qualidade_pose` (0008), never stored as a flag; catalog
+and `trial_results` reads join it, and any new output (US-25) must too. Code that
+needs the exact frame at an index must use `io.video.iter_frames` (sequential, no
+seek), never `read_frame` (seek) — see the B-frames note below.
 
 US-27 provenance (`0007`): every stage that writes results must first write
 an `execucao` row — `kind='processamento'` via
@@ -296,7 +330,7 @@ recorded in `<trial>/amostragem.csv` by `pose sample`) — never one montagem fo
 all trials, since the camera can shift between recording days. `from_slp`
 rejects `.pkg.slp` (embedded images): its "video" is the .slp itself, which
 would turn into a fake trial key and defeat the leakage check. Sampling scan
-and PNG export both decode **sequentially from frame 0** (`_iter_frames`), never
+and PNG export both decode **sequentially from frame 0** (`io.video.iter_frames`), never
 via `CAP_PROP_POS_FRAMES` seek — with LNBio's B-frames a seek can land on a
 neighbor frame, so the exported PNG/`quadro` index wouldn't be the frame whose
 region was estimated. Re-sampling a trial refuses to touch existing PNGs

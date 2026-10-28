@@ -27,6 +27,7 @@ from barnes.pose.annotations import KEYPOINTS
 from barnes.pose.trajectory import (
     ANGLE_CONVENTION,
     CONTRACT_VERSION,
+    POSTPROCESSING_KEY,
     SCHEMA,
     validate_trajectory,
     with_metadata,
@@ -176,6 +177,8 @@ def build_series(
     content_hash: str,
     model_id: str,
     generated_at: datetime | None = None,
+    interpolated: np.ndarray | None = None,
+    postprocessing: dict[str, Any] | None = None,
 ) -> pa.Table:
     """Monta a série (x, y, θ, t) do trial no contrato de `barnes.pose.trajectory`.
 
@@ -184,7 +187,9 @@ def build_series(
       lacuna silenciosa.
     - Ponto não detectado fica NaN com `*_valido = false`; quadro sem focinho ou
       sem centro do corpo tem `pose_valida = false` e θ NaN — sem repetir o
-      quadro anterior (SCRUM-121). O preenchimento é da US-10.
+      quadro anterior (SCRUM-121). O preenchimento é da US-10
+      (`barnes.pose.quality`), que entrega a pose já tratada e a máscara
+      `interpolated`.
     - `t_s` = quadro / fps − início do intervalo útil (US-03 RN05). Com fps
       variável (US-01), `t_s` é aproximado: `fps_variavel` vai em toda linha e
       nos metadados (SCRUM-118).
@@ -202,13 +207,18 @@ def build_series(
         content_hash: Hash do vídeo (US-01), para os metadados.
         model_id: Modelo de pose usado (US-07), para os metadados.
         generated_at: Instante de geração (padrão: agora, UTC).
+        interpolated: Linhas com algum ponto preenchido pela US-10 (coluna
+            `interpolado`). Padrão: nenhuma.
+        postprocessing: Relatório de qualidade da US-10
+            (`PostProcessed.report`), gravado no metadado `pos_processamento`.
+            Obrigatório quando alguma linha é interpolada.
 
     Returns:
         A tabela, já validada contra o contrato e com os metadados.
 
     Raises:
         SeriesError: Se os quadros da pose não forem exatamente os esperados,
-            ou se fps/escala forem inválidos.
+            ou se fps/escala/máscara de interpolação forem inválidos.
     """
     if (
         isinstance(fps, bool)
@@ -238,6 +248,11 @@ def build_series(
         x_cm["centro_corpo"], y_cm["centro_corpo"], x_cm["focinho"], y_cm["focinho"]
     )
     rows = len(expected)
+    if interpolated is None:
+        interpolated = np.zeros(rows, dtype=bool)
+    interpolated = np.asarray(interpolated, dtype=bool)
+    if interpolated.shape != (rows,):
+        raise SeriesError(f"A máscara de interpolação deve ter {rows} linhas, uma por quadro.")
     columns: dict[str, Any] = {
         "trial_id": np.full(rows, trial_id, dtype=np.int32),
         "execucao_id": np.full(rows, execucao_id, dtype=np.int32),
@@ -254,26 +269,26 @@ def build_series(
         columns[f"{point}_valido"] = valid[point]
     columns["pose_valida"] = np.isfinite(theta)
     columns["theta_deg_image"] = theta
-    columns["interpolado"] = np.zeros(rows, dtype=bool)
+    columns["interpolado"] = interpolated
     columns["fps_variavel"] = np.full(rows, bool(fps_variable))
 
-    table = with_metadata(
-        pa.table(columns, schema=SCHEMA),
-        {
-            "contrato_versao": CONTRACT_VERSION,
-            "trial_id": trial_id,
-            "execucao_id": execucao_id,
-            "content_hash": content_hash,
-            "model_id": model_id,
-            "fps_real": float(fps),
-            "fps_variavel": bool(fps_variable),
-            "cm_per_px": float(cm_per_px),
-            "px_per_10cm": 10 / float(cm_per_px),
-            "intervalo_inicio_s": float(interval.start_s),
-            "intervalo_fim_s": float(interval.end_s),
-            "convencao_angular": ANGLE_CONVENTION,
-            "gerado_em": (generated_at or datetime.now(UTC)).isoformat(),
-        },
-    )
+    metadata = {
+        "contrato_versao": CONTRACT_VERSION,
+        "trial_id": trial_id,
+        "execucao_id": execucao_id,
+        "content_hash": content_hash,
+        "model_id": model_id,
+        "fps_real": float(fps),
+        "fps_variavel": bool(fps_variable),
+        "cm_per_px": float(cm_per_px),
+        "px_per_10cm": 10 / float(cm_per_px),
+        "intervalo_inicio_s": float(interval.start_s),
+        "intervalo_fim_s": float(interval.end_s),
+        "convencao_angular": ANGLE_CONVENTION,
+        "gerado_em": (generated_at or datetime.now(UTC)).isoformat(),
+    }
+    if postprocessing is not None:
+        metadata[POSTPROCESSING_KEY] = postprocessing
+    table = with_metadata(pa.table(columns, schema=SCHEMA), metadata)
     validate_trajectory(table)
     return table

@@ -17,6 +17,8 @@ erDiagram
     EXECUCAO ||--o| TRIAL_RESULT : "produced (NOT NULL, same trial)"
     TRIAL ||--o{ EVENTO_BURACO : "has events"
     EXECUCAO ||--o{ EVENTO_BURACO : "detected (NOT NULL, same trial)"
+    TRIAL ||--o{ CORRECAO_POSE : "manual pose fixes (US-10)"
+    EXECUCAO ||--o{ CORRECAO_POSE : "review session (NOT NULL, same trial)"
     HOLE ||--o{ EVENTO_BURACO : "at"
     TRIAL_RESULT ||--o{ HOLE_VISIT : "ordered sequence of pokes"
     HOLE ||--o{ HOLE_VISIT : "visited in (across trials sharing its config)"
@@ -93,10 +95,10 @@ erDiagram
         int frame_count
         float duration_s
         datetime loaded_at "US-01 — quando a carga do vídeo foi feita"
-        string trajectory_path "US-09 — data/interim/trial_<id>.parquet atual (contrato em docs/contrato-trajetoria.md)"
+        string trajectory_path "US-09/US-10 — data/interim/trial_<id>.parquet atual (contrato em docs/contrato-trajetoria.md)"
         float rotation_deg "US-05 RN01 — rotação da plataforma, 0-360, sem default (NULL = não registrada)"
-        float cobertura_pose "US-27/US-10 — fração 0-1 de quadros com pose válida; NULL até a US-10"
-        int cobertura_execucao_id FK "US-27 — execução (do mesmo trial) que calculou a cobertura"
+        float cobertura_pose "US-10 RN03 — fração 0-1 dos quadros com os 3 pontos (contando interpolados e corrigidos); NULL sem série"
+        int cobertura_execucao_id FK "US-27 — execução (do mesmo trial) que calculou a cobertura; seu metadata.qualidade_pose alimenta a VIEW qualidade_pose"
         bigint file_size_bytes "US-27 RN04 — checagem barata de arquivo alterado; NULL antes da 0007"
     }
     EXECUCAO {
@@ -128,6 +130,15 @@ erDiagram
         float t_s "segundos desde o início do intervalo útil (US-03 RN05)"
         float distancia_cm "US-11 — focinho→buraco, opcional"
         float angulo_deg "US-11 — cabeça→buraco, 0-360, opcional"
+    }
+    CORRECAO_POSE {
+        int id PK
+        int trial_id FK
+        int execucao_id FK "NOT NULL — FK composta (execucao_id, trial_id); a sessão de pose review"
+        int quadro ">= 0, índice no vídeo"
+        string ponto "focinho|centro_corpo|base_cauda"
+        float x_px "posição marcada à mão, px do quadro original, finita >= 0"
+        float y_px
     }
     TRIAL_RESULT {
         int id PK
@@ -200,11 +211,27 @@ mantidos — renomear quebraria bancos já em uso — e a correspondência é:
   à US-27 recebeu uma execução com `metadata.legado = true` (sem commit nem
   limiares), que nunca é tomada como reproduzível.
 - **Cobertura de pose (US-10).** `trials.cobertura_pose` + `cobertura_execucao_id`,
-  nulos até a US-10. As correções manuais da US-10 devem ir numa tabela própria
-  (sugestão: `correcao_pose(id, trial_id, execucao_id NOT NULL, quadro, ...)`, com a
-  mesma FK composta), criada pela migração da US-10.
+  gravados por `pose series`/`pose review` (ver a seção da US-10 abaixo).
 - `trials.status` (da 0001) não é usado: a situação no catálogo é derivada
   (ver `barnes.db.catalog`).
+
+## US-10 — correções manuais e qualidade de pose (migração `0008_us10_correcao_pose.sql`)
+
+- **`correcao_pose`**: um ponto marcado à mão por linha (quadro, ponto, x/y em pixels do
+  vídeo original), sempre ligado à execução da sessão de revisão (`kind =
+  'processamento'`, `parametros.comando = 'pose review'`) do **mesmo** trial, pela mesma
+  FK composta de `trial_results`/`evento_buraco`. `UNIQUE(execucao_id, quadro, ponto)`.
+  Imutável por trigger, como `execucao`: corrigir de novo é outra sessão, e ao aplicar
+  vale a correção da execução mais recente. A execução de revisão é o registro da
+  intervenção (RN05): trechos revisados (`parametros.trechos_revisados`), número de
+  correções, commit e horário.
+- **VIEW `qualidade_pose`** (`trial_id`, `cobertura_pose`, `cobertura_execucao_id`,
+  `cobertura_minima`, `trechos_pendentes`, `qualidade`). A marcação de qualidade (RN06) é
+  **derivada** da cobertura do trial e do relatório gravado na execução que a calculou
+  (`execucao.metadata.qualidade_pose`): `revisao_pendente` se há trecho sinalizado não
+  revisado, `insuficiente` se a cobertura ficou abaixo do mínimo vigente naquela
+  execução, senão `suficiente`, e NULL sem cobertura. É a fonte única da marcação para
+  o catálogo, `metrics executions`/`metrics process` e a exportação (US-25).
 
 <!--
 Pontos identificados na revisão do schema mas propositalmente adiados —

@@ -251,6 +251,16 @@ contrato de [`docs/contrato-trajetoria.md`](docs/contrato-trajetoria.md):
 uv run barnes pose series --trial 1 --inference data/pose/inference/inferencia-<id>
 ```
 
+O mesmo comando trata as falhas de pose (US-10). Suaviza os pontos, interpola as
+lacunas curtas (marcadas `interpolado`) e sinaliza as longas, com os limites da seção
+`pose:` de `configs/default.yaml`. Também grava a cobertura de pose do trial. Os
+trechos sinalizados são revisados numa janela que abre direto neles, e as correções
+ficam registradas numa execução:
+
+```powershell
+uv run barnes pose review --trial 1
+```
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:

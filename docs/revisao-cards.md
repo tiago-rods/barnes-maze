@@ -164,3 +164,50 @@ Decisões (contrato completo em [contrato-trajetoria.md](contrato-trajetoria.md)
   com ruído de 1 px), não limiar do laboratório.
 - **SCRUM-123 pendente**: não há modelo treinado nem os 3 vídeos representativos
   (ver `docs/status-us07-us08.md`).
+
+## US-10 — suavização, interpolação e revisão de falhas de pose (outubro de 2026)
+
+Decisões (detalhes no [contrato da trajetória](contrato-trajetoria.md), seção
+"Pós-processamento", no [DER](DER.md) e no [manual](manual-usuario.md) §4.6 e §4.7):
+
+- **O pós-processamento roda dentro de `barnes pose series`.** A série passa a ser
+  sempre função do `pose.csv` da inferência, das correções manuais do trial e de
+  `configs/`. Regenerar dá o mesmo resultado e nunca suaviza duas vezes. A série bruta
+  continua reproduzível pelo `pose.csv`, cujo hash é conferido. `barnes pose review`
+  regenera pelo mesmo caminho.
+- **Cobertura (RN03)** = fração dos quadros do intervalo útil com os **três** pontos
+  (focinho, centro do corpo, base da cauda), **contando os interpolados e os
+  corrigidos**. A cobertura só da detecção e a fração interpolada saem juntas no
+  relatório. Lacunas curtas não derrubam o trial; só as longas não resolvidas derrubam.
+- **Valores propostos pelo grupo** na seção `pose:` de `configs/default.yaml`:
+  `lacuna_curta_max_quadros: 5` (0,2 s a 25 fps), suavização por mediana com
+  `janela_quadros: 5`, `cobertura_minima: 0.98`. Como `anotacao:`, é exceção explícita
+  ao "null até G3": são parâmetros de tratamento da pose, não limiares de métrica.
+- **Um limite só (SCRUM-125):** lacuna curta tem até o limite; longa é qualquer uma
+  maior. Lacuna na **borda** do intervalo (sem quadro válido de um dos lados) nunca é
+  interpolada e é sempre sinalizada.
+- **Lacunas por ponto:** faltar só a base da cauda preenche só a base da cauda; a linha
+  fica `interpolado = true` se algum ponto dela foi preenchido.
+- **Suavização antes da interpolação**, só dentro de trechos contínuos (nunca atravessa
+  lacuna), com janela que encolhe simetricamente nas pontas. Assim o quadro vizinho da
+  lacuna, que é o apoio da interpolação, não é deslocado. θ é recalculado dos pontos
+  suavizados, sem média de ângulos.
+- **Revisão (RN04):** janela OpenCV (como a calibração), não PySide6, conforme o plano
+  de interface gráfica. Abre direto no primeiro trecho pendente e navega só pelos
+  trechos, com margem de contexto. Os quadros são lidos numa passada sequencial, sem
+  seek, por causa dos B-frames (`io.video.iter_frames`, promovido de `pose/sampling.py`).
+  O operador pode marcar quadros esparsos, e os vãos curtos entre as marcações são
+  interpolados. Um trecho sem animal visível pode ser dado por revisado sem correção.
+- **Correções (RN05)** na tabela `correcao_pose` (migração 0008), imutável, sempre
+  ligada à execução da sessão de revisão do mesmo trial (FK composta). A execução
+  (`parametros.comando = 'pose review'`) é o registro da intervenção. Vale a correção
+  da sessão mais recente.
+- **Qualidade (RN06) derivada, não gravada:** VIEW `qualidade_pose`, a partir da
+  cobertura e do relatório da execução que a calculou: `revisao_pendente`,
+  `insuficiente` ou `suficiente`. Catálogo, `metrics process`, `metrics executions` e a
+  futura US-25 leem dela.
+- **RN07 (fps instável):** a US-01 só detecta fps variável por trial. Se o trial tem
+  `fps_variavel` e houve interpolação, o relatório de qualidade leva a ressalva.
+- **Contrato da trajetória continua na versão 1:** `interpolado` passou a ser usado como
+  previsto e entrou o metadado opcional `pos_processamento`. Linha interpolada sem esse
+  metadado é recusada.

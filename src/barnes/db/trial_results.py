@@ -12,6 +12,10 @@ leitura, comparando `calculated_at`/`px_per_10cm_used` contra a escala atual
 da montagem (`maze_configs.calibration_date`/`px_per_10cm`), no mesmo
 espírito do comentário da 0001 sobre `measured_error_pct` ser validado pela
 aplicação, não pelo banco.
+
+Cada resultado leva junto a cobertura de pose atual do trial e a marcação de
+qualidade (US-10 RN06), lidas da VIEW `qualidade_pose` (migração 0008): um trial
+de qualidade insuficiente nunca aparece nas saídas sem a marcação.
 """
 
 from __future__ import annotations
@@ -20,6 +24,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import psycopg
+
+from barnes.pose.quality import PoseQuality
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,8 @@ class StoredTrialResult:
     calculated_at: datetime | None
     is_stale: bool
     execucao_id: int
+    cobertura_pose: float | None = None
+    qualidade_pose: PoseQuality | None = None
 
 
 def insert_trial_result(
@@ -99,10 +107,13 @@ _SELECT_WITH_STALENESS = """
            (tr.calculated_at IS NULL
                OR tr.calculated_at::date < mc.calibration_date
                OR tr.px_per_10cm_used IS DISTINCT FROM mc.px_per_10cm) AS is_stale,
-           tr.execucao_id
+           tr.execucao_id,
+           qp.cobertura_pose,
+           qp.qualidade AS qualidade_pose
     FROM trial_results tr
     JOIN trials t ON t.id = tr.trial_id
     JOIN maze_configs mc ON mc.id = t.maze_config_id
+    LEFT JOIN qualidade_pose qp ON qp.trial_id = t.id
 """
 
 # Mais recente primeiro; `id` desempata cálculos no mesmo instante.
@@ -110,7 +121,8 @@ _LATEST_FIRST = " ORDER BY tr.trial_id, tr.calculated_at DESC NULLS LAST, tr.id 
 
 
 def _row_to_result(row: tuple) -> StoredTrialResult:
-    return StoredTrialResult(*row)
+    *fields, quality = row
+    return StoredTrialResult(*fields, None if quality is None else PoseQuality(quality))
 
 
 def get_trial_result(conn: psycopg.Connection, trial_id: int) -> StoredTrialResult | None:
