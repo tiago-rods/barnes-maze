@@ -30,7 +30,8 @@ from barnes.db.calibration import (
 from barnes.db.catalog import list_catalog
 from barnes.db.connection import DatabaseConfigError, apply_migrations, get_connection
 from barnes.db.executions import get_execution, record_processing_execution
-from barnes.db.maze_configs import get_maze_config, insert_maze_config
+from barnes.db.hole_events import insert_hole_event
+from barnes.db.maze_configs import get_hole_ids, get_maze_config, insert_maze_config
 from barnes.db.pose_corrections import (
     REVIEW_COMMAND,
     insert_pose_corrections,
@@ -53,6 +54,8 @@ from barnes.db.trials import (
     set_trajectory_path,
     set_trial_rotation,
 )
+from barnes.events.discovery import DEFAULT_CONFIG_PATH as DISCOVERY_DEFAULT_CONFIG_PATH
+from barnes.events.discovery import detect_discoveries, load_discovery_params
 from barnes.geometry.holes import Hole, MazeGeometry, generate_holes
 from barnes.geometry.reference_frame import (
     ReferenceFrame,
@@ -159,6 +162,9 @@ app.add_typer(catalog_app, name="catalog")
 
 pose_app = typer.Typer(help="Anotação, treino, avaliação e inferência local de pose (US-06/07/08).")
 app.add_typer(pose_app, name="pose")
+
+events_app = typer.Typer(help="Eventos por buraco a partir da trajetória (US-11).")
+app.add_typer(events_app, name="events")
 
 
 @db_app.command("migrate")
@@ -2003,6 +2009,100 @@ def pose_report(
             typer.echo(f"Reprovado: nenhuma anotação na(s) região(ões) {names}.", err=True)
             raise typer.Exit(code=1)
         typer.echo("Cobertura OK: as três regiões têm quadros anotados.")
+
+
+@events_app.command("discover")
+def events_discover(
+    trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config", help="YAML com a seção 'encontrar' dos limiares de descoberta (US-11)."
+        ),
+    ] = DISCOVERY_DEFAULT_CONFIG_PATH,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Detectar o evento de descoberta (D) de cada buraco a partir da trajetória (US-11).
+
+    Lê só a trajetória já extraída por `barnes pose series` — nunca o vídeo: recalcular
+    depois de revisar um limiar em `--config` é rodar de novo, sem reprocessar nada
+    (RN04). Grava um evento por buraco cujo primeiro quadro satisfaz os dois limiares
+    de distância e orientação da cabeça (RN01); buracos nunca descobertos não geram
+    linha nenhuma (Cenário 2), e só o primeiro encontro de cada buraco é registrado
+    (RN03).
+    """
+    started_at = datetime.now(UTC)
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            stored = get_trial(conn, trial)
+            if stored.trajectory_path is None:
+                raise ValueError(
+                    f"O trial #{trial} ainda não tem série de pose: rode `barnes pose series` "
+                    "antes de detectar eventos."
+                )
+            geometry = get_maze_config(conn, stored.maze_config_id)
+            calibration = require_calibration(conn, stored.maze_config_id)
+            hole_ids = get_hole_ids(conn, stored.maze_config_id)
+        table = read_trajectory(stored.trajectory_path)
+        params = load_discovery_params(config)
+        events = detect_discoveries(table, geometry, calibration.cm_per_px, params)
+        thresholds = thresholds_snapshot()
+        source = git_revision_record(PACKAGE_DIR)
+        git = GitState.from_record(source)
+        parameters = {
+            "comando": "events discover",
+            "trajectory": str(stored.trajectory_path),
+            "trajectory_sha256": file_sha256(stored.trajectory_path),
+            "config": str(config),
+            "distancia_cm": params.distance_cm,
+            "angulo_graus": params.angle_deg,
+        }
+        with get_connection(dsn) as conn:
+            # Execução e eventos na mesma transação: nunca uns sem a outra.
+            execucao_id = record_processing_execution(
+                conn,
+                trial_id=trial,
+                maze_config_id=stored.maze_config_id,
+                parameters=parameters,
+                thresholds=thresholds,
+                git=git,
+                video_hash=stored.content_hash,
+                started_at=started_at,
+                duration_seconds=(datetime.now(UTC) - started_at).total_seconds(),
+                metadata={"source": source},
+            )
+            for event in events:
+                insert_hole_event(
+                    conn,
+                    trial_id=trial,
+                    hole_id=hole_ids[event.hole_number],
+                    execucao_id=execucao_id,
+                    tipo="descoberta",
+                    quadro=event.quadro,
+                    t_s=event.t_s,
+                    distancia_cm=event.distancia_cm,
+                    angulo_deg=event.angulo_deg,
+                )
+        _warn_if_not_reproducible(git, execucao_id)
+        typer.echo(
+            json.dumps(
+                {
+                    "execucao_id": execucao_id,
+                    "eventos": [
+                        {
+                            "buraco": event.hole_number,
+                            "quadro": event.quadro,
+                            "t_s": event.t_s,
+                            "distancia_cm": event.distancia_cm,
+                            "angulo_deg": event.angulo_deg,
+                        }
+                        for event in events
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
 
 register_pose_commands(pose_app, _command_errors)
