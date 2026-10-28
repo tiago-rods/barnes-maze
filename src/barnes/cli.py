@@ -2046,7 +2046,9 @@ def events_discover(
         table = read_trajectory(stored.trajectory_path)
         params = load_discovery_params(config)
         events = detect_discoveries(table, geometry, calibration.cm_per_px, params)
-        thresholds = thresholds_snapshot()
+        # Congela o arquivo efetivamente usado (--config), não sempre o de produção:
+        # senão `execucao.limiares` mentiria sobre qual valor gerou este resultado.
+        thresholds = thresholds_snapshot(config)
         source = git_revision_record(PACKAGE_DIR)
         git = GitState.from_record(source)
         parameters = {

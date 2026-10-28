@@ -13,6 +13,7 @@ import os
 
 import cv2
 import numpy as np
+import pyarrow as pa
 import pytest
 from typer.testing import CliRunner
 
@@ -20,14 +21,27 @@ from barnes import cli
 from barnes.db.calibration import get_calibration
 from barnes.db.connection import get_connection
 from barnes.db.executions import get_execution
+from barnes.db.hole_events import list_hole_events
+from barnes.db.maze_configs import insert_maze_config
 from barnes.db.pose_corrections import list_pose_corrections
 from barnes.db.trial_results import get_trial_result
-from barnes.db.trials import insert_trial
+from barnes.db.trials import insert_trial, set_trajectory_path
+from barnes.geometry.holes import generate_holes
 from barnes.io.calibration_ui import CalibrationCancelled
 from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
+from barnes.pose.annotations import KEYPOINTS
 from barnes.pose.dataset import file_sha256, git_revision_record
-from barnes.pose.trajectory import read_metadata, read_trajectory
+from barnes.pose.trajectory import (
+    ANGLE_CONVENTION,
+    CONTRACT_VERSION,
+    SCHEMA,
+    read_metadata,
+    read_trajectory,
+    trajectory_path,
+    with_metadata,
+    write_trajectory,
+)
 from barnes.provenance import PACKAGE_DIR, thresholds_snapshot
 
 pytestmark = pytest.mark.skipif(
@@ -740,3 +754,208 @@ def test_trial_below_coverage_after_review_is_marked_in_outputs(
     assert (metric["cobertura_pose"], metric["qualidade_pose"]) == (
         pytest.approx(0.93), "insuficiente"
     )
+
+
+# --- `events discover` (US-11) ------------------------------------------------------
+
+
+@pytest.fixture
+def events_maze_config_id():
+    """Montagem real com 4 buracos (diferente de `maze_config_id`, que não tem buracos)."""
+    conn = get_connection()
+    user_id = None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
+                ("teste-events-cli@example.com", "Operador de teste"),
+            )
+            user_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO experiments (user_id, name) VALUES (%s, %s) RETURNING id",
+                (user_id, "Experimento events CLI"),
+            )
+            experiment_id = cur.fetchone()[0]
+        geometry = generate_holes(
+            center_x_px=320.0,
+            center_y_px=240.0,
+            platform_radius_px=200.0,
+            hole_count=4,
+            start_angle_deg=0.0,
+            target_hole_number=0,
+            hole_radius_px=15.0,
+        )
+        config_id = insert_maze_config(
+            conn,
+            experiment_id=experiment_id,
+            name="montagem events CLI",
+            arena_diameter_cm=90.0,
+            hole_diameter_cm=5.0,
+            geometry=geometry,
+        )
+        conn.commit()
+        yield config_id
+    finally:
+        if user_id is not None:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            conn.commit()
+        conn.close()
+
+
+@pytest.fixture
+def events_trial_id(events_maze_config_id, video):
+    return _insert_trial(
+        events_maze_config_id, video, interval_from_seconds(0.0, 4.0, 10.0, manually_adjusted=True)
+    )
+
+
+@pytest.fixture
+def events_args(video, events_maze_config_id, monkeypatch):
+    monkeypatch.setattr(
+        cli,
+        "collect_segments",
+        lambda *args, **kwargs: (((10, 10), (210, 10)), ((10, 30), (10, 230))),
+    )
+    return ["--video", str(video), "--maze-config-id", str(events_maze_config_id)]
+
+
+def _write_discovery_trajectory(trial_id, *, cm_per_px, focinho_xy_cm, theta_deg, destination):
+    """Trajetória de 3 quadros, o focinho se aproximando de `focinho_xy_cm` no último."""
+    n = 3
+    far_x, far_y = 0.0, 0.0
+    data = {
+        "trial_id": [trial_id] * n,
+        "execucao_id": [1] * n,
+        "quadro": [0, 1, 2],
+        "t_s": [0.0, 0.04, 0.08],
+    }
+    for point in KEYPOINTS:
+        data[f"{point}_x_cm_image"] = [far_x, far_x, focinho_xy_cm[0]]
+        data[f"{point}_y_cm_image"] = [far_y, far_y, focinho_xy_cm[1]]
+        data[f"{point}_confianca"] = [0.9] * n
+        data[f"{point}_valido"] = [True] * n
+    data["pose_valida"] = [True] * n
+    data["theta_deg_image"] = [theta_deg] * n
+    data["interpolado"] = [False] * n
+    data["fps_variavel"] = [False] * n
+    table = pa.table(data, schema=SCHEMA)
+    metadata = {
+        "contrato_versao": CONTRACT_VERSION,
+        "trial_id": trial_id,
+        "execucao_id": 1,
+        "content_hash": "a" * 64,
+        "model_id": "teste",
+        "fps_real": 25.0,
+        "fps_variavel": False,
+        "cm_per_px": cm_per_px,
+        "px_per_10cm": 10 / cm_per_px,
+        "intervalo_inicio_s": 0.0,
+        "intervalo_fim_s": 0.08,
+        "convencao_angular": ANGLE_CONVENTION,
+        "gerado_em": "2026-01-01T00:00:00+00:00",
+    }
+    return write_trajectory(with_metadata(table, metadata), destination)
+
+
+def _discovery_config(tmp_path, *, distance_cm=5.0, angle_deg=30.0):
+    path = tmp_path / "limiares.yaml"
+    path.write_text(
+        f"encontrar:\n  distancia_cm: {distance_cm}\n  angulo_graus: {angle_deg}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_events_discover_persists_hole_event_and_execution(
+    events_args, events_maze_config_id, events_trial_id, tmp_path
+):
+    calibrate(events_args)  # 20 cm / 200 px = 0.1 cm/px (US-02)
+
+    # Buraco 0 a (320+200, 240) px = (52.0, 24.0) cm com cm_per_px=0.1; o focinho
+    # termina a 2 cm dele, de frente (theta=0), dentro dos dois limiares de teste.
+    destination = _write_discovery_trajectory(
+        events_trial_id,
+        cm_per_px=0.1,
+        focinho_xy_cm=(50.0, 24.0),
+        theta_deg=0.0,
+        destination=trajectory_path(tmp_path, events_trial_id),
+    )
+    with get_connection() as conn:
+        set_trajectory_path(conn, events_trial_id, str(destination))
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "events",
+            "discover",
+            "--trial",
+            str(events_trial_id),
+            "--config",
+            str(_discovery_config(tmp_path)),
+        ],
+    )
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    output = json.loads(result.stdout)
+    assert output["eventos"] == [
+        {
+            "buraco": 0,
+            "quadro": 2,
+            "t_s": 0.08,
+            "distancia_cm": pytest.approx(2.0),
+            "angulo_deg": pytest.approx(0.0),
+        }
+    ]
+
+    with get_connection() as conn:
+        events = list_hole_events(conn, trial_id=events_trial_id)
+        execution = get_execution(conn, output["execucao_id"])
+    assert len(events) == 1
+    (event,) = events
+    assert event.tipo == "descoberta"
+    assert event.quadro == 2
+    assert event.distancia_cm == pytest.approx(2.0)
+    assert execution.kind == "processamento"
+    assert execution.video_hash is not None
+    assert execution.limiares["encontrar"]["distancia_cm"] == pytest.approx(5.0)
+    assert execution.parametros["distancia_cm"] == pytest.approx(5.0)
+
+
+def test_events_discover_without_series_is_refused(events_trial_id):
+    result = runner.invoke(
+        cli.app, ["events", "discover", "--trial", str(events_trial_id)]
+    )
+    assert result.exit_code != 0
+    assert "pose series" in result.output
+
+
+def test_events_discover_recomputes_without_opening_video(
+    events_args, events_maze_config_id, events_trial_id, tmp_path, monkeypatch
+):
+    calibrate(events_args)
+    destination = _write_discovery_trajectory(
+        events_trial_id,
+        cm_per_px=0.1,
+        focinho_xy_cm=(50.0, 24.0),
+        theta_deg=0.0,
+        destination=trajectory_path(tmp_path, events_trial_id),
+    )
+    with get_connection() as conn:
+        set_trajectory_path(conn, events_trial_id, str(destination))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Recalcular eventos a partir do Parquet não deve decodificar o vídeo.")
+
+    monkeypatch.setattr(cli, "read_frame", forbidden)
+    result = runner.invoke(
+        cli.app,
+        [
+            "events",
+            "discover",
+            "--trial",
+            str(events_trial_id),
+            "--config",
+            str(_discovery_config(tmp_path)),
+        ],
+    )
+    assert result.exit_code == 0, result.output + repr(result.exception)
