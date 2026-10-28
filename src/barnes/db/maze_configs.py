@@ -158,3 +158,25 @@ def get_maze_config(conn: psycopg.Connection, maze_config_id: int) -> MazeGeomet
         platform_radius_px=platform_radius_px,
         holes=holes,
     )
+
+
+def get_hole_ids(conn: psycopg.Connection, maze_config_id: int) -> dict[int, int]:
+    """Mapeia `hole_number -> holes.id` de uma montagem (US-11).
+
+    `MazeGeometry`/`Hole` (`barnes.geometry.holes`) só conhecem `hole_number`
+    (0..N-1); quem persiste um evento por buraco (`evento_buraco.hole_id`)
+    precisa da chave primária real, daí esta função separada em vez de
+    acoplar a geometria pura ao id do banco.
+
+    Args:
+        conn: Conexão psycopg aberta.
+        maze_config_id: Id da `maze_configs` cujos buracos serão mapeados.
+
+    Returns:
+        Dicionário `hole_number -> id`; vazio se a montagem não tiver buracos.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT hole_number, id FROM holes WHERE maze_config_id = %s", (maze_config_id,)
+        )
+        return dict(cur.fetchall())
