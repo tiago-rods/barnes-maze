@@ -1,10 +1,9 @@
 # Roteiro de demonstração ao cliente (LNBio): Sprints 1 e 2
 
 Comandos, na ordem, para demonstrar **os cards do Sprint 1 (US-01 a US-06)** e
-**os do Sprint 2 entregues até agora (US-07, US-08, US-09, US-10 e US-27)**. O
-US-11, também do Sprint 2, ainda não foi feito. Cada passo indica o cenário de
-aceite do card (`docs/CARDS.md`, com os ajustes de `docs/revisao-cards.md`) que
-ele demonstra.
+**os do Sprint 2 entregues até agora (US-07, US-08, US-09, US-10, US-27 e
+US-11)**. Cada passo indica o cenário de aceite do card (`docs/CARDS.md`, com
+os ajustes de `docs/revisao-cards.md`) que ele demonstra.
 
 | Sprint | Card | Tema | Seção |
 |---|---|---|---|
@@ -19,11 +18,13 @@ ele demonstra.
 | 2 | US-09 | Série de posição e orientação da cabeça | B.12 |
 | 2 | US-10 | Suavização, interpolação e revisão de falhas de pose | B.13 |
 | 2 | US-27 | Proveniência das execuções e catálogo de trials | B.8, B.14 |
+| 2 | US-11 | Detecção do evento de descoberta (D) | B.15 |
 
 A ordem das seções segue a dependência entre os cards, não o número deles: a
-montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela,
-e o catálogo (US-27) fecha a demonstração, quando já há métricas, série de pose e
-revisão para mostrar.
+montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela;
+o catálogo (US-27) reúne o que já foi processado quando já há métricas, série de
+pose e revisão para mostrar; e o evento de descoberta (US-11, B.15) fecha a
+demonstração, porque depende da série de pose da B.12/B.13.
 
 **O que não dá para mostrar com dados reais ainda (diga isso ao cliente):** não
 existe modelo de pose treinado. A anotação real (US-06) não aconteceu, e o treino
@@ -1435,6 +1436,104 @@ Docker só por conveniência.
 
 ---
 
+### B.15 US-11 — Detecção do evento de descoberta (D)
+
+O que dizer antes: a descoberta (D) é o primeiro quadro em que o focinho fica
+perto do buraco **e** a cabeça está orientada para ele — os dois limiares vêm
+de `configs/default.yaml`, nunca do código (RN02). O cálculo lê só a
+trajetória já tratada da B.12/B.13 (`$serie`), nunca o vídeo: mudar um limiar
+e rodar de novo não reprocessa nada (RN04).
+
+**Os limiares são PROVISÓRIOS — diga isso ao cliente.** O laboratório ainda
+não respondeu C1 em G3; os valores abaixo são uma faixa comum de rastreamento
+comportamental de roedores, sem citação verificada
+(`docs/definicoes-metricas.md`, seção 1):
+
+```powershell
+Select-String -Path configs\default.yaml -Pattern "encontrar:|distancia_cm|angulo_graus|calibrado_contra_anotacao"
+```
+
+**Cenário 1 — descoberta detectada.** Roda sobre a série já tratada do trial 1
+(B.13, sem trechos pendentes):
+
+```powershell
+uv run barnes events discover --trial $t1
+```
+
+O esperado: uma linha por buraco cujo focinho chegou a menos de 3 cm,
+orientado a menos de 30° da direção do buraco — o primeiro quadro que
+satisfez os dois ao mesmo tempo. Se a lista vier vazia, é porque, neste trial,
+a simulação de contraste não chegou perto o bastante de nenhum buraco com a
+cabeça virada para ele — isso também é uma demonstração válida: contornar a
+borda sem orientar a cabeça não gera evento (**Cenário 2**).
+
+**Cenário 3 — recálculo sem reprocessar o vídeo.** Prove que o vídeo nem
+precisa estar no lugar: mova-o e rode de novo. O comando usa só `$serie` e o
+hash já catalogado, nunca lê `$v1`:
+
+```powershell
+Move-Item $v1 data\raw\movidos\renomeado.mp4
+```
+```powershell
+uv run barnes events discover --trial $t1
+```
+
+O esperado: o mesmo resultado de antes, sem nenhum erro — ao contrário do
+`metrics process` (B.14), que exige o vídeo para conferir a resolução. Devolva
+o vídeo ao lugar:
+
+```powershell
+Move-Item data\raw\movidos\renomeado.mp4 $v1
+```
+
+**O evento fica registrado, ligado ao buraco e à execução que o gerou:**
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT h.hole_number, e.tipo, e.quadro, round(e.t_s::numeric,2) AS t_s, round(e.distancia_cm::numeric,2) AS distancia_cm, round(e.angulo_deg::numeric,1) AS angulo_deg FROM evento_buraco e JOIN holes h ON h.id = e.hole_id WHERE e.trial_id = $t1 ORDER BY e.t_s"
+```
+```powershell
+$exec_evt = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "SELECT max(id) FROM execucao WHERE trial_id = $t1 AND parametros->>'comando' = 'events discover'").Trim()
+```
+```powershell
+uv run barnes execution show $exec_evt
+```
+
+O que mostrar: `"kind": "processamento"`, os `limiares` vigentes (o
+`configs/default.yaml` inteiro, com o aviso de que são provisórios dentro
+dele) e os `parametros` com `distancia_cm`/`angulo_graus` efetivamente usados.
+
+**Recalcular com outro limiar, sem tocar no vídeo nem no Parquet.** Um YAML à
+parte, só para este teste, com limiares bem mais largos:
+
+```powershell
+Set-Content -Path $interim\limiares_teste.yaml -Value "encontrar:","  distancia_cm: 20","  angulo_graus: 90" -Encoding utf8
+```
+```powershell
+uv run barnes events discover --trial $t1 --config $interim\limiares_teste.yaml
+```
+
+O esperado: a mesma lista de antes ou mais buracos — o limiar maior encontra
+mais cedo e com mais tolerância. As duas execuções ficam lado a lado,
+consultáveis, sem o vídeo ter sido reaberto:
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT execucao_id, hole_id, quadro, t_s FROM evento_buraco WHERE trial_id = $t1 ORDER BY execucao_id, hole_id"
+```
+
+**Testes do US-11**: carregamento dos limiares (recusa `null`/fora de faixa),
+cálculo de distância/ângulo por quadro (Cenário 1/2, RN03) e a prova de que o
+recálculo nunca abre o vídeo:
+
+```powershell
+uv run pytest tests/events/test_discovery.py tests/db/test_maze_configs.py -v
+```
+
+O que mostrar no documento: a nota da US-11 em `docs/definicoes-metricas.md`
+(seção 1, linhas 1-2) — os limiares são provisórios até o laboratório
+responder C1.
+
+---
+
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:
@@ -1443,8 +1542,8 @@ Volte o terminal para o banco de desenvolvimento:
 Remove-Item Env:BARNES_DATABASE_URL, Env:BARNES_TEST_DATABASE_URL
 ```
 
-Confira que o vídeo movido na B.14 voltou ao lugar e que o arquivo de "alteração
-não commitada" foi apagado. O esperado é `True` e a lista vazia:
+Confira que o vídeo movido na B.14 e na B.15 voltou ao lugar e que o arquivo de
+"alteração não commitada" foi apagado. O esperado é `True` e a lista vazia:
 
 ```powershell
 Test-Path $v1
@@ -1482,7 +1581,7 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | US-09 | Série dos 3 trials representativos (SCRUM-123) | A série é gerada e conferida pelo contrato, mas nesta demonstração a pose é **simulada**. Falta gerá-la com o modelo real para os 3 trials de G1. |
 | US-10 | Limites de tratamento da pose | Lacuna curta de 5 quadros (0,2 s), mediana de 5 quadros e cobertura mínima de 0,98 são valores propostos pelo grupo. Pergunta ao LNBio: interpolar até 0,2 s é aceitável? |
 | US-10 | fps instável (RN07) | A US-01 detecta fps variável por trial, não por trecho. A ressalva vale para o trial inteiro. |
-| US-11 | Evento de descoberta | Card do Sprint 2 ainda não implementado. |
+| US-11 | Limiares de descoberta (G3, C1) | Implementado e testado, mas `encontrar.distancia_cm`/`angulo_graus` (3 cm / 30°) são **provisórios**: o laboratório ainda não respondeu C1. Não é o valor acordado; ver `docs/definicoes-metricas.md`. |
 | US-27 | Banco no laboratório | Decidido: PostgreSQL nativo na máquina do laboratório (SCRUM-148, manual §2.2.2). A instalação lá ainda não foi feita. |
 | Geral | Métricas a partir da pose | As métricas (US-02) ainda leem a trajetória de exemplo em CSV. Calcular a partir da série de pose é das próximas histórias (Épico E). |
 | Geral | Cadastro de usuário, experimento e animal | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |
