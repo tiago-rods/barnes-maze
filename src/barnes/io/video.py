@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import cv2
@@ -39,6 +40,8 @@ class VideoMetadata:
         fps_is_variable: True se o intervalo entre quadros variar além de
             FPS_VARIABILITY_TOLERANCE (RN03).
         content_hash: Hash SHA-256 do conteúdo do arquivo (RN05).
+        file_size_bytes: Tamanho do arquivo, em bytes — checagem barata de
+            arquivo alterado no catálogo (US-27 RN04).
     """
 
     path: Path
@@ -50,6 +53,7 @@ class VideoMetadata:
     duration_s: float
     fps_is_variable: bool
     content_hash: str
+    file_size_bytes: int | None = None
 
 
 def compute_content_hash(path: Path, chunk_size: int = 2**20) -> str:
@@ -179,7 +183,102 @@ def load_trial_video(path: str | Path) -> VideoMetadata:
         duration_s=timestamps_ms[-1] / 1000.0,
         fps_is_variable=fps_variable,
         content_hash=compute_content_hash(path),
+        file_size_bytes=path.stat().st_size,
     )
+
+
+class FileStatus(StrEnum):
+    """Situação do arquivo de vídeo de um trial frente ao que foi catalogado (US-27 RN04)."""
+
+    OK = "ok"  # no caminho registrado, com o mesmo hash
+    PRESENTE = "presente"  # no caminho registrado; tamanho confere, hash não verificado
+    ALTERADO = "alterado"  # no caminho registrado, mas com outro conteúdo
+    MOVIDO = "movido"  # ausente do caminho registrado; mesmo conteúdo achado em outro lugar
+    AUSENTE = "ausente"  # ausente do caminho registrado e não achado
+
+
+@dataclass(frozen=True)
+class FileCheck:
+    """Resultado de `verify_video_file`.
+
+    Attributes:
+        status: Situação encontrada.
+        path: Caminho registrado no catálogo.
+        found_at: Onde o conteúdo com o hash esperado foi achado (só em MOVIDO).
+        actual_hash: Hash do arquivo no caminho registrado, quando calculado.
+    """
+
+    status: FileStatus
+    path: Path
+    found_at: Path | None = None
+    actual_hash: str | None = None
+
+    @property
+    def diverges(self) -> bool:
+        """True se o arquivo não está, comprovadamente ou provavelmente, onde foi catalogado."""
+        return self.status in (FileStatus.ALTERADO, FileStatus.MOVIDO, FileStatus.AUSENTE)
+
+    def describe(self) -> str:
+        """Mensagem para o operador, sem jargão de hash."""
+        return {
+            FileStatus.OK: "arquivo confere com o catalogado",
+            FileStatus.PRESENTE: "arquivo presente (conteúdo não verificado)",
+            FileStatus.ALTERADO: f"conteúdo de {self.path} difere do catalogado",
+            FileStatus.MOVIDO: f"vídeo movido ou renomeado para {self.found_at}",
+            FileStatus.AUSENTE: f"vídeo não encontrado em {self.path}",
+        }[self.status]
+
+
+def verify_video_file(
+    path: str | Path,
+    expected_hash: str,
+    *,
+    expected_size: int | None = None,
+    verify_hash: bool = True,
+    search_dirs: Sequence[str | Path] = (),
+) -> FileCheck:
+    """Confere se o vídeo catalogado continua no lugar e com o mesmo conteúdo (US-27 RN04).
+
+    A identidade do trial é o conteúdo (`content_hash`, US-01 RN05), não o
+    caminho: um arquivo renomeado ou movido continua sendo o mesmo trial,
+    enquanto um arquivo substituído no mesmo caminho não é. Quando o arquivo
+    sumiu do caminho registrado, procura `.mp4` com o mesmo hash na pasta
+    original e em `search_dirs` (sem recursão), comparando primeiro o tamanho
+    para só calcular hash de candidatos plausíveis.
+
+    Args:
+        path: Caminho registrado em `trials.filepath`.
+        expected_hash: `trials.content_hash`.
+        expected_size: `trials.file_size_bytes`, se conhecido — permite uma
+            checagem barata quando `verify_hash=False`.
+        verify_hash: False para checar só existência e tamanho (rápido, para
+            listar o catálogo inteiro); o reprocessamento sempre usa True.
+        search_dirs: Pastas extras onde procurar o arquivo movido.
+
+    Returns:
+        O resultado da verificação; nunca levanta por arquivo ausente.
+    """
+    path = Path(path)
+    if path.is_file():
+        if not verify_hash:
+            if expected_size is not None and path.stat().st_size != expected_size:
+                return FileCheck(FileStatus.ALTERADO, path)
+            return FileCheck(FileStatus.PRESENTE, path)
+        actual = compute_content_hash(path)
+        status = FileStatus.OK if actual == expected_hash else FileStatus.ALTERADO
+        return FileCheck(status, path, actual_hash=actual)
+
+    for directory in dict.fromkeys(Path(d) for d in (path.parent, *search_dirs)):
+        if not directory.is_dir():
+            continue
+        for candidate in sorted(directory.iterdir()):
+            if candidate.suffix.lower() not in SUPPORTED_EXTENSIONS or not candidate.is_file():
+                continue
+            if expected_size is not None and candidate.stat().st_size != expected_size:
+                continue
+            if compute_content_hash(candidate) == expected_hash:
+                return FileCheck(FileStatus.MOVIDO, path, found_at=candidate)
+    return FileCheck(FileStatus.AUSENTE, path)
 
 
 def read_frame(path: str | Path, frame_index: int = 0) -> np.ndarray:
@@ -219,5 +318,47 @@ def read_frame(path: str | Path, frame_index: int = 0) -> np.ndarray:
         return frame
     except cv2.error as exc:
         raise VideoLoadError(f"Erro ao decodificar o vídeo {path}: {exc}") from exc
+    finally:
+        capture.release()
+
+
+def iter_frames(
+    video_path: str | Path, start_frame: int, end_frame: int, wanted: Callable[[int], bool]
+) -> Iterator[tuple[int, np.ndarray]]:
+    """Percorre o vídeo em sequência desde o quadro 0, entregando os quadros pedidos.
+
+    Nunca posiciona por `CAP_PROP_POS_FRAMES`: em H.264 com B-frames (caso dos
+    vídeos do LNBio, ver US-01) o seek pode cair num quadro vizinho. Quem
+    precisa do quadro **exato** de um índice — a exportação de quadros para
+    anotação (US-06) e a revisão de pose (US-10) — usa este caminho, então o
+    índice entregue é o índice real no vídeo, o mesmo que a inferência usou.
+    Os quadros antes de `start_frame`, e os não pedidos, só são pulados com
+    `grab()`, sem conversão de imagem.
+
+    Args:
+        video_path: Caminho do vídeo.
+        start_frame: Primeiro índice que pode ser entregue.
+        end_frame: Último índice que pode ser entregue, inclusive.
+        wanted: Diz, para cada índice, se o quadro deve ser entregue.
+
+    Yields:
+        `(índice, quadro BGR)`, em ordem crescente. Termina em silêncio se o
+        vídeo acabar antes de `end_frame` — quem chama confere o que recebeu.
+
+    Raises:
+        VideoLoadError: Se o vídeo não abrir.
+    """
+    capture = cv2.VideoCapture(str(video_path))
+    try:
+        if not capture.isOpened():
+            raise VideoLoadError(f"Não foi possível abrir o vídeo: {video_path}")
+        for index in range(end_frame + 1):
+            if index >= start_frame and wanted(index):
+                ok, frame = capture.read()
+                if not ok:
+                    return
+                yield index, frame
+            elif not capture.grab():
+                return
     finally:
         capture.release()

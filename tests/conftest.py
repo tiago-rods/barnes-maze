@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
+from dotenv import find_dotenv, load_dotenv
+
+# Isolamento do banco (US-27): a suíte nunca usa o banco de desenvolvimento.
+# Os testes de banco leem BARNES_DATABASE_URL (pelo `skipif` e por
+# `get_connection()`), então ela é trocada aqui — antes da coleta — pelo
+# banco descartável BARNES_TEST_DATABASE_URL. Sem ele, fica vazia (e não
+# ausente, para o `.env` não repreenchê-la): os testes de banco são pulados.
+load_dotenv(find_dotenv(usecwd=True), override=False)
+os.environ["BARNES_DATABASE_URL"] = os.environ.get("BARNES_TEST_DATABASE_URL", "")
 
 
 def _write_synthetic_video(

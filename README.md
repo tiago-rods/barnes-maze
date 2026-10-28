@@ -125,12 +125,18 @@ partir de `docs/DER.md`.
 Para desenvolvimento local, suba um Postgres descartável com Docker Compose:
 
 ```bash
-docker compose up -d
-export BARNES_DATABASE_URL="postgresql://barnes:barnes@localhost:5432/barnes"
+cp .env.example .env      # uma vez — o .env não é commitado
+docker compose up -d      # Postgres na porta 5433 (não colide com um nativo na 5432)
 uv run barnes db migrate
+uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_test
 ```
 
-(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL`.)
+(Contra o Postgres real do laboratório, troque só o `BARNES_DATABASE_URL` no
+`.env`.) O banco `barnes_test` é só da suíte de testes
+(`BARNES_TEST_DATABASE_URL`); os testes nunca tocam o banco de trabalho. Numa
+próxima sessão: abra o Docker Desktop e rode `docker compose up -d`. A
+máquina do laboratório usa PostgreSQL instalado nativamente (decisão da
+SCRUM-148) — passo a passo em `docs/manual-usuario.md` §2.2.2.
 
 Migrações são arquivos `.sql` numerados (`0001_...`, `0002_...`), aplicados em
 ordem e registrados em `schema_migrations` — rodar o comando de novo não
@@ -168,7 +174,20 @@ do vídeo permanece nas demais histórias do projeto.
 
 ```bash
 uv run barnes metrics process --video data/raw/trial.mp4 --trajectory data/interim/trial.csv --trial 1
-uv run barnes metrics executions --trial 1
+uv run barnes metrics executions --trial 1 [--history]
+```
+
+## Proveniência e catálogo (US-27)
+
+Cada `metrics process` grava uma linha em `execucao` com limiares
+(`configs/default.yaml`), parâmetros, commit e se havia alterações não
+commitadas, e as métricas apontam para ela — métrica sem execução é recusada
+pelo próprio banco. O vídeo é conferido pelo hash antes do cálculo.
+
+```bash
+uv run barnes execution show 42          # tudo o que a execução 42 usou
+uv run barnes catalog list               # trial, animal, sessão, situação, cobertura, arquivo
+uv run barnes catalog list --verificar-hash --procurar-em D:/videos   # vídeos movidos/alterados
 ```
 
 Sem escala para a montagem, o cálculo é bloqueado. O procedimento completo,
@@ -221,7 +240,26 @@ Instalação CUDA, fallback/D4, parâmetros, recuperação e aceite offline est�
 em [Treino e avaliação de pose](docs/pose-treino-avaliacao.md). Os caminhos
 `<id>` são preenchidos com as saídas reais dos comandos. Treino requer dados
 anotados e NVIDIA elegível; a implementação não inclui pesos treinados do
-laboratório. Pose bruta é a entrada das próximas histórias de trajetória.
+laboratório.
+
+A pose bruta (`pose.csv`, em pixels) vira a **série de trajetória** da US-09 —
+uma linha por quadro do intervalo útil, posição em cm, orientação da cabeça θ em
+graus e t desde a soltura —, gravada em `data/interim/trial_<id>.parquet` sob o
+contrato de [`docs/contrato-trajetoria.md`](docs/contrato-trajetoria.md):
+
+```powershell
+uv run barnes pose series --trial 1 --inference data/pose/inference/inferencia-<id>
+```
+
+O mesmo comando trata as falhas de pose (US-10). Suaviza os pontos, interpola as
+lacunas curtas (marcadas `interpolado`) e sinaliza as longas, com os limites da seção
+`pose:` de `configs/default.yaml`. Também grava a cobertura de pose do trial. Os
+trechos sinalizados são revisados numa janela que abre direto neles, e as correções
+ficam registradas numa execução:
+
+```powershell
+uv run barnes pose review --trial 1
+```
 
 ## Antes de escrever código
 

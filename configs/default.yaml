@@ -1,6 +1,8 @@
 # Limiares operacionais padrão
 #
-# ATENÇÃO — todos os valores estão em `null` de propósito.
+# ATENÇÃO — todos os valores estão em `null` de propósito, exceto
+# `encontrar.distancia_cm`/`angulo_graus` (US-11), marcados PROVISÓRIOS
+# abaixo por falta de resposta do laboratório — ver a nota ali.
 #
 # Estes limiares NÃO são constantes de código e NÃO devem ser escolhidos pela
 # equipe. São parâmetros calibrados contra anotação manual, fixados em G3 e
@@ -14,9 +16,16 @@
 versao_definicoes: null       # versão de docs/definicoes-metricas.md que gerou estes valores
 
 # --- Evento: encontrar (US-11, US-12) -----------------------------------------
+# PROVISÓRIO, por falta de resposta do laboratório em G3 (C1) — não é o valor
+# acordado da seção 1. É uma faixa comum de rastreamento comportamental de
+# roedores (ex. zonas de "nose-point"/orientação de cabeça do EthoVision),
+# sem citação verificada. `calibrado_contra_anotacao` continua false de
+# propósito: nunca marcar este valor como aceito. Troque pelos dois números
+# que o laboratório decidir, e só então vire `calibrado_contra_anotacao` via
+# US-12. Ver docs/definicoes-metricas.md, seção 1 (linhas 1-2).
 encontrar:
-  distancia_cm: null          # C1 — distância focinho↔buraco
-  angulo_graus: null          # C1 — desvio máximo da orientação da cabeça
+  distancia_cm: 3              # C1 — distância focinho↔buraco — PROVISÓRIO
+  angulo_graus: 30             # C1 — desvio máximo da orientação da cabeça — PROVISÓRIO
   calibrado_contra_anotacao: false   # US-12: vira true após a calibração
 
 # --- Evento: entrar / checar fisicamente (US-13) ------------------------------
@@ -48,9 +57,18 @@ trial:
   recorte_fim_s: null
 
 # --- Qualidade de pose (US-10) ------------------------------------------------
+# Como `anotacao:` abaixo, NÃO são limiares de métrica do G3: são parâmetros de
+# tratamento da pose, decisão da equipe registrada em docs/revisao-cards.md
+# (US-10) e em docs/contrato-trajetoria.md. Valores propostos pelo grupo.
 pose:
   cobertura_minima: 0.98      # critério de aceite da seção 10 — proposto pelo grupo
-  lacuna_curta_max_quadros: null    # até aqui interpola; acima, marca para revisão
+  # Lacuna curta: até este número de quadros seguidos sem um ponto, entre dois
+  # quadros com o ponto. É interpolada. Lacuna longa: qualquer uma maior, ou
+  # qualquer uma na borda do intervalo útil. É sinalizada para revisão humana.
+  lacuna_curta_max_quadros: 5       # 0,2 s a 25 fps — proposto pelo grupo
+  suavizacao:
+    metodo: mediana           # mediana móvel: robusta a um quadro isolado errado
+    janela_quadros: 5         # ímpar; 1 = sem suavização — proposto pelo grupo
 
 # --- Anotação de pose (US-06) -------------------------------------------------
 # Diferente das seções acima, NÃO são limiares de métrica do G3: são parâmetros

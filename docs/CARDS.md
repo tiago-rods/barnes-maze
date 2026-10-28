@@ -533,6 +533,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [RN04] A revisão permite navegação direta aos trechos sinalizados, sem varrer o vídeo inteiro.
 - [RN05] Toda correção manual é registrada na tabela `execucao`, para que o número final seja auditável.
 - [RN06] Trials abaixo do limiar de cobertura, mesmo após revisão, são marcados como de qualidade insuficiente e essa marcação acompanha o trial nas saídas.
+- [RN07] Interpolação sobre trecho de fps instável é menos exata; isso fica registrado junto do relato de qualidade.
 
 #### Critérios de Aceite (Cenários Executáveis / BDD)
 - **Cenário 1: Fluxo principal — lacuna curta interpolada**
@@ -610,22 +611,22 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** os eventos e as métricas derivadas são recalculados a partir do Parquet, sem ler um único quadro de vídeo.
 
 #### Tarefas
-- [ ] Confirmar os limiares de distância e de ângulo saídos de **G3** (pergunta C1)
-- [ ] Declarar os limiares em `barnes.yaml` e carregá-los como parâmetros
-- [ ] Implementar o cálculo da distância focinho→buraco por quadro
-- [ ] Implementar o cálculo do ângulo entre a orientação da cabeça e a direção ao buraco
-- [ ] Implementar a regra de primeiro quadro que satisfaz ambas as condições
-- [ ] Implementar o registro único por buraco por trial (ignorar reaproximações)
-- [ ] Criar a tabela `evento_buraco` e implementar sua persistência
-- [ ] Implementar o recálculo de eventos a partir do Parquet, sem acesso ao vídeo
-- [ ] Escrever teste garantindo que o recálculo não abre nenhum arquivo de vídeo
-- [ ] Registrar os limiares e sua origem em `docs/definicoes-metricas.md`
+- [ ] Confirmar os limiares de distância e de ângulo saídos de **G3** (pergunta C1) — **em aberto**: laboratório não respondeu; `configs/default.yaml` usa valor provisório (ver `docs/definicoes-metricas.md`)
+- [x] Declarar os limiares em `barnes.yaml` e carregá-los como parâmetros
+- [x] Implementar o cálculo da distância focinho→buraco por quadro
+- [x] Implementar o cálculo do ângulo entre a orientação da cabeça e a direção ao buraco
+- [x] Implementar a regra de primeiro quadro que satisfaz ambas as condições
+- [x] Implementar o registro único por buraco por trial (ignorar reaproximações)
+- [x] Criar a tabela `evento_buraco` e implementar sua persistência
+- [x] Implementar o recálculo de eventos a partir do Parquet, sem acesso ao vídeo
+- [x] Escrever teste garantindo que o recálculo não abre nenhum arquivo de vídeo
+- [x] Registrar os limiares e sua origem em `docs/definicoes-metricas.md`
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Detecção de descoberta implementada com ambos os limiares parametrizados
-- [ ] Tabela `evento_buraco` persistida e consultável
-- [ ] Recálculo a partir do Parquet verificado por teste (sem acesso ao vídeo)
-- [ ] Limiares e sua origem (G3) documentados em `docs/definicoes-metricas.md`
+- [x] Detecção de descoberta implementada com ambos os limiares parametrizados
+- [x] Tabela `evento_buraco` persistida e consultável
+- [x] Recálculo a partir do Parquet verificado por teste (sem acesso ao vídeo)
+- [x] Limiares e sua origem (G3) documentados em `docs/definicoes-metricas.md`
 
 ---
 

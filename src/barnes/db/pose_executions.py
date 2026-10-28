@@ -21,12 +21,14 @@ from psycopg.types.json import Jsonb
 
 from barnes.io.trim import TrialInterval, interval_from_seconds
 
-ExecutionKind = Literal["treino", "avaliacao", "inferencia"]
+ExecutionKind = Literal["treino", "avaliacao", "inferencia", "processamento"]
 ExecutionStatus = Literal["concluido", "falhou"]
 _MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _COLUMNS = (
     "id, kind, model_id, maze_config_id, trial_id, status, "
-    "duration_seconds, artifact_path, metadata, recorded_at"
+    "duration_seconds, artifact_path, metadata, recorded_at, "
+    "git_commit, git_dirty, limiares, limiares_sha256, parametros, video_hash, iniciado_em"
 )
 
 
@@ -36,7 +38,7 @@ class StoredExecution:
 
     id: int
     kind: ExecutionKind
-    model_id: str
+    model_id: str | None
     maze_config_id: int
     trial_id: int | None
     status: ExecutionStatus
@@ -44,6 +46,20 @@ class StoredExecution:
     artifact_path: str | None
     metadata: dict[str, Any]
     recorded_at: datetime
+    # US-27 (0007): proveniência em colunas próprias. Nulos em execuções
+    # anteriores à US-27 que não os registraram ("legado").
+    git_commit: str | None = None
+    git_dirty: bool | None = None
+    limiares: dict[str, Any] | None = None
+    limiares_sha256: str | None = None
+    parametros: dict[str, Any] | None = None
+    video_hash: str | None = None
+    iniciado_em: datetime | None = None
+
+    @property
+    def reproducible(self) -> bool:
+        """True só com commit conhecido e repositório limpo (US-27 RN05, Cenário 4)."""
+        return self.git_commit is not None and self.git_dirty is False
 
 
 @dataclass(frozen=True)
@@ -159,20 +175,21 @@ def record_execution(
     except (TypeError, ValueError) as exc:
         raise ValueError("metadata deve conter apenas valores JSON finitos.") from exc
 
+    git_commit, git_dirty = _git_from_metadata(metadata)
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO execucao (
                 kind, model_id, maze_config_id, trial_id, status,
-                duration_seconds, artifact_path, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                duration_seconds, artifact_path, git_commit, git_dirty, metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (kind, (metadata ->> 'run_id')) WHERE metadata ? 'run_id'
                 DO NOTHING
             RETURNING id
             """,
             (
                 kind, model_id, maze_config_id, trial_id, status,
-                duration_seconds, artifact_path, Jsonb(metadata),
+                duration_seconds, artifact_path, git_commit, git_dirty, Jsonb(metadata),
             ),
         )
         inserted = cur.fetchone()
@@ -194,6 +211,14 @@ def record_execution(
         if existing is None or tuple(existing[1:]) != expected:
             raise ValueError("run_id já registrado com outra proveniência; preserve o registro original.")
         return existing[0]
+
+
+def _git_from_metadata(metadata: dict[str, Any]) -> tuple[str | None, bool | None]:
+    """Commit e estado sujo do manifesto (inferência: `source`; treino: o próprio)."""
+    source = metadata.get("source") if isinstance(metadata.get("source"), dict) else metadata
+    commit, dirty = source.get("git_commit"), source.get("git_dirty")
+    valid_commit = isinstance(commit, str) and _GIT_COMMIT.fullmatch(commit) is not None
+    return (commit if valid_commit else None), (dirty if isinstance(dirty, bool) else None)
 
 
 def get_execution(conn: psycopg.Connection, execution_id: int) -> StoredExecution:

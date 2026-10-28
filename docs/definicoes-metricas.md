@@ -25,8 +25,8 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 
 | # | Parâmetro | Chave em `default.yaml` | Valor acordado | Origem | Status |
 |---|---|---|---|---|---|
-| 1 | Distância para "encontrar" | `encontrar.distancia_cm` | — | C1 | pendente |
-| 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | — | C1 | pendente |
+| 1 | Distância para "encontrar" | `encontrar.distancia_cm` | 3 cm (provisório) | C1 | provisório (sem G3) |
+| 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | 30° (provisório) | C1 | provisório (sem G3) |
 | 3 | Critério de "entrar" | `entrar.focinho_dentro` | — | C2 | pendente |
 | 4 | Duração mínima de entrada | `entrar.duracao_minima_s` | — | C2 | pendente |
 | 5 | Duração mínima de dwell | `dwell.duracao_minima_s` | — | C2 | pendente |
@@ -37,6 +37,23 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 10 | Estratégia — erros até o alvo | `estrategia.erros_ate_alvo_max` | — | C4 | pendente |
 | 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | pendente |
 | 12 | Tempo limite do trial | `trial.tempo_limite_s` | — | B5 | pendente |
+
+> **US-11 (linhas 1-2) — valor PROVISÓRIO, não é o aceite de G3.** O cálculo de
+> distância focinho→buraco e do ângulo de orientação da cabeça, o carregamento
+> parametrizado dos dois limiares e a persistência do evento de descoberta em
+> `evento_buraco` já estão implementados e testados (`barnes.events.discovery`,
+> `tests/events/test_discovery.py`, `barnes events discover`).
+>
+> Como o laboratório ainda não respondeu C1, preenchemos `encontrar.distancia_cm`
+> (3 cm) e `encontrar.angulo_graus` (30°) com uma faixa comum de rastreamento
+> comportamental de roedores (ex. zonas de "nose-point"/orientação de cabeça do
+> EthoVision) para não travar o desenvolvimento — **não é uma citação
+> verificada**, nenhum artigo específico foi conferido para este número, e não
+> é o valor acordado pelo laboratório. `encontrar.calibrado_contra_anotacao`
+> continua `false` de propósito (nunca marque este valor como aceito). Status
+> "provisório (sem G3)" acima — **não mude para "acordado"/"concluído" até o
+> laboratório responder C1** e, então, até a calibração da [US-12] confirmar a
+> diferença ≤ 0,5 s contra a anotação manual.
 
 ## 2. Definições em prosa
 
@@ -161,3 +178,32 @@ Toda coluna que carrega uma posição traz no nome o sufixo do referencial em
 que está expressa, por exemplo `target_hole_platform` e
 `target_angle_deg_room`. Uma coluna de posição sem sufixo é um erro de
 exportação.
+
+### 6.5 Orientação da cabeça θ (US-09)
+
+A orientação da cabeça é o ângulo do vetor **centro do corpo → focinho**, no quadro do
+vídeo (sufixo `_image`), com **a mesma convenção dos buracos** (§6.3, `holes.angle_deg`):
+
+| | |
+|---|---|
+| Eixos | os da imagem: origem no canto superior esquerdo, **y cresce para baixo** |
+| Origem do ângulo | **0° aponta para a direita da imagem (+x)** |
+| Sentido | **horário na tela**: 90° = para baixo, 180° = esquerda, 270° = para cima |
+| Faixa | [0, 360) |
+| Fórmula | `θ = atan2(y_focinho − y_centro, x_focinho − x_centro)`, em graus, mod 360 |
+| Sem θ | quando falta focinho ou centro do corpo, ou os dois coincidem: θ = NaN, `pose_valida = false` |
+
+Consequência prática: um focinho apontando do centro da plataforma para o buraco *k*
+tem θ = `holes.angle_deg` desse buraco. O ângulo cabeça→buraco da US-11 pode ser
+calculado pela mesma fórmula e comparado diretamente com θ.
+
+A conversão para cm não altera θ: a escala da US-02 é um fator único para os dois
+eixos. θ fica no referencial da imagem. Para comparar orientações entre trials ou
+montagens, converta para o referencial da sala (§6.3) subtraindo o ângulo de imagem do
+buraco 0 e somando a rotação do trial.
+
+Verificação (US-09 Cenário 2): em trajetórias sintéticas retas nas 8 direções, θ
+coincide com a direção de deslocamento (< 1e-6° sem ruído; desvio mediano ≤ 5° com
+ruído de 1 px num eixo de corpo de 20 px). É tolerância de **teste** do cálculo, não
+limiar do laboratório. O contrato completo da série está em
+[`contrato-trajetoria.md`](contrato-trajetoria.md).

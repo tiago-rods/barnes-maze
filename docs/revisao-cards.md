@@ -118,3 +118,96 @@ sem reciclar o conjunto de teste. Essa definição operacional está documentada
 para revisão pela equipe/laboratório. Ferramental implementado não equivale
 a modelo real treinado ou validação offline física concluída.
 
+
+## US-27 — proveniência e catálogo (outubro de 2026)
+
+Decisões que estreitam o card (detalhes em [DER](DER.md) e no
+[manual](manual-usuario.md) §2.2 e §4.5):
+
+- **Nomes de tabela mantidos.** O card lista `animal`, `montagem`, `sessao`,
+  `trial`, `metrica`; o banco já tinha `subjects`, `maze_configs`, `trials`,
+  `trial_results`. Renomear quebraria bancos em uso — a correspondência fica
+  documentada no DER. Só o que é novo nasce em português (`evento_buraco`,
+  `sessao`), como `execucao`.
+- **`sessao` é uma VIEW** derivada de `trials` (animal, `day_number`, `phase`,
+  data do primeiro carregamento), sem tabela própria nem backfill.
+- **Métrica com histórico.** O escopo pede "uma linha por trial, por
+  execução": `trial_results` deixou de ser 1:1 por trial (decisão provisória da
+  US-02/US-07). Reprocessar acrescenta; o resultado atual é o mais recente.
+- **`execucao` estendida, não recriada:** `kind = 'processamento'`, commit,
+  estado sujo, limiares, parâmetros e hash do vídeo em colunas próprias.
+  Métricas anteriores à US-27 receberam uma execução "legado" na migração.
+- **Conexão:** mantido `BARNES_DATABASE_URL` (agora também lido de `.env`);
+  testes usam um banco separado, `BARNES_TEST_DATABASE_URL`.
+- **Distribuição do PostgreSQL para o laboratório (SCRUM-148): instalação
+  nativa (opção A).** No projeto, a "máquina do laboratório" é o PC onde o banco
+  real já roda (o do Tiago), com PostgreSQL nativo; só ele processa com os dados
+  do estudo, e os demais desenvolvem com o Postgres do Docker. Docker (licença do
+  Docker Desktop, WSL2) e SQLite (reescrita das migrações e de `db/`) foram
+  avaliados e ficam como alternativas. Passo a passo no manual, §2.2.2.
+
+## US-09 — série de posição e orientação da cabeça (outubro de 2026)
+
+Decisões (contrato completo em [contrato-trajetoria.md](contrato-trajetoria.md)):
+
+- **Inferência reaproveitada.** A "inferência em lote sobre o trial recortado"
+  (SCRUM-116) é o `pose infer` da US-07/08; a US-09 lê o `pose.csv` dele
+  (`barnes pose series`) em vez de inferir de novo.
+- **Escala por montagem, não por orientação de câmera** (decisão da US-02): a
+  conversão px→cm usa `maze_configs` do trial.
+- **Sem corte por confiança.** "Ponto válido" = coordenadas finitas; os scores vão
+  no arquivo. Um limiar de confiança seria configuração de qualidade de pose (US-10),
+  não decisão da US-09.
+- **Posição em cm nos eixos da imagem** (sufixo `_image`, origem no canto do quadro);
+  θ na convenção de `holes.angle_deg` (0° = +x, sentido horário na tela).
+- **Tolerância do Cenário 2** é de teste do cálculo (< 1e-6° sem ruído; mediana ≤ 5°
+  com ruído de 1 px), não limiar do laboratório.
+- **SCRUM-123 pendente**: não há modelo treinado nem os 3 vídeos representativos
+  (ver `docs/status-us07-us08.md`).
+
+## US-10 — suavização, interpolação e revisão de falhas de pose (outubro de 2026)
+
+Decisões (detalhes no [contrato da trajetória](contrato-trajetoria.md), seção
+"Pós-processamento", no [DER](DER.md) e no [manual](manual-usuario.md) §4.6 e §4.7):
+
+- **O pós-processamento roda dentro de `barnes pose series`.** A série passa a ser
+  sempre função do `pose.csv` da inferência, das correções manuais do trial e de
+  `configs/`. Regenerar dá o mesmo resultado e nunca suaviza duas vezes. A série bruta
+  continua reproduzível pelo `pose.csv`, cujo hash é conferido. `barnes pose review`
+  regenera pelo mesmo caminho.
+- **Cobertura (RN03)** = fração dos quadros do intervalo útil com os **três** pontos
+  (focinho, centro do corpo, base da cauda), **contando os interpolados e os
+  corrigidos**. A cobertura só da detecção e a fração interpolada saem juntas no
+  relatório. Lacunas curtas não derrubam o trial; só as longas não resolvidas derrubam.
+- **Valores propostos pelo grupo** na seção `pose:` de `configs/default.yaml`:
+  `lacuna_curta_max_quadros: 5` (0,2 s a 25 fps), suavização por mediana com
+  `janela_quadros: 5`, `cobertura_minima: 0.98`. Como `anotacao:`, é exceção explícita
+  ao "null até G3": são parâmetros de tratamento da pose, não limiares de métrica.
+- **Um limite só (SCRUM-125):** lacuna curta tem até o limite; longa é qualquer uma
+  maior. Lacuna na **borda** do intervalo (sem quadro válido de um dos lados) nunca é
+  interpolada e é sempre sinalizada.
+- **Lacunas por ponto:** faltar só a base da cauda preenche só a base da cauda; a linha
+  fica `interpolado = true` se algum ponto dela foi preenchido.
+- **Suavização antes da interpolação**, só dentro de trechos contínuos (nunca atravessa
+  lacuna), com janela que encolhe simetricamente nas pontas. Assim o quadro vizinho da
+  lacuna, que é o apoio da interpolação, não é deslocado. θ é recalculado dos pontos
+  suavizados, sem média de ângulos.
+- **Revisão (RN04):** janela OpenCV (como a calibração), não PySide6, conforme o plano
+  de interface gráfica. Abre direto no primeiro trecho pendente e navega só pelos
+  trechos, com margem de contexto. Os quadros são lidos numa passada sequencial, sem
+  seek, por causa dos B-frames (`io.video.iter_frames`, promovido de `pose/sampling.py`).
+  O operador pode marcar quadros esparsos, e os vãos curtos entre as marcações são
+  interpolados. Um trecho sem animal visível pode ser dado por revisado sem correção.
+- **Correções (RN05)** na tabela `correcao_pose` (migração 0008), imutável, sempre
+  ligada à execução da sessão de revisão do mesmo trial (FK composta). A execução
+  (`parametros.comando = 'pose review'`) é o registro da intervenção. Vale a correção
+  da sessão mais recente.
+- **Qualidade (RN06) derivada, não gravada:** VIEW `qualidade_pose`, a partir da
+  cobertura e do relatório da execução que a calculou: `revisao_pendente`,
+  `insuficiente` ou `suficiente`. Catálogo, `metrics process`, `metrics executions` e a
+  futura US-25 leem dela.
+- **RN07 (fps instável):** a US-01 só detecta fps variável por trial. Se o trial tem
+  `fps_variavel` e houve interpolação, o relatório de qualidade leva a ressalva.
+- **Contrato da trajetória continua na versão 1:** `interpolado` passou a ser usado como
+  previsto e entrou o metadado opcional `pos_processamento`. Linha interpolada sem esse
+  metadado é recusada.

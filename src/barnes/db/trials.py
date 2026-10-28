@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 import psycopg
 
@@ -58,9 +59,11 @@ def insert_trial(
                 day_number, trial_number_in_day, content_hash, width_px,
                 height_px, fps_declared, fps_real, fps_is_variable,
                 frame_count, duration_s, rotation_deg, start_time_seconds,
-                end_time_seconds, interval_manually_adjusted
+                end_time_seconds, interval_manually_adjusted, file_size_bytes
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             RETURNING id
             """,
             (
@@ -83,6 +86,7 @@ def insert_trial(
                 interval.start_s if interval is not None else None,
                 interval.end_s if interval is not None else None,
                 interval.manually_adjusted if interval is not None else False,
+                video.file_size_bytes,
             ),
         )
         return cur.fetchone()[0]
@@ -152,6 +156,15 @@ class StoredTrial:
         height_px: Altura do vídeo, em pixels.
         interval: Intervalo útil gravado (US-03 RN04), ou `None` se o trial
             foi carregado sem recorte (anterior à US-03).
+        filepath: Caminho do vídeo quando foi catalogado.
+        content_hash: Identidade do vídeo (US-01 RN05) — a prova contra
+            arquivo movido ou substituído (US-27 RN04).
+        file_size_bytes: Tamanho catalogado, ou `None` se anterior à US-27.
+        fps_real: fps medido (US-01 RN02) — base de tempo da série de pose.
+        fps_is_variable: Aviso de fps variável (US-01 RN03), que acompanha
+            as saídas do trial (US-09).
+        trajectory_path: Arquivo atual da série de pose (US-09/US-10), ou
+            `None` se ainda não foi gerada.
     """
 
     id: int
@@ -159,6 +172,12 @@ class StoredTrial:
     width_px: int
     height_px: int
     interval: TrialInterval | None
+    filepath: Path | None = None
+    content_hash: str | None = None
+    file_size_bytes: int | None = None
+    fps_real: float | None = None
+    fps_is_variable: bool | None = None
+    trajectory_path: Path | None = None
 
 
 def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
@@ -174,7 +193,8 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
         cur.execute(
             """
             SELECT maze_config_id, width_px, height_px, fps_real,
-                   start_time_seconds, end_time_seconds, interval_manually_adjusted
+                   start_time_seconds, end_time_seconds, interval_manually_adjusted,
+                   filepath, content_hash, file_size_bytes, fps_is_variable, trajectory_path
             FROM trials WHERE id = %s
             """,
             (trial_id,),
@@ -182,13 +202,55 @@ def get_trial(conn: psycopg.Connection, trial_id: int) -> StoredTrial:
         row = cur.fetchone()
     if row is None:
         raise ValueError(f"Trial {trial_id} não encontrado.")
-    maze_config_id, width, height, fps_real, start_s, end_s, manual = row
+    (maze_config_id, width, height, fps_real, start_s, end_s, manual, path, digest, size,
+     fps_variable, trajectory) = row
     interval = (
         None
         if start_s is None or end_s is None
         else interval_from_seconds(start_s, end_s, fps_real, manually_adjusted=manual)
     )
-    return StoredTrial(trial_id, maze_config_id, width, height, interval)
+    return StoredTrial(
+        trial_id, maze_config_id, width, height, interval, Path(path), digest, size,
+        fps_real, fps_variable, None if trajectory is None else Path(trajectory),
+    )
+
+
+def set_trajectory_path(conn: psycopg.Connection, trial_id: int, path: str) -> None:
+    """Aponta o trial para o arquivo atual da sua trajetória de pose (US-09 RN04).
+
+    Não comita a transação — quem chama grava junto com a execução que gerou
+    o arquivo.
+
+    Raises:
+        ValueError: Se o trial não existir.
+    """
+    with conn.cursor() as cur:
+        cur.execute("UPDATE trials SET trajectory_path = %s WHERE id = %s", (path, trial_id))
+        if cur.rowcount == 0:
+            raise ValueError(f"Trial {trial_id} não encontrado.")
+
+
+def set_pose_coverage(
+    conn: psycopg.Connection, trial_id: int, *, cobertura: float, execucao_id: int
+) -> None:
+    """Grava a cobertura de pose do trial e a execução que a calculou (US-10 RN03).
+
+    Não comita a transação — quem chama grava junto com a execução e a série.
+
+    Raises:
+        ValueError: Se a cobertura não estiver em [0, 1] ou o trial não existir.
+        psycopg.errors.ForeignKeyViolation: Se a execução não existir ou for de
+            outro trial (FK composta da 0007).
+    """
+    if isinstance(cobertura, bool) or not 0 <= cobertura <= 1:
+        raise ValueError("A cobertura de pose deve estar entre 0 e 1.")
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE trials SET cobertura_pose = %s, cobertura_execucao_id = %s WHERE id = %s",
+            (float(cobertura), execucao_id, trial_id),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(f"Trial {trial_id} não encontrado.")
 
 
 def get_trial_maze_config_id(conn: psycopg.Connection, trial_id: int) -> int:

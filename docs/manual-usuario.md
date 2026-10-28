@@ -23,7 +23,7 @@ diagnóstico de hardware, fallback/D4, registro no banco e validação offline.
 | Python | 3.11 |
 | GPU | Não obrigatória para inferência |
 | Interface de calibração | Ambiente gráfico com teclado, mouse e OpenCV |
-| Banco de dados | PostgreSQL — ver seção 2 |
+| Banco de dados | PostgreSQL instalado nativamente — ver seção 2.2.2 |
 
 ## 2. Instalação
 
@@ -54,33 +54,102 @@ A janela exige `opencv-python` com suporte a interface gráfica; a variante
 
 ### 2.2 Banco de dados
 
-> **Ponto em aberto — US-27 RN07, resolver até o Sprint 2.**
-> PostgreSQL é um **servidor**, não um arquivo: exige instalação e serviço
-> rodando na máquina do laboratório. Isso atinge dois critérios de aceite de
-> US-30 — instalação por pessoa de fora seguindo só o manual, e operação
-> offline. Definir a via: instalador embarcado, container, ou serviço já
-> existente no LNBio.
->
-> Se a distribuição se mostrar inviável para o perfil do operador, **SQLite é a
-> alternativa adequada** ao volume real do estudo (alguns milhões de linhas).
+O projeto usa **um** PostgreSQL para tudo: montagens, escala (US-02), trials,
+execuções, métricas e eventos. Antes do primeiro uso, e depois de cada
+atualização do código, aplique as migrações:
 
-A calibração da US-02 usa o **mesmo** Postgres das demais tabelas do projeto
-(`maze_configs`, `holes`, `trials`, ...) — não há um banco separado para a
-escala. Aplique as migrações antes de calibrar (`barnes db migrate`, ver
-`CLAUDE.md`). Para um servidor PostgreSQL já disponível, use uma conexão no
-formato `postgresql://usuario:senha@localhost:5432/barnes`; o banco e o
-usuário precisam existir, com permissão para criar as tabelas.
+```powershell
+barnes db migrate
+```
 
-Cada comando aceita `--dsn` para essa conexão. Como alternativa, configure
-`BARNES_DATABASE_URL` uma vez no terminal:
+O comando só aplica o que ainda falta (registra o que já aplicou na tabela
+`schema_migrations`); rodá-lo de novo não faz nada. O banco e o usuário
+precisam existir, com permissão para criar tabelas.
+
+**Conexão.** Copie `.env.example` para `.env` na pasta do projeto e ajuste
+`BARNES_DATABASE_URL` (formato `postgresql://usuario:senha@host:porta/banco`).
+O `.env` guarda a senha: **nunca o envie para o Git** (ele já está no
+`.gitignore`). Também funcionam a opção `--dsn` de cada comando, que tem
+precedência, ou a variável no terminal:
 
 ```powershell
 $env:BARNES_DATABASE_URL = "postgresql://usuario:senha@localhost:5432/barnes"
 ```
 
-A opção `--dsn` tem precedência sobre a variável de ambiente. A implantação do
-servidor e a distribuição do aplicativo completo continuam pertencendo à
-US-27/US-30.
+#### 2.2.1 Banco local para desenvolvimento (Docker)
+
+Para desenvolver sem o banco do laboratório, o repositório traz um Postgres
+descartável em `docker-compose.yml` (exige Docker Desktop):
+
+```powershell
+Copy-Item .env.example .env   # uma vez
+docker compose up -d          # sobe o Postgres na porta 5433
+barnes db migrate             # banco de desenvolvimento
+barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_test
+```
+
+Numa sessão seguinte, basta abrir o Docker Desktop e rodar `docker compose up -d`
+— os dados ficam no volume. `docker compose down -v` apaga tudo. A porta é 5433
+para não colidir com um PostgreSQL já instalado na 5432 (mude com
+`BARNES_PG_PORT`). O banco `barnes_test` é só da suíte de testes.
+
+#### 2.2.2 Banco da máquina do laboratório — PostgreSQL nativo (US-27, SCRUM-148)
+
+> **Decisão (SCRUM-148): PostgreSQL instalado nativamente no Windows (opção A).**
+> PostgreSQL é um servidor, não um arquivo (US-27 RN07): precisa estar instalado
+> e rodando na máquina que guarda os dados. A instalação nativa é a via padrão,
+> sobe sozinha com o Windows, funciona **offline** e tem licença permissiva
+> (PostgreSQL License). No projeto, a máquina de referência é o PC onde o banco
+> real já roda (o do Tiago) — é ele quem processa com os dados do estudo. Os
+> demais integrantes desenvolvem com o banco local do Docker (seção 2.2.1), com
+> as mesmas migrações.
+
+**Instalação (uma vez, como administrador):**
+
+1. Baixe o instalador oficial do PostgreSQL para Windows (EDB, versão 16 ou
+   mais recente) e execute-o. Mantenha a porta **5432**, defina e **anote** a
+   senha do superusuário `postgres`. O Stack Builder, oferecido no fim, não é
+   necessário.
+2. Crie o usuário e o banco do projeto, no PowerShell (troque a versão no
+   caminho se for outra, e `SENHA` por uma senha sua):
+
+   ```powershell
+   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE ROLE barnes LOGIN PASSWORD 'SENHA';"
+   & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE barnes OWNER barnes;"
+   ```
+
+3. Na pasta do projeto, copie `.env.example` para `.env` e ajuste a linha da
+   conexão para o banco nativo:
+
+   ```text
+   BARNES_DATABASE_URL=postgresql://barnes:SENHA@localhost:5432/barnes
+   ```
+
+4. Crie as tabelas e confira:
+
+   ```powershell
+   barnes db migrate
+   barnes catalog list     # "Nenhum trial catalogado." num banco novo
+   ```
+
+**A cada atualização do código** (antes de processar):
+
+```powershell
+git pull
+uv sync
+barnes db migrate        # aplica só as migrações novas; seguro repetir
+```
+
+`barnes db migrate` só funciona como esperado num banco criado por ele mesmo
+(tabela `schema_migrations`). Um banco montado à mão precisa ser recriado pelos
+passos acima.
+
+**Alternativas avaliadas e não adotadas:**
+
+| Opção | Por que não |
+|---|---|
+| B. Docker Desktop com `docker-compose.yml` | Exige virtualização (WSL2), reinício e o Docker aberto; a licença gratuita pode não cobrir uma instituição do porte do LNBio/CNPEM. Continua sendo o ambiente de **desenvolvimento** (seção 2.2.1). |
+| C. Voltar para SQLite (plano B do escopo) | Exigiria reescrever as migrações (sem `JSONB`, `IDENTITY`, gatilhos PL/pgSQL, `DROP CONSTRAINT`) e a camada `src/barnes/db/`. Fica como contingência se a instalação nativa se mostrar inviável para o operador (US-27 RN07). |
 
 ## 3. Configurar uma montagem
 
@@ -380,6 +449,16 @@ mensagem solicitando a calibração daquela montagem. O resultado salvo
 registra a escala exata usada (`px_per_10cm_used`), para detectar se fica
 obsoleto numa recalibração futura.
 
+**Conferência do vídeo e execução registrada (US-27).** Antes de calcular, o
+vídeo informado em `--video` é comparado com o hash gravado no trial: se o
+conteúdo for outro, o comando recusa (as métricas iriam para o trial errado).
+Se o conteúdo for o mesmo mas o caminho mudou, processa e avisa. Cada
+processamento grava uma linha em `execucao` — limiares de
+`configs/default.yaml`, parâmetros, commit do código e se havia alterações
+não commitadas — e as métricas apontam para ela. O resultado impresso traz o
+`execucao_id`. Reprocessar não apaga o resultado anterior: cria outra execução
+(seção 4.5).
+
 A distância é a soma dos deslocamentos entre amostras. A velocidade média é
 essa distância dividida pelo tempo entre a primeira e a última amostra. No CSV
 acima, uma escala de `0.1 cm/px` resulta em 10 cm percorridos em 2 s, ou 5 cm/s.
@@ -491,20 +570,151 @@ Trials do mesmo animal devem mostrar o **mesmo** ângulo de sala para o
 alvo, mesmo que tenham usado montagens diferentes (câmera deslocada) ou
 rotações diferentes.
 
+### 4.5 Catálogo de trials e proveniência (US-27)
+
+```powershell
+barnes catalog list                      # todos os trials; confere existência e tamanho do vídeo
+barnes catalog list --verificar-hash     # relê cada vídeo e compara o conteúdo (lento)
+barnes catalog list --procurar-em D:\videos_novos   # onde procurar vídeos movidos
+barnes catalog list --json               # para outra ferramenta
+```
+
+O catálogo mostra trial, animal, sessão (o dia), fase, ordem no dia,
+**situação** e **cobertura de pose**. A situação é calculada na hora:
+
+| Situação | Significado |
+|---|---|
+| `sem_recorte` | sem intervalo útil (US-03); nada pode ser processado |
+| `carregado` | pronto, ainda sem pose nem métricas |
+| `pose_inferida` | há inferência de pose concluída, sem métricas |
+| `trajetoria` | a série de pose foi gerada (`pose series`, seção 4.6), sem métricas |
+| `processado` | métricas calculadas com a escala atual da montagem |
+| `obsoleto` | métricas calculadas com uma escala que já foi trocada — reprocesse |
+
+A **cobertura** de pose aparece depois do `barnes pose series` (seção 4.6), como `—`
+antes disso. A coluna **qualidade** mostra `suficiente`, `revisão pendente` (há trechos
+sinalizados ainda não revisados, seção 4.7) ou `INSUFICIENTE` (cobertura abaixo do
+mínimo de `configs/default.yaml` mesmo depois da revisão). A mesma marcação vai no
+`--json` (`qualidade_pose`) e nas métricas (`metrics process`, `metrics executions`).
+A coluna **arquivo** mostra
+`ok`/`presente` quando o vídeo confere; `movido`, `alterado` ou `ausente`
+aparecem também como aviso no fim da listagem, com o id do trial. **Não
+reprocesse um trial com vídeo divergente** antes de conferir o arquivo.
+
+Para reproduzir um resultado antigo, pegue o `execucao_id` (em
+`barnes metrics executions --trial N --history`) e consulte:
+
+```powershell
+barnes execution show 42
+```
+
+A saída traz o modelo de pose (se houve), os limiares, os parâmetros, o commit
+e `reproduzivel`. Se `reproduzivel` for `false`, o código tinha alterações não
+commitadas (ou não havia git) — o commit sozinho não reproduz aquele resultado.
+
+### 4.6 Série de posição e orientação da cabeça (US-09, US-10)
+
+Depois da inferência de pose do trial (`barnes pose infer`, US-07/08; ver o
+[guia de pose](pose-treino-avaliacao.md)), gere a série que as próximas etapas
+usam:
+
+```powershell
+barnes pose series --trial 12 --inference data\pose\inference\inferencia-<id>
+```
+
+`--inference` é o diretório que o `pose infer` imprimiu (com `execucao.json` e
+`pose.csv`). O comando confere se a inferência é **do mesmo trial e do mesmo
+vídeo** (hash), da mesma montagem e com o mesmo fps; exige a escala calibrada da
+montagem (US-02) e grava **`data\interim\trial_12.parquet`** — um arquivo por trial,
+sobrescrito ao reprocessar (o histórico fica nas execuções).
+
+O arquivo tem **uma linha por quadro do intervalo útil**, com o focinho, o centro do
+corpo e a base da cauda em **cm**, a orientação da cabeça **θ em graus** (0° = direita
+da imagem, sentido horário na tela) e o tempo **t em segundos desde a soltura**. As
+colunas e regras estão em [contrato-trajetoria.md](contrato-trajetoria.md).
+
+- **Quadro sem pose não some nem é preenchido em silêncio**: a linha sempre existe.
+  O comando trata as falhas de pose (US-10) com os parâmetros da seção `pose:` de
+  `configs/default.yaml`:
+  - **suaviza** cada ponto com mediana móvel (`suavizacao.janela_quadros`, padrão 5),
+    o que remove um quadro isolado errado;
+  - **interpola** lacunas **curtas**, de até `lacuna_curta_max_quadros` quadros (padrão
+    5, 0,2 s a 25 fps) com o ponto presente antes e depois. Essas linhas ficam com
+    `interpolado = true`;
+  - **sinaliza para revisão** as lacunas **longas** e as que tocam o início ou o fim do
+    intervalo útil. Essas ficam ausentes (`pose_valida = false`) até a revisão (seção 4.7).
+- O terminal mostra a **cobertura de pose**: fração dos quadros com focinho, centro do
+  corpo e base da cauda, contando interpolados e corrigidos. Mostra também a cobertura só
+  da detecção, o mínimo (padrão 0,98) e a **qualidade**. Se houver trecho sinalizado, o
+  comando avisa e indica `barnes pose review --trial 12`.
+- **fps variável** (aviso da US-01): o comando avisa no terminal, e o aviso vai no
+  arquivo (`fps_variavel`) e no catálogo (coluna **fps**). Os tempos desse trial são
+  aproximados. Se houve interpolação, o relatório de qualidade leva essa ressalva (US-10 RN07).
+- Cada geração registra uma execução (US-27) com o modelo usado e os parâmetros de
+  tratamento; consulte com `barnes execution show <id>`. O caminho do arquivo e a
+  cobertura ficam no catálogo.
+- Rodar o comando de novo é seguro: a série é sempre refeita a partir do `pose.csv`, com
+  as correções manuais já registradas, então nada é suavizado duas vezes nem perdido.
+
+Requer o banco migrado até a `0008` (`barnes db migrate`).
+
+### 4.7 Revisão dos trechos sinalizados (US-10)
+
+```powershell
+barnes pose review --trial 12
+barnes pose review --trial 12 --video D:\videos\trial12.mp4   # vídeo em outro lugar
+barnes pose review --trial 12 --todos     # inclui trechos já revisados antes
+barnes pose review --trial 12 --margem 25 # mais quadros de contexto (padrão 10)
+```
+
+A janela abre **direto no primeiro trecho pendente** e só mostra os trechos
+sinalizados, com alguns quadros de contexto. Não é preciso varrer o vídeo. O cabeçalho
+mostra o trecho, os quadros, os pontos que faltam, o quadro atual e o ponto que o
+próximo clique marca. Os pontos que a série já tem aparecem como círculos vazados, e
+as marcações do operador como círculos cheios numerados.
+
+| Tecla | Ação |
+|---|---|
+| `n` / `p` | próximo / anterior trecho |
+| `d` / `a` | próximo / anterior quadro (dentro do trecho e da margem) |
+| `1` / `2` / `3` | marcar focinho / centro do corpo / base da cauda |
+| clique esquerdo | marca o ponto ativo no quadro |
+| clique direito, Backspace | desfaz a última marcação |
+| Enter | dá o trecho por revisado e vai ao próximo |
+| `s` | salva e sai |
+| Esc, `x`, fechar a janela | cancela sem gravar nada |
+
+Não é preciso marcar todos os quadros de uma lacuna longa. Marque o ponto em quadros
+espaçados de até 5 quadros: os vãos entre as marcações viram lacunas curtas e são
+interpolados. Se o animal não aparece (por exemplo, dentro da caixa de fuga), dê o
+trecho por revisado sem marcar nada. Ele deixa de ficar pendente, e a cobertura mostra
+o que faltou.
+
+Ao salvar, o comando grava, numa **execução própria** (US-27): as correções (tabela
+`correcao_pose`), os trechos revisados, a nova série e a nova cobertura. Assim o número
+final é auditável (`barnes execution show <id>`). Se a cobertura continuar abaixo do
+mínimo, o trial fica marcado como **qualidade insuficiente** no catálogo e nas métricas.
+O vídeo usado na revisão precisa ter o mesmo conteúdo (hash) do catalogado.
+
 ## 5. Saídas
 
 Na US-02, os resultados são exibidos no terminal e persistidos no mesmo
-Postgres do projeto. Use `barnes scale show` e `barnes metrics executions`
-para consultar os registros.
+Postgres do projeto. Use `barnes scale show`, `barnes metrics executions`,
+`barnes catalog list` e `barnes execution show` para consultar os registros.
 As exportações do produto completo abaixo permanecem previstas para suas
 respectivas histórias:
 
 | Arquivo | Conteúdo |
 |---|---|
+| `data/interim/trial_<id>.parquet` | série de pose por quadro: posição (cm), θ, t, `interpolado`, e o relatório de qualidade nos metadados (US-09/US-10, seções 4.6 e 4.7) |
 | CSV por trial | métricas do trial |
 | CSV consolidado | todos os trials |
 | `trials.csv` / `probes.csv` | formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |
 | Curvas e trajetória desenhada | |
+
+Todo trial com cobertura de pose calculada leva, nas saídas, a cobertura e a marcação de
+qualidade (`suficiente`, `revisao_pendente`, `insuficiente`). Um trial de qualidade
+insuficiente nunca aparece sem a marcação (US-10 RN06).
 
 Colunas com posição trazem no nome o referencial em que estão expressas
 (US-05 RN05): `_platform` para índice de buraco, `_room` para ângulo fixo
@@ -524,7 +734,10 @@ use sempre as colunas `_room`.
 | Janela não abre | Execute em sessão gráfica com `opencv-python` e acesso ao monitor; a interface interativa exige janela. |
 | Vídeo/quadro não pode ser lido | Confira caminho, formato e índice do quadro; o primeiro quadro é o 0. |
 | Resultado parece ausente | Confira `--dsn`/`BARNES_DATABASE_URL` e o id do trial/da montagem. |
-| Resultado marcado obsoleto | Reprocesse o trial (`metrics process`) para aplicar a escala atual; o valor anterior fica até reprocessar. |
+| Resultado marcado obsoleto | Reprocesse o trial (`metrics process`) para aplicar a escala atual; o resultado anterior continua no histórico. |
+| "O vídeo informado não é o catalogado" | O arquivo em `--video` tem outro conteúdo. Ache o vídeo original (`barnes catalog list --verificar-hash --procurar-em PASTA`). |
+| Catálogo mostra `movido`/`ausente` | O vídeo mudou de lugar. Informe o caminho novo em `--video` ao reprocessar; o caminho fica registrado na execução. |
+| Execução marcada como suja | Havia alterações não commitadas no código. Faça commit e reprocesse para ter um resultado reproduzível. |
 
 _Outros problemas serão acrescentados nas demais histórias, especialmente o
 aviso de fps variável (US-01), que não é corrigido automaticamente._
@@ -583,6 +796,7 @@ Os testes incluem imagem sintética com escala conhecida e uma terceira
 distância independente, bloqueio sem escala, reutilização pela montagem e
 obsolescência após recalibração. Os testes da janela simulam os eventos do
 OpenCV; não substituem uma sessão manual com vídeo real. Os testes de
-persistência (`tests/db/`, `tests/test_cli.py`) exigem `BARNES_DATABASE_URL`
-apontando para um Postgres de teste com o schema aplicado (`barnes db
-migrate`) — são pulados automaticamente se a variável não estiver definida.
+persistência (`tests/db/`, `tests/test_cli.py`) exigem
+`BARNES_TEST_DATABASE_URL` (no `.env`) apontando para um Postgres **de teste**
+com o schema aplicado (seção 2.2.1) — são pulados automaticamente sem ela. Os
+testes nunca usam `BARNES_DATABASE_URL`, para não tocar no banco de trabalho.

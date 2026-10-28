@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import csv
+import getpass
 import json
 import math
+from collections.abc import Sequence
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import cv2
 import numpy as np
@@ -25,16 +27,35 @@ from barnes.db.calibration import (
     save_verification,
     validate_frame_size,
 )
+from barnes.db.catalog import list_catalog
 from barnes.db.connection import DatabaseConfigError, apply_migrations, get_connection
-from barnes.db.maze_configs import get_maze_config, insert_maze_config
-from barnes.db.trial_results import get_trial_result, list_trial_results, upsert_trial_result
+from barnes.db.executions import get_execution, record_processing_execution
+from barnes.db.hole_events import insert_hole_event
+from barnes.db.maze_configs import get_hole_ids, get_maze_config, insert_maze_config
+from barnes.db.pose_corrections import (
+    REVIEW_COMMAND,
+    insert_pose_corrections,
+    list_pose_corrections,
+    list_reviewed_ranges,
+)
+from barnes.db.trial_results import (
+    get_trial_result,
+    insert_trial_result,
+    list_trial_result_history,
+    list_trial_results,
+)
 from barnes.db.trials import (
+    StoredTrial,
     get_trial,
     get_trial_maze_config_id,
     get_trial_rotations,
     insert_trial,
+    set_pose_coverage,
+    set_trajectory_path,
     set_trial_rotation,
 )
+from barnes.events.discovery import DEFAULT_CONFIG_PATH as DISCOVERY_DEFAULT_CONFIG_PATH
+from barnes.events.discovery import detect_discoveries, load_discovery_params
 from barnes.geometry.holes import Hole, MazeGeometry, generate_holes
 from barnes.geometry.reference_frame import (
     ReferenceFrame,
@@ -52,23 +73,49 @@ from barnes.io.calibration import (
 )
 from barnes.io.calibration_ui import CalibrationCancelled, collect_segments
 from barnes.io.trim import TrialInterval, TrialIntervalError, build_trial_interval
-from barnes.io.video import VideoLoadError, VideoMetadata, load_trial_video, read_frame
+from barnes.io.video import (
+    FileStatus,
+    VideoLoadError,
+    VideoMetadata,
+    load_trial_video,
+    read_frame,
+    verify_video_file,
+)
 from barnes.metrics import process_trial
 from barnes.pose.annotations import (
     ANNOTATIONS_CSV,
+    KEYPOINTS,
     from_slp,
     read_annotations_csv,
     validate_complete,
     write_annotations_csv,
 )
+from barnes.pose.dataset import file_sha256, git_revision_record
+from barnes.pose.inference import INFERENCE_RECORD_KIND, load_inference_record
 from barnes.pose.protocol import DEFAULT_CONFIG_PATH, load_annotation_protocol
+from barnes.pose.quality import (
+    PointCorrection,
+    PoseQuality,
+    PostProcessed,
+    QualityParams,
+    load_quality_params,
+    postprocess_pose,
+    segments_from_report,
+)
 from barnes.pose.report import count_by_region, empty_regions, resolve_maze_configs
+from barnes.pose.review_ui import (
+    ReviewCancelled,
+    ReviewSession,
+    collect_review,
+    load_review_frames,
+)
 from barnes.pose.sampling import (
     check_previous_export,
     export_frames,
     read_sampled_maze_config,
     sample_frames,
 )
+from barnes.pose.series import PoseFrames, build_series, read_pose_csv
 from barnes.pose.split import (
     SPLIT_CSV,
     build_manifest,
@@ -78,6 +125,14 @@ from barnes.pose.split import (
     summarize,
     write_manifest,
 )
+from barnes.pose.trajectory import (
+    POSTPROCESSING_KEY,
+    read_metadata,
+    read_trajectory,
+    trajectory_path,
+    write_trajectory,
+)
+from barnes.provenance import PACKAGE_DIR, GitState, thresholds_snapshot
 
 app = typer.Typer()
 
@@ -99,8 +154,17 @@ app.add_typer(scale_app, name="scale")
 metrics_app = typer.Typer(help="Métricas calculadas com a escala calibrada (US-02).")
 app.add_typer(metrics_app, name="metrics")
 
+execution_app = typer.Typer(help="Proveniência das execuções registradas (US-27).")
+app.add_typer(execution_app, name="execution")
+
+catalog_app = typer.Typer(help="Catálogo de trials processados (US-27).")
+app.add_typer(catalog_app, name="catalog")
+
 pose_app = typer.Typer(help="Anotação, treino, avaliação e inferência local de pose (US-06/07/08).")
 app.add_typer(pose_app, name="pose")
+
+events_app = typer.Typer(help="Eventos por buraco a partir da trajetória (US-11).")
+app.add_typer(events_app, name="events")
 
 
 @db_app.command("migrate")
@@ -920,7 +984,7 @@ def _command_errors():
     except GeometryValidationError as exc:
         typer.echo(f"Erro no parâmetro '{exc.field}': {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    except CalibrationCancelled as exc:
+    except (CalibrationCancelled, ReviewCancelled) as exc:
         typer.echo(f"Cancelado: {exc}", err=True)
         raise typer.Exit(code=130) from exc
     except CalibrationRequiredError as exc:
@@ -1078,11 +1142,14 @@ def process(
     ] = None,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Calcular métricas de uma trajetória já extraída e registrar a escala usada (RN03/RN05).
+    """Calcular métricas de uma trajetória já extraída e registrar a execução (US-02, US-27).
 
     Usa a montagem do próprio trial e só as amostras dentro do intervalo útil
-    gravado nele (US-03 RN02).
+    gravado nele (US-03 RN02). O vídeo informado precisa ter o hash do trial
+    catalogado (US-27 RN04); a execução — limiares, parâmetros, commit e
+    estado sujo — e as métricas são gravadas juntas (US-27 RN01/RN02).
     """
+    started_at = datetime.now(UTC)
     with _command_errors():
         # Sem trial válido, intervalo ou escala, nem o vídeo é decodificado nem o CSV é lido.
         with get_connection(dsn) as conn:
@@ -1100,6 +1167,21 @@ def process(
                     "com `barnes video load`."
                 )
             calibration = require_calibration(conn, stored.maze_config_id)
+        check = verify_video_file(video, stored.content_hash)
+        if check.status is not FileStatus.OK:
+            raise ValueError(
+                f"O vídeo informado não é o catalogado no trial #{trial}: o conteúdo "
+                "difere do registrado (hash). Confira --video; reprocessar com outro "
+                "arquivo produziria métricas atribuídas ao trial errado."
+            )
+        moved = video.resolve() != Path(stored.filepath).resolve()
+        if moved:
+            typer.echo(
+                f"Aviso: trial #{trial} catalogado em {stored.filepath}, mas o mesmo vídeo "
+                f"(hash idêntico) foi informado em {video}. O caminho novo fica registrado "
+                "na execução.",
+                err=True,
+            )
         reference = read_frame(video, frame)
         frame_size = (reference.shape[1], reference.shape[0])
         if frame_size != (stored.width_px, stored.height_px):
@@ -1118,33 +1200,222 @@ def process(
             interval=stored.interval,
             ideal_distance_px=ideal_distance_px,
         )
+        thresholds = thresholds_snapshot()
+        source = git_revision_record(PACKAGE_DIR)
+        git = GitState.from_record(source)
+        px_per_10cm = 10 / calibration.cm_per_px
+        parameters = {
+            "comando": "metrics process",
+            "video": str(video),
+            "video_catalogado": str(stored.filepath),
+            "video_movido": moved,
+            "trajectory": str(trajectory),
+            "trajectory_sha256": file_sha256(trajectory),
+            "frame": frame,
+            "ideal_distance_px": ideal_distance_px,
+            "px_per_10cm": px_per_10cm,
+            "interval": asdict(stored.interval),
+        }
         with get_connection(dsn) as conn:
-            upsert_trial_result(
+            # Execução e métricas na mesma transação: nunca uma sem a outra.
+            execucao_id = record_processing_execution(
+                conn,
+                trial_id=trial,
+                maze_config_id=stored.maze_config_id,
+                parameters=parameters,
+                thresholds=thresholds,
+                git=git,
+                video_hash=check.actual_hash,
+                started_at=started_at,
+                duration_seconds=(datetime.now(UTC) - started_at).total_seconds(),
+                metadata={"source": source},
+            )
+            insert_trial_result(
                 conn,
                 trial,
+                execucao_id=execucao_id,
                 distance_cm=metrics["distance_cm"],
                 speed_mean_cm=metrics["mean_speed_cm_s"],
                 route_efficiency=metrics.get("route_efficiency"),
-                px_per_10cm_used=10 / calibration.cm_per_px,
+                px_per_10cm_used=px_per_10cm,
                 calculated_at=datetime.now(UTC),
             )
-        typer.echo(json.dumps(metrics, ensure_ascii=False, indent=2))
+            stored_result = get_trial_result(conn, trial)
+        _warn_if_not_reproducible(git, execucao_id)
+        quality = {
+            "cobertura_pose": stored_result.cobertura_pose,
+            "qualidade_pose": stored_result.qualidade_pose,
+        }
+        if stored_result.qualidade_pose is PoseQuality.INSUFICIENTE:
+            typer.echo(
+                f"Aviso: trial #{trial} com QUALIDADE DE POSE INSUFICIENTE (cobertura "
+                f"{stored_result.cobertura_pose:.1%}, US-10 RN06) — a marcação vai junto das "
+                "métricas.",
+                err=True,
+            )
+        elif stored_result.qualidade_pose is PoseQuality.REVISAO_PENDENTE:
+            typer.echo(
+                f"Aviso: trial #{trial} tem trechos de pose ainda não revisados — rode "
+                f"`barnes pose review --trial {trial}`.",
+                err=True,
+            )
+        typer.echo(
+            json.dumps(
+                metrics | {"execucao_id": execucao_id} | quality, ensure_ascii=False, indent=2
+            )
+        )
 
 
 @metrics_app.command("executions")
 def executions(
     trial: Annotated[int | None, typer.Option("--trial", help="Filtrar por id do trial.")] = None,
+    history: Annotated[
+        bool,
+        typer.Option("--history", help="Com --trial: todos os cálculos, não só o atual (US-27)."),
+    ] = False,
     dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
 ) -> None:
-    """Consultar resultados calculados e se ficaram obsoletos após recalibração (RN05)."""
+    """Consultar resultados calculados e se ficaram obsoletos após recalibração (RN05).
+
+    Cada resultado traz `execucao_id`; `barnes execution show ID` mostra modelo,
+    limiares, parâmetros e commit daquela execução (US-27).
+    """
     with _command_errors():
+        if history and trial is None:
+            raise ValueError("--history exige --trial.")
         with get_connection(dsn) as conn:
-            if trial is not None:
+            if history:
+                rows = list_trial_result_history(conn, trial)
+            elif trial is not None:
                 result = get_trial_result(conn, trial)
                 rows = [] if result is None else [result]
             else:
                 rows = list_trial_results(conn)
         typer.echo(json.dumps([asdict(row) for row in rows], ensure_ascii=False, indent=2, default=str))
+
+
+@execution_app.command("show")
+def execution_show(
+    execution_id: Annotated[int, typer.Argument(help="Id da execução (execucao.id).")],
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Mostrar tudo o que uma execução registrou: modelo, limiares, parâmetros e commit (US-27).
+
+    É o que basta para reprocessar um resultado antigo (Cenário 2): fazer
+    checkout de `git_commit`, restaurar `limiares` em `configs/default.yaml` e
+    repetir o comando com `parametros`. `reproduzivel` é falso se o
+    repositório estava sujo ou sem git na hora da execução (RN05).
+    """
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            stored = get_execution(conn, execution_id)
+        if not stored.reproducible:
+            typer.echo(
+                f"Aviso: execução #{execution_id} não é reproduzível pelo commit "
+                "(repositório sujo, sem git ou anterior à US-27).",
+                err=True,
+            )
+        typer.echo(
+            json.dumps(
+                asdict(stored) | {"reproduzivel": stored.reproducible},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
+
+
+@catalog_app.command("list")
+def catalog_list(
+    experiment_id: Annotated[
+        int | None, typer.Option("--experiment-id", help="Só os trials deste experimento.")
+    ] = None,
+    verify_hash: Annotated[
+        bool,
+        typer.Option(
+            "--verificar-hash",
+            help="Reler cada vídeo e comparar o conteúdo (lento). Padrão: só existência e tamanho.",
+        ),
+    ] = False,
+    no_file_check: Annotated[
+        bool, typer.Option("--sem-arquivo", help="Não conferir os vídeos no disco.")
+    ] = False,
+    search_dirs: Annotated[
+        list[Path] | None,
+        typer.Option("--procurar-em", help="Pasta extra onde procurar vídeos movidos (repetível)."),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Saída em JSON.")] = False,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Listar trials com animal, sessão, situação, cobertura de pose e conferência do vídeo.
+
+    Um vídeo movido, renomeado, substituído ou ausente é sinalizado com o id
+    do trial (US-27 RN04); a listagem não altera nada no banco.
+    """
+    if verify_hash and no_file_check:
+        raise typer.BadParameter("--verificar-hash e --sem-arquivo são exclusivos.")
+    verify = None if no_file_check else ("hash" if verify_hash else "size")
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            entries = list_catalog(
+                conn, experiment_id=experiment_id, verify=verify, search_dirs=search_dirs or ()
+            )
+        if as_json:
+            typer.echo(json.dumps([_catalog_json(e) for e in entries], ensure_ascii=False,
+                                  indent=2, default=str))
+        else:
+            _print_catalog(entries)
+        divergent = [e for e in entries if e.diverges]
+        for entry in divergent:
+            typer.echo(f"Divergência no trial #{entry.trial_id}: {entry.arquivo.describe()}.",
+                       err=True)
+        if divergent:
+            typer.echo(
+                f"{len(divergent)} trial(s) com vídeo divergente do catalogado. Não reprocesse "
+                "antes de conferir o arquivo.",
+                err=True,
+            )
+
+
+def _catalog_json(entry) -> dict:
+    data = asdict(entry)
+    data["arquivo"] = None if entry.arquivo is None else entry.arquivo.status.value
+    data["arquivo_detalhe"] = None if entry.arquivo is None else entry.arquivo.describe()
+    data["arquivo_divergente"] = entry.diverges
+    return data
+
+
+def _print_catalog(entries) -> None:
+    if not entries:
+        typer.echo("Nenhum trial catalogado.")
+        return
+    header = ("trial", "animal", "sessão", "fase", "nº", "situação", "cobertura", "qualidade",
+              "fps", "execução", "arquivo")
+    quality_label = {
+        None: "—",
+        PoseQuality.SUFICIENTE: "suficiente",
+        PoseQuality.REVISAO_PENDENTE: "revisão pendente",
+        PoseQuality.INSUFICIENTE: "INSUFICIENTE",
+    }
+    rows = [
+        (
+            f"#{e.trial_id}",
+            e.animal or "—",
+            str(e.sessao),
+            e.fase,
+            str(e.trial_no_dia),
+            e.situacao.value,
+            "—" if e.cobertura_pose is None else f"{e.cobertura_pose:.1%}",
+            quality_label[e.qualidade_pose],
+            "variável" if e.fps_variavel else "ok",
+            "—" if e.execucao_id is None else f"#{e.execucao_id}",
+            "—" if e.arquivo is None else e.arquivo.status.value,
+        )
+        for e in entries
+    ]
+    widths = [max(len(r[i]) for r in (header, *rows)) for i in range(len(header))]
+    for row in (header, *rows):
+        typer.echo("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)))
 
 
 ANNOTATIONS_DIR = Path("data/annotations")
@@ -1155,6 +1426,415 @@ AnnotationsPath = Annotated[
     Path, typer.Option("--annotations", help="Conjunto anotado no formato interno.")
 ]
 ManifestPath = Annotated[Path, typer.Option("--manifest", help="Manifesto da divisão.")]
+
+
+@dataclass(frozen=True)
+class _SeriesInputs:
+    """O que `pose series` e `pose review` precisam para (re)gerar a série de um trial."""
+
+    trial: int
+    stored: StoredTrial
+    cm_per_px: float
+    record: dict[str, Any]
+    inference: Path
+    pose_csv: Path
+    pose: PoseFrames
+    params: QualityParams
+    corrections: tuple[PointCorrection, ...]
+    reviewed: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class _SeriesWritten:
+    execucao_id: int
+    processed: PostProcessed
+    table: Any
+    git: GitState
+
+
+def _load_series_inputs(trial: int, inference: Path, dsn: str | None) -> _SeriesInputs:
+    """Confere a inferência contra o trial e lê pose, escala, correções e limites (US-09/10).
+
+    Nada é gravado: qualquer incoerência falha antes de abrir a transação (e,
+    na revisão, antes de abrir a janela).
+    """
+    params = load_quality_params()  # configs/default.yaml inválido falha antes de tudo
+    record = load_inference_record(inference)  # confere os hashes dos artefatos
+    if record["kind"] != INFERENCE_RECORD_KIND or record["status"] != "completed":
+        raise ValueError(
+            f"{inference} não é uma inferência de trial concluída (status: "
+            f"{record['status']}). Rode `barnes pose infer` de novo."
+        )
+    if record.get("trial_id") != trial:
+        raise ValueError(
+            f"A inferência em {inference} é do trial #{record.get('trial_id')}, não do #{trial}."
+        )
+    with get_connection(dsn) as conn:
+        stored = get_trial(conn, trial)
+        calibration = require_calibration(conn, stored.maze_config_id)
+        corrections = tuple(c.correction for c in list_pose_corrections(conn, trial))
+        reviewed = tuple(list_reviewed_ranges(conn, trial))
+    if stored.interval is None:
+        raise ValueError(f"O trial #{trial} não tem intervalo útil registrado (US-03).")
+    if record.get("content_hash") != stored.content_hash:
+        raise ValueError(
+            f"A inferência foi feita sobre um vídeo com outro conteúdo que o do trial "
+            f"#{trial} (hash diverge): a pose não é deste trial."
+        )
+    if record.get("maze_config_id") != stored.maze_config_id:
+        raise ValueError(
+            f"A inferência usou um modelo da montagem #{record.get('maze_config_id')}, "
+            f"mas o trial #{trial} é da montagem #{stored.maze_config_id}."
+        )
+    if not math.isclose(record["fps"], stored.fps_real, rel_tol=1e-9):
+        raise ValueError(
+            f"A inferência usou fps {record['fps']}, mas o trial #{trial} registra "
+            f"{stored.fps_real}: refaça a inferência."
+        )
+    # A pose está em pixels do vídeo original; a escala só vale nessa resolução.
+    validate_frame_size(calibration, (stored.width_px, stored.height_px))
+    pose_csv = Path(inference) / "pose.csv"
+    return _SeriesInputs(
+        trial=trial,
+        stored=stored,
+        cm_per_px=calibration.cm_per_px,
+        record=record,
+        inference=Path(inference),
+        pose_csv=pose_csv,
+        pose=read_pose_csv(pose_csv),
+        params=params,
+        corrections=corrections,
+        reviewed=reviewed,
+    )
+
+
+def _write_series(
+    inputs: _SeriesInputs,
+    *,
+    destination: Path,
+    started_at: datetime,
+    dsn: str | None,
+    command: str,
+    extra_parameters: dict[str, Any] | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+    new_corrections: Sequence[PointCorrection] = (),
+    new_reviewed: Sequence[tuple[int, int]] = (),
+) -> _SeriesWritten:
+    """Pós-processa a pose (US-10) e grava execução, correções, série e cobertura juntas.
+
+    A série é sempre função do `pose.csv`, de todas as correções do trial e dos
+    limites de `configs/default.yaml`: regenerar nunca suaviza duas vezes.
+    """
+    stored = inputs.stored
+    processed = postprocess_pose(
+        inputs.pose,
+        inputs.params,
+        corrections=(*inputs.corrections, *new_corrections),
+        reviewed_ranges=(*inputs.reviewed, *new_reviewed),
+        fps_variable=bool(stored.fps_is_variable),
+    )
+    frames = inputs.record["processed_interval_frames"]
+    source = git_revision_record(PACKAGE_DIR)
+    git = GitState.from_record(source)
+    parameters = {
+        "comando": command,
+        "inference_run": str(inputs.inference.resolve()),
+        "inference_run_id": inputs.inference.resolve().name,
+        "pose_csv_sha256": file_sha256(inputs.pose_csv),
+        "processed_interval_frames": frames,
+        "cm_per_px": inputs.cm_per_px,
+        "px_per_10cm": 10 / inputs.cm_per_px,
+        "fps_real": stored.fps_real,
+        "fps_variavel": bool(stored.fps_is_variable),
+        "interval": asdict(stored.interval),
+        "saida": str(destination),
+        "pos_processamento": inputs.params.as_record(),
+        "correcoes_aplicadas": len(inputs.corrections) + len(new_corrections),
+        **(extra_parameters or {}),
+    }
+    with get_connection(dsn) as conn:
+        # Execução, correções, trajectory_path, cobertura e arquivo juntos: o
+        # Parquet é gravado por último, e uma falha antes dele desfaz tudo.
+        execucao_id = record_processing_execution(
+            conn,
+            trial_id=inputs.trial,
+            maze_config_id=stored.maze_config_id,
+            parameters=parameters,
+            thresholds=thresholds_snapshot(),
+            git=git,
+            video_hash=stored.content_hash,
+            started_at=started_at,
+            model_id=inputs.record["model_id"],
+            artifact_path=str(destination),
+            metadata={
+                "source": source,
+                "qualidade_pose": processed.report,
+                **(extra_metadata or {}),
+            },
+        )
+        insert_pose_corrections(
+            conn, trial_id=inputs.trial, execucao_id=execucao_id, corrections=new_corrections
+        )
+        table = build_series(
+            processed.pose,
+            trial_id=inputs.trial,
+            execucao_id=execucao_id,
+            expected_frames=(frames["start"], frames["end"]),
+            fps=stored.fps_real,
+            interval=stored.interval,
+            fps_variable=bool(stored.fps_is_variable),
+            cm_per_px=inputs.cm_per_px,
+            content_hash=stored.content_hash,
+            model_id=inputs.record["model_id"],
+            generated_at=started_at,
+            interpolated=processed.interpolated,
+            postprocessing=processed.report,
+        )
+        set_trajectory_path(conn, inputs.trial, str(destination))
+        set_pose_coverage(
+            conn, inputs.trial, cobertura=processed.report["cobertura"], execucao_id=execucao_id
+        )
+        write_trajectory(table, destination)
+    return _SeriesWritten(execucao_id, processed, table, git)
+
+
+def _warn_if_not_reproducible(git: GitState, execucao_id: int) -> None:
+    if not git.reproducible:
+        typer.echo(
+            f"Aviso: execução #{execucao_id} registrada com repositório "
+            f"{'sujo (alterações não commitadas)' if git.dirty else 'em estado desconhecido'}"
+            " — o resultado não é reproduzível pelo commit.",
+            err=True,
+        )
+
+
+def _echo_pose_quality(trial: int, processed: PostProcessed) -> None:
+    """Cobertura e qualidade de pose (US-10 RN03/RN06/RN07) no terminal."""
+    report = processed.report
+    typer.echo(
+        f"Cobertura de pose: {report['cobertura']:.1%} (detecção {report['cobertura_deteccao']:.1%},"
+        f" mínimo {report['cobertura_minima']:.1%}) | {report['quadros_interpolados']} quadro(s) "
+        f"interpolado(s), {report['quadros_corrigidos']} corrigido(s) | qualidade: "
+        f"{processed.quality.value}"
+    )
+    if processed.pending:
+        shown = ", ".join(f"{s.start_frame}-{s.end_frame}" for s in processed.pending[:5])
+        more = " ..." if len(processed.pending) > 5 else ""
+        typer.echo(
+            f"Atenção: {len(processed.pending)} trecho(s) sinalizado(s) para revisão (quadros "
+            f"{shown}{more}). Revise com `barnes pose review --trial {trial}`.",
+            err=True,
+        )
+    elif processed.quality is PoseQuality.INSUFICIENTE:
+        typer.echo(
+            f"QUALIDADE INSUFICIENTE: cobertura de pose {report['cobertura']:.1%} abaixo do "
+            f"mínimo {report['cobertura_minima']:.1%}, mesmo após a revisão. A marcação acompanha "
+            "o trial no catálogo e nas métricas (US-10 RN06).",
+            err=True,
+        )
+    if report["ressalva_fps_variavel"]:
+        typer.echo(f"Aviso: {report['ressalva_fps_variavel']}", err=True)
+    if report["correcoes_ignoradas"]:
+        typer.echo(
+            f"Aviso: {report['correcoes_ignoradas']} correção(ões) manual(is) fora do intervalo "
+            "útil atual foram ignoradas.",
+            err=True,
+        )
+
+
+@pose_app.command("series")
+def pose_series(
+    trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
+    inference: Annotated[
+        Path,
+        typer.Option(
+            "--inference",
+            help="Diretório da execução de `barnes pose infer` (com execucao.json e pose.csv).",
+        ),
+    ],
+    out: Annotated[
+        Path, typer.Option("--out", help="Pasta das trajetórias (um .parquet por trial).")
+    ] = Path("data/interim"),
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Gerar a série (x, y, theta, t) do trial a partir da pose inferida (US-09, US-10).
+
+    Lê o `pose.csv` de uma inferência concluída do próprio trial (hash e montagem
+    conferidos) e aplica as correções manuais já registradas. Depois suaviza a pose,
+    interpola as lacunas curtas e sinaliza as longas para revisão, com os limites de
+    configs/default.yaml (US-10). Converte para cm com a escala da montagem (US-02),
+    calcula theta pelo eixo centro do corpo -> focinho e grava `<out>/trial_<id>.parquet`
+    no contrato de `docs/contrato-trajetoria.md`. A execução (US-27), o caminho do
+    arquivo e a cobertura de pose são gravados na mesma transação.
+    """
+    started_at = datetime.now(UTC)
+    with _command_errors():
+        inputs = _load_series_inputs(trial, inference, dsn)
+        if inputs.stored.fps_is_variable:
+            typer.echo(
+                f"Aviso: o vídeo do trial #{trial} tem fps variável (US-01) — os tempos t_s "
+                "da série são aproximados. O aviso vai junto no arquivo (fps_variavel).",
+                err=True,
+            )
+        destination = trajectory_path(out, trial)
+        written = _write_series(
+            inputs, destination=destination, started_at=started_at, dsn=dsn, command="pose series"
+        )
+        table = written.table
+        without_pose = table.num_rows - sum(table.column("pose_valida").to_pylist())
+        _warn_if_not_reproducible(written.git, written.execucao_id)
+        typer.echo(
+            f"Trajetória: {destination} | {table.num_rows} quadros, {without_pose} sem pose "
+            f"válida | execução #{written.execucao_id}"
+        )
+        _echo_pose_quality(trial, written.processed)
+
+
+def _review_video(stored: StoredTrial, video: Path | None) -> Path:
+    """Vídeo a exibir na revisão: o catalogado, ou o informado, desde que o conteúdo confira."""
+    path = Path(video or stored.filepath)
+    check = verify_video_file(path, stored.content_hash)
+    if check.status is FileStatus.OK:
+        return path
+    if check.status is FileStatus.MOVIDO and check.found_at is not None:
+        typer.echo(f"Aviso: {check.describe()} — usando esse arquivo (mesmo conteúdo).", err=True)
+        return check.found_at
+    raise ValueError(
+        f"Vídeo do trial #{stored.id}: {check.describe()}. Informe o vídeo correto com --video."
+    )
+
+
+def _review_overlay(
+    table, cm_per_px: float, frames: set[int]
+) -> dict[int, dict[str, tuple[float, float]]]:
+    """Pontos que a série atual já tem, em pixels, nos quadros que a revisão exibe."""
+    quadros = table.column("quadro").to_numpy()
+    rows = np.flatnonzero(np.isin(quadros, list(frames)))
+    overlay: dict[int, dict[str, tuple[float, float]]] = {int(quadros[r]): {} for r in rows}
+    for point in KEYPOINTS:
+        x = table.column(f"{point}_x_cm_image").to_numpy() / cm_per_px
+        y = table.column(f"{point}_y_cm_image").to_numpy() / cm_per_px
+        valid = table.column(f"{point}_valido").to_numpy()
+        for row in rows:
+            if valid[row]:
+                overlay[int(quadros[row])][point] = (float(x[row]), float(y[row]))
+    return overlay
+
+
+def _os_user() -> str | None:
+    try:
+        return getpass.getuser()
+    except (OSError, KeyError, ImportError):
+        return None
+
+
+@pose_app.command("review")
+def pose_review(
+    trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
+    video: Annotated[
+        Path | None,
+        typer.Option(
+            "--video",
+            help="Caminho alternativo do vídeo; o conteúdo (hash) tem de ser o catalogado.",
+        ),
+    ] = None,
+    include_reviewed: Annotated[
+        bool,
+        typer.Option("--todos", help="Incluir os trechos já revisados em sessões anteriores."),
+    ] = False,
+    margin: Annotated[
+        int,
+        typer.Option("--margem", min=0, help="Quadros de contexto antes e depois de cada trecho."),
+    ] = 10,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Revisar só os trechos de pose sinalizados do trial e registrar as correções (US-10).
+
+    Abre uma janela direto no primeiro trecho pendente da série atual (gerada por
+    `barnes pose series`), sem varrer o vídeo inteiro. O operador marca os pontos que
+    faltam ou dá o trecho por revisado. Ao salvar, as correções, a nova série e a nova
+    cobertura de pose são gravadas numa execução própria (US-27), para que o número
+    final seja auditável.
+    """
+    started_at = datetime.now(UTC)
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            stored = get_trial(conn, trial)
+        if stored.trajectory_path is None:
+            raise ValueError(
+                f"O trial #{trial} ainda não tem série de pose: rode `barnes pose series` "
+                "antes da revisão."
+            )
+        current = read_trajectory(stored.trajectory_path)
+        meta = read_metadata(current)
+        report = meta.get(POSTPROCESSING_KEY)
+        if report is None:
+            raise ValueError(
+                f"A série atual do trial #{trial} ({stored.trajectory_path}) foi gerada sem o "
+                "pós-processamento da US-10: rode `barnes pose series` de novo."
+            )
+        segments = [s for s in segments_from_report(report) if include_reviewed or s.pending]
+        if not segments:
+            kind = "sinalizado" if include_reviewed else "pendente de revisão"
+            typer.echo(
+                f"Nenhum trecho {kind} no trial #{trial} (cobertura de pose "
+                f"{report['cobertura']:.1%}, qualidade: {report['qualidade']})."
+            )
+            return
+        with get_connection(dsn) as conn:
+            generator = get_execution(conn, meta["execucao_id"])
+        inference = (generator.parametros or {}).get("inference_run")
+        if not inference:
+            raise ValueError(
+                f"A execução #{meta['execucao_id']}, que gerou a série atual, não registra a "
+                "inferência usada: rode `barnes pose series` de novo."
+            )
+        # Tudo o que pode falhar é conferido antes de abrir a janela, para o operador
+        # não perder a revisão por um erro de cadastro.
+        inputs = _load_series_inputs(trial, Path(inference), dsn)
+        source_video = _review_video(stored, video)
+        quadros = current.column("quadro").to_numpy()
+        session = ReviewSession(
+            segments, first_frame=int(quadros[0]), last_frame=int(quadros[-1]), margin=margin
+        )
+        wanted = session.frames_to_load()
+        typer.echo(
+            f"Carregando {len(wanted)} quadro(s) de {len(segments)} trecho(s) sinalizado(s) "
+            "(leitura sequencial do vídeo)..."
+        )
+        frames = load_review_frames(source_video, wanted)
+        result = collect_review(
+            frames, session, overlay=_review_overlay(current, meta["cm_per_px"], set(wanted))
+        )
+        if result.empty:
+            typer.echo("Nada marcado nem confirmado: nenhuma correção gravada.")
+            return
+        written = _write_series(
+            inputs,
+            destination=Path(stored.trajectory_path),
+            started_at=started_at,
+            dsn=dsn,
+            command=REVIEW_COMMAND,
+            extra_parameters={
+                "trechos_revisados": [
+                    {"inicio": start, "fim": end} for start, end in result.reviewed_segments
+                ],
+                "correcoes_novas": len(result.corrections),
+                "video_revisado": str(source_video),
+                "serie_anterior_execucao_id": meta["execucao_id"],
+            },
+            extra_metadata={"usuario_so": _os_user()},
+            new_corrections=result.corrections,
+            new_reviewed=result.reviewed_segments,
+        )
+        _warn_if_not_reproducible(written.git, written.execucao_id)
+        typer.echo(
+            f"Revisão registrada na execução #{written.execucao_id}: "
+            f"{len(result.corrections)} ponto(s) corrigido(s), "
+            f"{len(result.reviewed_segments)} trecho(s) dado(s) por revisado(s). "
+            f"Série: {stored.trajectory_path}"
+        )
+        _echo_pose_quality(trial, written.processed)
 
 
 @pose_app.command("sample")
@@ -1329,6 +2009,102 @@ def pose_report(
             typer.echo(f"Reprovado: nenhuma anotação na(s) região(ões) {names}.", err=True)
             raise typer.Exit(code=1)
         typer.echo("Cobertura OK: as três regiões têm quadros anotados.")
+
+
+@events_app.command("discover")
+def events_discover(
+    trial: Annotated[int, typer.Option("--trial", help="Id do trial (trials.id).")],
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config", help="YAML com a seção 'encontrar' dos limiares de descoberta (US-11)."
+        ),
+    ] = DISCOVERY_DEFAULT_CONFIG_PATH,
+    dsn: str = typer.Option(None, help="DSN do Postgres. Padrão: BARNES_DATABASE_URL."),
+) -> None:
+    """Detectar o evento de descoberta (D) de cada buraco a partir da trajetória (US-11).
+
+    Lê só a trajetória já extraída por `barnes pose series` — nunca o vídeo: recalcular
+    depois de revisar um limiar em `--config` é rodar de novo, sem reprocessar nada
+    (RN04). Grava um evento por buraco cujo primeiro quadro satisfaz os dois limiares
+    de distância e orientação da cabeça (RN01); buracos nunca descobertos não geram
+    linha nenhuma (Cenário 2), e só o primeiro encontro de cada buraco é registrado
+    (RN03).
+    """
+    started_at = datetime.now(UTC)
+    with _command_errors():
+        with get_connection(dsn) as conn:
+            stored = get_trial(conn, trial)
+            if stored.trajectory_path is None:
+                raise ValueError(
+                    f"O trial #{trial} ainda não tem série de pose: rode `barnes pose series` "
+                    "antes de detectar eventos."
+                )
+            geometry = get_maze_config(conn, stored.maze_config_id)
+            calibration = require_calibration(conn, stored.maze_config_id)
+            hole_ids = get_hole_ids(conn, stored.maze_config_id)
+        table = read_trajectory(stored.trajectory_path)
+        params = load_discovery_params(config)
+        events = detect_discoveries(table, geometry, calibration.cm_per_px, params)
+        # Congela o arquivo efetivamente usado (--config), não sempre o de produção:
+        # senão `execucao.limiares` mentiria sobre qual valor gerou este resultado.
+        thresholds = thresholds_snapshot(config)
+        source = git_revision_record(PACKAGE_DIR)
+        git = GitState.from_record(source)
+        parameters = {
+            "comando": "events discover",
+            "trajectory": str(stored.trajectory_path),
+            "trajectory_sha256": file_sha256(stored.trajectory_path),
+            "config": str(config),
+            "distancia_cm": params.distance_cm,
+            "angulo_graus": params.angle_deg,
+        }
+        with get_connection(dsn) as conn:
+            # Execução e eventos na mesma transação: nunca uns sem a outra.
+            execucao_id = record_processing_execution(
+                conn,
+                trial_id=trial,
+                maze_config_id=stored.maze_config_id,
+                parameters=parameters,
+                thresholds=thresholds,
+                git=git,
+                video_hash=stored.content_hash,
+                started_at=started_at,
+                duration_seconds=(datetime.now(UTC) - started_at).total_seconds(),
+                metadata={"source": source},
+            )
+            for event in events:
+                insert_hole_event(
+                    conn,
+                    trial_id=trial,
+                    hole_id=hole_ids[event.hole_number],
+                    execucao_id=execucao_id,
+                    tipo="descoberta",
+                    quadro=event.quadro,
+                    t_s=event.t_s,
+                    distancia_cm=event.distancia_cm,
+                    angulo_deg=event.angulo_deg,
+                )
+        _warn_if_not_reproducible(git, execucao_id)
+        typer.echo(
+            json.dumps(
+                {
+                    "execucao_id": execucao_id,
+                    "eventos": [
+                        {
+                            "buraco": event.hole_number,
+                            "quadro": event.quadro,
+                            "t_s": event.t_s,
+                            "distancia_cm": event.distancia_cm,
+                            "angulo_deg": event.angulo_deg,
+                        }
+                        for event in events
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
 
 register_pose_commands(pose_app, _command_errors)

@@ -12,7 +12,7 @@ import os
 import pytest
 
 from barnes.db.connection import get_connection
-from barnes.db.maze_configs import get_maze_config, insert_maze_config
+from barnes.db.maze_configs import get_hole_ids, get_maze_config, insert_maze_config
 from barnes.geometry.holes import generate_holes
 
 pytestmark = pytest.mark.skipif(
@@ -105,3 +105,40 @@ def test_get_maze_config_reapplies_target_hole(conn, experiment_id) -> None:
 def test_get_maze_config_missing_raises(conn) -> None:
     with pytest.raises(ValueError):
         get_maze_config(conn, 999999)
+
+
+def test_get_hole_ids_maps_hole_number_to_primary_key(conn, experiment_id) -> None:
+    geometry = _sample_geometry()
+    maze_config_id = insert_maze_config(
+        conn,
+        experiment_id=experiment_id,
+        name="config de teste",
+        arena_diameter_cm=90.0,
+        hole_diameter_cm=5.0,
+        geometry=geometry,
+    )
+
+    hole_ids = get_hole_ids(conn, maze_config_id)
+
+    assert set(hole_ids) == {hole.hole_number for hole in geometry.holes}
+    with conn.cursor() as cur:
+        for hole_number, hole_id in hole_ids.items():
+            cur.execute(
+                "SELECT maze_config_id, hole_number FROM holes WHERE id = %s", (hole_id,)
+            )
+            assert cur.fetchone() == (maze_config_id, hole_number)
+
+
+def test_get_hole_ids_empty_for_maze_without_holes(conn, experiment_id) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO maze_configs (experiment_id, name, arena_diameter_cm, hole_count,
+                                      hole_diameter_cm)
+            VALUES (%s, 'sem buracos', 90.0, 20, 5.0) RETURNING id
+            """,
+            (experiment_id,),
+        )
+        maze_config_id = cur.fetchone()[0]
+
+    assert get_hole_ids(conn, maze_config_id) == {}

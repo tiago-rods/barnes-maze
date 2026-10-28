@@ -30,6 +30,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from enum import StrEnum
 
+import numpy as np
+
 from barnes.geometry.holes import Hole, MazeGeometry
 
 # Abaixo disto, um ângulo é tratado como 360 ≡ 0 — evita 359.99999999 vindo
@@ -134,7 +136,7 @@ def room_angle_to_hole(
     """
     image_angle_deg = room_angle_deg - rotation_deg + geometry.holes[0].angle_deg
     nearest = min(
-        geometry.holes, key=lambda hole: _circular_distance(hole.angle_deg, image_angle_deg)
+        geometry.holes, key=lambda hole: circular_distance_deg(hole.angle_deg, image_angle_deg)
     )
     return nearest.hole_number
 
@@ -171,6 +173,11 @@ def _normalize(angle_deg: float) -> float:
     return 0.0 if 360.0 - angle_deg < _ANGLE_EPSILON_DEG else angle_deg
 
 
-def _circular_distance(a_deg: float, b_deg: float) -> float:
-    diff = abs(a_deg - b_deg) % 360.0
-    return min(diff, 360.0 - diff)
+def circular_distance_deg(a_deg, b_deg):
+    """Distância angular mínima entre dois ângulos num círculo, em [0, 180].
+
+    Funciona tanto com escalares quanto com arrays numpy (ex.: US-11, um
+    ângulo por quadro da trajetória comparado à direção de um buraco).
+    """
+    diff = np.abs(a_deg - b_deg) % 360.0
+    return np.minimum(diff, 360.0 - diff)
