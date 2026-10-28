@@ -25,8 +25,8 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 
 | # | Parâmetro | Chave em `default.yaml` | Valor acordado | Origem | Status |
 |---|---|---|---|---|---|
-| 1 | Distância para "encontrar" | `encontrar.distancia_cm` | — | C1 | pendente |
-| 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | — | C1 | pendente |
+| 1 | Distância para "encontrar" | `encontrar.distancia_cm` | 3 cm (provisório) | C1 | provisório (sem G3) |
+| 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | 30° (provisório) | C1 | provisório (sem G3) |
 | 3 | Critério de "entrar" | `entrar.focinho_dentro` | — | C2 | pendente |
 | 4 | Duração mínima de entrada | `entrar.duracao_minima_s` | — | C2 | pendente |
 | 5 | Duração mínima de dwell | `dwell.duracao_minima_s` | — | C2 | pendente |
@@ -38,14 +38,22 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | pendente |
 | 12 | Tempo limite do trial | `trial.tempo_limite_s` | — | B5 | pendente |
 
-> **US-11 (linhas 1-2).** O cálculo de distância focinho→buraco e do ângulo de
-> orientação da cabeça, o carregamento parametrizado dos dois limiares e a
-> persistência do evento de descoberta em `evento_buraco` já estão
-> implementados e testados (`barnes.events.discovery`,
-> `tests/events/test_discovery.py`, `barnes events discover`). O código recusa
-> rodar contra `configs/default.yaml` enquanto `encontrar.distancia_cm`/
-> `angulo_graus` estiverem `null` — não preenchemos com um valor de
-> conveniência. Falta só C1: o valor que o laboratório decidir em G3.
+> **US-11 (linhas 1-2) — valor PROVISÓRIO, não é o aceite de G3.** O cálculo de
+> distância focinho→buraco e do ângulo de orientação da cabeça, o carregamento
+> parametrizado dos dois limiares e a persistência do evento de descoberta em
+> `evento_buraco` já estão implementados e testados (`barnes.events.discovery`,
+> `tests/events/test_discovery.py`, `barnes events discover`).
+>
+> Como o laboratório ainda não respondeu C1, preenchemos `encontrar.distancia_cm`
+> (3 cm) e `encontrar.angulo_graus` (30°) com uma faixa comum de rastreamento
+> comportamental de roedores (ex. zonas de "nose-point"/orientação de cabeça do
+> EthoVision) para não travar o desenvolvimento — **não é uma citação
+> verificada**, nenhum artigo específico foi conferido para este número, e não
+> é o valor acordado pelo laboratório. `encontrar.calibrado_contra_anotacao`
+> continua `false` de propósito (nunca marque este valor como aceito). Status
+> "provisório (sem G3)" acima — **não mude para "acordado"/"concluído" até o
+> laboratório responder C1** e, então, até a calibração da [US-12] confirmar a
+> diferença ≤ 0,5 s contra a anotação manual.
 
 ## 2. Definições em prosa
 
