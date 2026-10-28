@@ -38,6 +38,15 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | pendente |
 | 12 | Tempo limite do trial | `trial.tempo_limite_s` | — | B5 | pendente |
 
+> **US-11 (linhas 1-2).** O cálculo de distância focinho→buraco e do ângulo de
+> orientação da cabeça, o carregamento parametrizado dos dois limiares e a
+> persistência do evento de descoberta em `evento_buraco` já estão
+> implementados e testados (`barnes.events.discovery`,
+> `tests/events/test_discovery.py`, `barnes events discover`). O código recusa
+> rodar contra `configs/default.yaml` enquanto `encontrar.distancia_cm`/
+> `angulo_graus` estiverem `null` — não preenchemos com um valor de
+> conveniência. Falta só C1: o valor que o laboratório decidir em G3.
+
 ## 2. Definições em prosa
 
 Preencher **com as palavras do laboratório**, não com as nossas.
