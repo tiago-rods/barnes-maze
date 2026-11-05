@@ -632,6 +632,12 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-12] Calibração dos limiares de descoberta contra a anotação manual
 
+> Entrega técnica em 05/11/2026: comparação, histórico auditável, bloqueio D3 e
+> incorporação de evidência implementados. **Calibração real bloqueada:** D3 não
+> foi confirmada e G3 segue pendente. As tarefas de execução/aceite abaixo
+> continuam abertas; [status por ticket](status-us12-us13.md) e
+> [guia dos comandos](eventos-calibracao-entrada.md).
+
 - **Épico / Módulo:** Eventos por buraco (`src/barnes/events/`, `docs/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 3 Pontos · 1,5–2 dias (depende do laboratório, não acelera com IA)
@@ -683,6 +689,11 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-13] Evento de entrada (E) — quando o animal *checa* fisicamente o buraco
 
+> Entrega técnica em 05/11/2026: detector, hesitação, consistência, persistência e
+> exportação implementados e testados com dados sintéticos. Área/duração ainda
+> dependem de C2/G3; a comparação real depende de D3. Não marcar o card aceito
+> antes dessas validações. Ver [status por ticket](status-us12-us13.md).
+
 - **Épico / Módulo:** Eventos por buraco (`src/barnes/events/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 5 Pontos · 2,5–4 dias
@@ -723,20 +734,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 #### Tarefas
 - [ ] Confirmar os critérios de área e de duração mínima saídos de **G3** (pergunta C2)
-- [ ] Declarar os critérios em `barnes.yaml`
-- [ ] Implementar a detecção de focinho dentro da área do buraco
-- [ ] Implementar o critério de duração mínima contínua
-- [ ] Implementar o cálculo da hesitação D→E em tempo e em distância
-- [ ] Implementar a verificação de consistência (entrada sem descoberta prévia)
+- [x] Declarar os critérios em `barnes.yaml` — em `configs/default.yaml`; valores C2 pendentes permanecem `null`
+- [x] Implementar a detecção de focinho dentro da área do buraco
+- [x] Implementar o critério de duração mínima contínua
+- [x] Implementar o cálculo da hesitação D→E em tempo e em distância
+- [x] Implementar a verificação de consistência (entrada sem descoberta prévia)
 - [ ] Comparar com a anotação manual e verificar a tolerância de 0,3 s
-- [ ] Documentar o critério em `docs/definicoes-metricas.md`
+- [x] Documentar o critério em `docs/definicoes-metricas.md` — convenção técnica proposta, ainda sem G3
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Detecção de entrada implementada com área e duração parametrizadas
-- [ ] Hesitação D→E calculada em tempo e distância
-- [ ] Verificação de consistência descoberta→entrada implementada
+- [x] Detecção de entrada implementada com área e duração parametrizadas
+- [x] Hesitação D→E calculada em tempo e distância
+- [x] Verificação de consistência descoberta→entrada implementada
 - [ ] Comparação com anotação manual executada
-- [ ] Critérios documentados em `docs/definicoes-metricas.md`
+- [x] Critérios documentados em `docs/definicoes-metricas.md` — aceite G3 pendente
 
 ---
 

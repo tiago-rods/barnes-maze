@@ -261,6 +261,25 @@ ficam registradas numa execução:
 uv run barnes pose review --trial 1
 ```
 
+## Calibração de eventos e entrada física (US-12/US-13)
+
+Para detecção de entrada (E), hesitação D→E e calibração contra anotação manual
+(US-12/US-13), use os novos comandos:
+
+```powershell
+uv run barnes db migrate
+uv run barnes events enter --trial 1 --config configs/default.yaml
+uv run barnes events calibrate --trial 1 --kind descoberta --annotations data/annotations/d3.json
+uv run barnes events calibrate --trial 1 --kind entrada --annotations data/annotations/d3.json
+uv run barnes events calibration-evidence data/calibration/events/<uuid>.json
+```
+
+Substitua os IDs/caminhos pelos dados reais. A área e a duração de entrada ainda
+dependem de C2/G3 e permanecem `null`; sem D3, a calibração registra bloqueio.
+Veja o [guia de operação](docs/eventos-calibracao-entrada.md) e o
+[status por subtask](docs/status-us12-us13.md). A validação experimental e o
+aceite do laboratório continuam pendentes.
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:

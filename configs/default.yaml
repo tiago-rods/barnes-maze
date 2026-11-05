@@ -31,6 +31,7 @@ encontrar:
 # --- Evento: entrar / checar fisicamente (US-13) ------------------------------
 entrar:
   focinho_dentro: true        # C2 — critério: focinho dentro do perímetro do buraco
+  raio_fator: null           # C2 — raio da área = raio físico calibrado * fator (positivo)
   duracao_minima_s: null      # C2 — duração mínima para contar como entrada
 
 # --- Evento: dwell (US-14) ----------------------------------------------------
