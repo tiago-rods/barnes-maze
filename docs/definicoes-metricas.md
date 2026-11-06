@@ -81,6 +81,16 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 > resultado, ou entram como se o animal tivesse achado no último segundo,
 > enviesando na direção oposta.
 
+> **US-16 — implementação (`barnes.metrics.latency`, `tests/metrics/test_latency.py`).**
+> Evento observado até o tempo limite → `*_event = 1` e latência = tempo do evento;
+> sem evento até o limite (ou evento depois dele) → `*_event = 0`, latência = tempo
+> limite e distância = percorrida até o limite. Tempo zero = S (início do intervalo
+> útil). Enquanto `trial.tempo_limite_s` (linha 12, B5) estiver `null`, o cálculo é
+> recusado com erro: nenhum valor provisório foi posto no lugar. "Detector não
+> executado" (hoje o de entrada, US-13) **não** é censura: `total_*` sai vazio, com
+> aviso. Distância percorrida pelo `centro_corpo`, atravessando lacunas de pose em
+> linha reta — **confirmar com o laboratório** qual ponto o `trials.csv` usa.
+
 ## 3. Protocolo de referência
 
 | | |
