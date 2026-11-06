@@ -26,6 +26,13 @@ da série com o banco. Mudou a escala ou o recorte? Regenere a série. Recalcula
 eventos lê o Parquet, sem abrir ou decodificar o vídeo. A checagem física do vídeo
 pertence à geração da série; o relatório identifica essa limitação explicitamente.
 
+A série deve cobrir todos os quadros registrados pela execução geradora em
+`processed_interval_frames`. Séries truncadas ou sem esse registro de origem
+são recusadas: regenere-as com `barnes pose series`/`pose review`. Os tempos
+precisam corresponder aos quadros, ao FPS e ao início do intervalo útil da
+US-09; uma marca de qualidade conhecida deve vir dessa mesma execução. Isso
+impede apresentar distâncias parciais como totais ou a qualidade de outra série.
+
 ## Critério de entrada implementado, sujeito à confirmação C2/G3
 
 ```yaml
@@ -178,6 +185,12 @@ inclusão do mesmo ID é recusada. Também aceita `--document` para preparar uma
 cópia de revisão. Revise o conteúdo, registre qual rodada e conjunto de limiares
 foram escolhidos, obtenha a resposta escrita do decisor e preencha G3. Uma rodada
 aprovada numericamente não equivale a aprovação do cliente.
+
+Antes de salvar ou anexar uma rodada, o software refaz o pareamento e os cálculos
+a partir dos tempos preservados no relatório. Erros, tolerâncias, contagens ou
+estados incoerentes impedem a inclusão. A consulta continua funcionando após mover
+o arquivo original de D3, pois os tempos estão no relatório. É uma verificação
+de coerência interna; não autentica a autoria da anotação nem concede aceite G3.
 
 Os artefatos em `data/` ficam fora do Git. Preserve-os na infraestrutura local
 do grupo, inclusive D3 original. A evidência incorporada aos documentos pode

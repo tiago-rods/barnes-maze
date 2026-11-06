@@ -15,6 +15,7 @@ from barnes.events.calibration import (
     blocked_round,
     compare_events,
     load_manual_annotations,
+    load_saved_round,
     render_evidence,
     save_round,
 )
@@ -405,3 +406,73 @@ def test_partial_round_write_is_removed_without_deleting_previous_evidence(
     with pytest.raises(OSError):
         save_round(blocked_round(trial_id=None, kind="descoberta"), tmp_path, provenance=provenance)
     assert list(tmp_path.iterdir()) == [sentinel]
+
+
+@pytest.mark.parametrize(
+    "kind,missing", [("descoberta", False), ("entrada", False), ("entrada", True)]
+)
+def test_saved_round_revalidates_timestamps_even_after_source_is_moved(
+    document, load_document, provenance, tmp_path, kind, missing
+):
+    manual = load_document(document)
+    automatic = [] if missing else document["events"]
+    report = compare_events(manual, automatic, kind=kind)
+    path, _ = save_round(report, tmp_path / "rounds", provenance=provenance)
+    # A evidência preserva os tempos; consultar não exige recuperar um caminho antigo.
+    (tmp_path / "synthetic-d3.json").unlink()
+    loaded = load_saved_round(path)
+    assert loaded["comparisons"] == report["comparisons"]
+    assert loaded["passed"] is (not missing)
+
+
+def test_blocked_and_inconsistent_rounds_remain_readable(
+    tmp_path, provenance, document, load_document
+):
+    blocked = blocked_round(trial_id=None, kind="descoberta")
+    path, _ = save_round(blocked, tmp_path / "rounds", provenance=provenance)
+    assert load_saved_round(path)["status"] == "blocked_missing_d3"
+    report = compare_events(load_document(document), document["events"], kind="entrada")
+    report.update(
+        passed=False,
+        status="divergence_review_required",
+        timing_status="passed",
+        consistency_issues=["Trial 7, buraco 0: descoberta ausente"],
+    )
+    path, _ = save_round(report, tmp_path / "rounds", provenance=provenance)
+    assert load_saved_round(path)["timing_status"] == "passed"
+    assert not load_saved_round(path)["passed"]
+
+
+@pytest.mark.parametrize("change", ["empty", "uuid", "date", "duplicate_key", "nan", "pairs"])
+def test_unreadable_or_corrupt_saved_round_is_a_domain_error(
+    tmp_path, provenance, document, load_document, change
+):
+    report = compare_events(load_document(document), document["events"], kind="entrada")
+    path, _ = save_round(report, tmp_path / "rounds", provenance=provenance)
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    if change == "empty":
+        loaded = []
+    elif change == "uuid":
+        loaded["round_id"] = 9
+    elif change == "date":
+        loaded["created_at"] = None
+    elif change == "nan":
+        loaded["provenance"]["thresholds"]["unused"] = float("nan")
+    elif change == "pairs":
+        loaded["comparisons"] = []
+    body = json.dumps(loaded)
+    if change == "duplicate_key":
+        body = body[:-1] + ', "passed": true}'
+    path.write_text(body, encoding="utf-8")
+    with pytest.raises(CalibrationError):
+        load_saved_round(path)
+
+
+def test_saving_incorrect_error_cannot_create_evidence(
+    document, load_document, provenance, tmp_path
+):
+    report = compare_events(load_document(document), document["events"], kind="descoberta")
+    report["comparisons"][0]["signed_error_s"] = 12
+    with pytest.raises(CalibrationError, match="consistente"):
+        save_round(report, tmp_path / "invalid", provenance=provenance)
+    assert not (tmp_path / "invalid").exists()

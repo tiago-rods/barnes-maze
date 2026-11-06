@@ -377,3 +377,9 @@ def test_explicit_invalid_nose_breaks_continuity_even_with_finite_coordinates():
     )
     event = _detect(table)[0]
     assert event.t_s == 0.2 and event.confirmed_at_s == 0.4
+
+
+def test_excessively_large_config_number_reports_domain_error(tmp_path):
+    values = {"raio_fator": 10**400, "duracao_minima_s": 0.2, "focinho_dentro": True}
+    with pytest.raises(EntryConfigError, match="intervalo numérico"):
+        load_entry_params(_config(tmp_path, values))

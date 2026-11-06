@@ -74,7 +74,10 @@ class EntryEvent:
 def _positive(value: object, name: str, error_type: type[ValueError]) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
         raise error_type(f"'{name}' deve ser um número finito maior que zero.")
-    result = float(value)
+    try:
+        result = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise error_type(f"'{name}' excede o intervalo numérico finito suportado.") from exc
     if not math.isfinite(result) or result <= 0:
         raise error_type(f"'{name}' deve ser um número finito maior que zero.")
     return result

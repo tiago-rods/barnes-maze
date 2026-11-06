@@ -32,7 +32,7 @@ from barnes.io.trim import interval_from_seconds
 from barnes.pose.annotations import KEYPOINTS
 from barnes.pose.dataset import file_sha256, git_revision_record
 from barnes.pose.series import PoseFrames, build_series
-from barnes.pose.trajectory import write_trajectory
+from barnes.pose.trajectory import read_trajectory, write_trajectory
 from barnes.provenance import PACKAGE_DIR, GitState, thresholds_snapshot
 
 pytestmark = pytest.mark.skipif(
@@ -112,7 +112,10 @@ def reference(tmp_path, monkeypatch):
                 conn,
                 trial_id=trial_id,
                 maze_config_id=maze_id,
-                parameters={"comando": "synthetic fixture"},
+                parameters={
+                    "comando": "synthetic fixture",
+                    "processed_interval_frames": {"start": 0, "end": 8},
+                },
                 thresholds=thresholds_snapshot(config),
                 git=GitState.from_record(git_revision_record(PACKAGE_DIR)),
                 video_hash=digest,
@@ -154,6 +157,7 @@ def reference(tmp_path, monkeypatch):
             values=values,
             out=tmp_path / "output",
             annotations=tmp_path / "synthetic-d3.json",
+            trajectory=trajectory,
         )
     finally:
         if user_id is not None:
@@ -299,3 +303,25 @@ def test_artifact_failure_rolls_back_real_database_transaction(reference, monkey
         assert list_hole_events(conn, trial_id=reference.trial_id) == []
     assert before == after
     assert not reference.out.exists() or list(reference.out.iterdir()) == []
+
+
+@pytest.mark.parametrize("command", ["enter", "calibrate"])
+def test_truncated_series_is_refused_before_new_database_results(reference, command):
+    table = read_trajectory(reference.trajectory)
+    write_trajectory(table.slice(2), reference.trajectory)
+    extra = (
+        []
+        if command == "enter"
+        else [
+            "--annotations",
+            _annotations(reference, "descoberta", [0]),
+        ]
+    )
+    result = _invoke(reference, command, *extra)
+    assert result.exit_code == 1 and "incompleta" in result.output, result.output
+    with get_connection() as conn:
+        assert conn.execute(
+            "SELECT id FROM execucao WHERE trial_id=%s", (reference.trial_id,)
+        ).fetchall() == [(reference.source_id,)]
+        assert list_hole_events(conn, trial_id=reference.trial_id) == []
+    assert not reference.out.exists()

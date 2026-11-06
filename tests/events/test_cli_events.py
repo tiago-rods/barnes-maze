@@ -74,7 +74,11 @@ def scenario(tmp_path, monkeypatch):
         stored=stored,
         calibration=SimpleNamespace(cm_per_px=1.0),
         source=SimpleNamespace(
-            trial_id=7, maze_config_id=3, status="concluido", video_hash="a" * 64
+            trial_id=7,
+            maze_config_id=3,
+            status="concluido",
+            video_hash="a" * 64,
+            parametros={"processed_interval_frames": {"start": 0, "end": 8}},
         ),
         out=tmp_path / "out",
         rotation=0,
@@ -399,3 +403,61 @@ def test_all_new_help_commands_render_in_windows_console():
     for command in ("enter", "calibrate", "calibration-evidence"):
         result = runner.invoke(cli.app, ["events", command, "--help"])
         assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("change", ["start_missing", "end_missing", "clock", "fps", "quality"])
+def test_incomplete_clock_or_stale_quality_cannot_publish_metrics(scenario, change):
+    import pyarrow as pa
+
+    table = scenario.table
+    if change == "start_missing":
+        table = table.slice(2)
+    elif change == "end_missing":
+        table = table.slice(0, 8)
+    elif change == "clock":
+        table = table.set_column(
+            table.schema.get_field_index("t_s"), "t_s", pa.array(np.arange(9) / 20)
+        )
+    elif change == "fps":
+        table = with_metadata(table, read_metadata(table) | {"fps_real": 20.0})
+    else:
+        scenario.quality["cobertura_execucao_id"] = 99
+    write_trajectory(table, scenario.stored.trajectory_path)
+    result = invoke(scenario, "enter")
+    assert result.exit_code == 1, result.output
+    assert not scenario.executions and not scenario.events and not scenario.out.exists()
+
+
+@pytest.mark.parametrize("change", ["error", "tolerance", "summary", "kind", "approval"])
+def test_inconsistent_saved_round_cannot_be_added_to_acceptance_document(scenario, change):
+    result = invoke(scenario, "calibrate", "--annotations", d3(scenario))
+    assert result.exit_code == 0, result.output
+    path = next(scenario.out.glob("*.json"))
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if change == "error":
+        report["comparisons"][0]["absolute_error_s"] = 99
+    elif change == "tolerance":
+        report["tolerance_s"] = 99
+    elif change == "summary":
+        report["summary"]["manual_events"] = 99
+    elif change == "kind":
+        report["kind"] = "entrada"
+    else:
+        report["client_approval"] = True
+    path.write_text(json.dumps(report), encoding="utf-8")
+    document = scenario.config.parent / "definitions.md"
+    original = "# Definitions\nG3: pendente\n"
+    document.write_text(original, encoding="utf-8")
+    result = runner.invoke(
+        cli.app, ["events", "calibration-evidence", str(path), "--document", str(document)]
+    )
+    assert result.exit_code == 1, result.output
+    assert document.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("bounds", [None, {}, {"start": True, "end": 8}])
+def test_missing_original_frame_record_refuses_processing(scenario, bounds):
+    scenario.source.parametros = {"processed_interval_frames": bounds}
+    result = invoke(scenario, "enter")
+    assert result.exit_code == 1, result.output
+    assert not scenario.executions and not scenario.out.exists()

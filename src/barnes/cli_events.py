@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
+import numpy as np
 import pyarrow as pa
 import typer
 import yaml
@@ -28,6 +29,7 @@ from barnes.events.calibration import (
     blocked_round,
     compare_events,
     load_manual_annotations,
+    load_saved_round,
     render_evidence,
     save_round,
 )
@@ -65,6 +67,23 @@ def _snapshot(config: Path) -> ThresholdsSnapshot:
         raise ValueError(f"YAML de limiares inválido: {config}.") from exc
 
 
+def _same_number(value, expected) -> bool:
+    """Metadados numéricos devem ser finitos; bool não equivale a 0/1."""
+    if any(
+        isinstance(number, bool) or not isinstance(number, int | float)
+        for number in (value, expected)
+    ):
+        return False
+    try:
+        return (
+            math.isfinite(value)
+            and math.isfinite(expected)
+            and math.isclose(value, expected, rel_tol=1e-10, abs_tol=1e-10)
+        )
+    except OverflowError:
+        return False
+
+
 def _load_inputs(trial_id: int, dsn: str | None, *, entry: bool) -> EventInputs:
     """Confere identidade, escala e recorte da série antes de recalcular eventos.
 
@@ -92,17 +111,35 @@ def _load_inputs(trial_id: int, dsn: str | None, *, entry: bool) -> EventInputs:
             raise ValueError("A identidade da trajetória/execução não corresponde ao trial.")
         expected = {
             "cm_per_px": calibration.cm_per_px,
+            "px_per_10cm": 10 / calibration.cm_per_px,
+            "fps_real": stored.fps_real,
             "intervalo_inicio_s": stored.interval.start_s,
             "intervalo_fim_s": stored.interval.end_s,
         }
-        if any(
-            not math.isclose(meta[k], v, rel_tol=1e-10, abs_tol=1e-10) for k, v in expected.items()
+        if any(not _same_number(meta[k], v) for k, v in expected.items()):
+            raise ValueError("Escala, FPS ou recorte incompatível; regenere a série de pose.")
+        if meta["fps_variavel"] is not stored.fps_is_variable:
+            raise ValueError("A informação de FPS variável difere da registrada no trial.")
+        bounds = (source.parametros or {}).get("processed_interval_frames")
+        if not isinstance(bounds, dict) or any(
+            isinstance(bounds.get(key), bool) or not isinstance(bounds.get(key), int)
+            for key in ("start", "end")
         ):
-            raise ValueError("Escala ou recorte mudou; regenere a série antes de calcular eventos.")
+            raise ValueError("Execução sem os quadros originais da série; regenere a pose.")
+        frames = table.column("quadro").to_numpy()
+        if bounds["start"] < 0 or frames[0] != bounds["start"] or frames[-1] != bounds["end"]:
+            raise ValueError("Trajetória incompleta: não cobre os quadros da execução original.")
         times = table.column("t_s").to_numpy()
         duration = stored.interval.end_s - stored.interval.start_s
         if times[0] < 0 or times[-1] > duration + 1e-10:
             raise ValueError("Trajetória contém tempos fora do intervalo útil do trial.")
+        if not np.allclose(
+            times, frames / stored.fps_real - stored.interval.start_s, rtol=0, atol=1e-10
+        ):
+            raise ValueError("Tempos da trajetória incompatíveis com os quadros/FPS do trial.")
+        quality = get_event_pose_quality(conn, trial_id=trial_id)
+        if quality["cobertura_execucao_id"] not in (None, meta["execucao_id"]):
+            raise ValueError("Qualidade de pose pertence a outra execução; regenere a série.")
         target = None
         if entry:
             rotations = require_rotations(get_trial_rotations(conn, [trial_id]))
@@ -113,7 +150,7 @@ def _load_inputs(trial_id: int, dsn: str | None, *, entry: bool) -> EventInputs:
             geometry,
             calibration.cm_per_px,
             get_hole_ids(conn, stored.maze_config_id),
-            get_event_pose_quality(conn, trial_id=trial_id),
+            quality,
             digest,
             target,
         )
@@ -464,25 +501,8 @@ def register_event_commands(events_app: typer.Typer, command_errors: Callable) -
     ) -> None:
         """Acrescenta evidência da rodada ao documento, sem conceder aceite G3."""
         with command_errors():
-            report = json.loads(round_file.read_text(encoding="utf-8"))
-            if not isinstance(report, dict) or not all(
-                key in report for key in ("round_id", "created_at", "provenance", "status")
-            ):
-                raise ValueError("Informe o JSON produzido por events calibrate.")
-            if report["status"] not in {
-                "passed",
-                "divergence_review_required",
-                "blocked_missing_d3",
-            }:
-                raise ValueError("Status de rodada inválido.")
-            if report.get("passed") is not (report["status"] == "passed"):
-                raise ValueError("Estado da rodada difere do resultado registrado.")
-            try:
-                rendered = render_evidence(report)
-            except (KeyError, TypeError) as exc:
-                raise ValueError(
-                    "Evidência incompleta; use o JSON original de events calibrate."
-                ) from exc
+            report = load_saved_round(round_file)
+            rendered = render_evidence(report)
             current = document.read_text(encoding="utf-8")
             marker = f"<!-- calibration-round:{report['round_id']} -->"
             if marker in current:

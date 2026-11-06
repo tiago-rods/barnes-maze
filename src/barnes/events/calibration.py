@@ -417,6 +417,106 @@ def render_evidence(report: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _validate_saved_round(report: dict) -> None:
+    """Recalcula a comparação antes de aceitar uma evidência salva.
+
+    Confere coerência interna, não autentica D3 nem concede aceite G3.
+    A validação usa os tempos preservados, sem exigir que os caminhos originais
+    ainda estejam disponíveis na máquina que consulta o relatório.
+    """
+    if not isinstance(report, dict):
+        raise CalibrationError("Rodada deve ser um objeto JSON.")
+    _integer(report.get("schema_version"), "schema_version", 1)
+    if report["schema_version"] != 1:
+        raise CalibrationError("Versão de rodada não suportada.")
+    base = _base_report(report["trial_id"], report["kind"])
+    for key in ("story", "time_origin", "tolerance_s", "comparison", "matching"):
+        if report.get(key) != base[key]:
+            raise CalibrationError(f"Rodada com {key} incompatível com o critério implementado.")
+    if report.get("client_approval") is not False:
+        raise CalibrationError("Rodadas numéricas não podem conceder aceite do cliente/G3.")
+    uuid.UUID(report["round_id"])
+    if datetime.fromisoformat(report["created_at"]).tzinfo is None:
+        raise CalibrationError("Data da rodada deve incluir fuso horário.")
+    _text(report.get("next_action"), "next_action")
+    provenance = report["provenance"]
+    if not isinstance(provenance, dict) or any(
+        not isinstance(provenance.get(key), dict) for key in ("thresholds", "hashes", "environment")
+    ):
+        raise CalibrationError("Proveniência incompleta na rodada salva.")
+    # Rejeita NaN/Infinity também em campos que não participam da comparação.
+    json.dumps(report, allow_nan=False)
+    if report.get("status") == "blocked_missing_d3":
+        if (
+            report.get("passed") is not False
+            or report.get("comparisons") != []
+            or report.get("manual_annotations") is not None
+            or report.get("summary") is not None
+            or report.get("blocked_on") != ["D3"]
+        ):
+            raise CalibrationError("Bloqueio D3 contém resultados de comparação incompatíveis.")
+        _text(report.get("reason"), "reason")
+        return
+
+    pairs = report["comparisons"]
+    if not isinstance(pairs, list) or not pairs or not all(isinstance(p, dict) for p in pairs):
+        raise CalibrationError("Rodada exige comparações por evento.")
+    manual_events = tuple(
+        ManualEvent(pair["tipo"], pair["hole_number"], pair["manual_t_s"])
+        for pair in pairs
+        if pair["manual_t_s"] is not None
+    )
+    automatic = [
+        {"tipo": pair["tipo"], "hole_number": pair["hole_number"], "t_s": pair["automatic_t_s"]}
+        for pair in pairs
+        if pair["automatic_t_s"] is not None
+    ]
+    metadata = report["manual_annotations"]
+    manual = ManualAnnotations(
+        trial_id=report["trial_id"],
+        observer=metadata["observer"],
+        source=metadata["source"],
+        delivered_on=metadata["delivered_on"],
+        time_origin=report["time_origin"],
+        events=manual_events,
+        video_sha256=metadata.get("video_sha256"),
+    )
+    recalculated = compare_events(manual, automatic, kind=report["kind"])
+    if pairs != recalculated["comparisons"]:
+        raise CalibrationError("Erros/pareamento da rodada diferem dos tempos registrados.")
+    summary = report["summary"]
+    for key, expected in recalculated["summary"].items():
+        if key.startswith("ignored_other_kind_"):
+            _integer(summary[key], key)
+        elif summary[key] != expected:
+            raise CalibrationError("Resumo da rodada difere das comparações por evento.")
+    issues = report.get("consistency_issues", [])
+    if not isinstance(issues, list) or not all(isinstance(i, str) and i.strip() for i in issues):
+        raise CalibrationError("Lista de inconsistências da rodada inválida.")
+    passed = recalculated["passed"] and not issues
+    expected_status = "passed" if passed else "divergence_review_required"
+    if report.get("status") != expected_status or report.get("passed") is not passed:
+        raise CalibrationError("Resultado da rodada não corresponde aos erros/consistência.")
+    if "timing_status" in report and report["timing_status"] != recalculated["status"]:
+        raise CalibrationError("Resultado temporal da rodada inconsistente.")
+
+
+def load_saved_round(path: str | Path) -> dict:
+    """Lê evidência local e recusa resultados internamente inconsistentes."""
+    try:
+        report = json.loads(
+            Path(path).read_text(encoding="utf-8-sig"), object_pairs_hook=_json_object
+        )
+        _validate_saved_round(report)
+    except CalibrationError:
+        raise
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
+        raise CalibrationError(
+            "Evidência inválida/incompleta; use a rodada original registrada."
+        ) from exc
+    return report
+
+
 def save_round(
     report: Mapping[str, Any], output_dir: str | Path, *, provenance: Mapping[str, Any]
 ) -> tuple[Path, Path]:
@@ -446,9 +546,10 @@ def save_round(
     try:
         payload = json.dumps(snapshot, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         snapshot = json.loads(payload)
-    except (TypeError, ValueError) as exc:
+        _validate_saved_round(snapshot)
+    except (TypeError, ValueError, KeyError, AttributeError, OverflowError) as exc:
         raise CalibrationError(
-            "Rodada/proveniência deve conter somente dados JSON finitos."
+            "Rodada/proveniência deve conter dados JSON finitos e comparação consistente."
         ) from exc
     markdown = render_evidence(snapshot)
     folder = Path(output_dir)

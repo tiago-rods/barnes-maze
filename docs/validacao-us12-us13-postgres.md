@@ -40,15 +40,24 @@ Os testes reais cobrem:
 - Entrada sem descoberta anterior preservada com inconsistência e deltas nulos.
 - Rollback de `execucao` e `evento_buraco` se a exportação de arquivos falhar.
 - Compatibilidade das chamadas de descoberta existentes e restrições SQL/FKs.
+- Recusa de trajetórias truncadas antes de gravar execuções ou eventos.
+
+A revisão final também acrescentou regressões para tempos/FPS incompatíveis,
+qualidade de pose de outra execução, metadados incompletos e relatórios de
+calibração internamente incoerentes. As comparações são recalculadas antes de
+salvar ou anexar evidência; isso não autentica D3 nem concede aceite G3.
 
 ## Reproduzir
 
-Resultado da suíte completa: **927 casos coletados, 924 aprovados, 0 falhas,
+Resultado da suíte completa após a revisão final: **954 casos coletados, 951 aprovados, 0 falhas,
 0 erros e 3 pulados**. Não houve testes PostgreSQL pulados. Os três restantes
 exigem SLEAP-NN (dois casos de US-07/08) ou AF_UNIX (um caso, indisponível no
 ambiente). A verificação Ruff passou.
 
-O JUnit está em `.venv/pg-us12-13/full-postgres.xml`. A conferência final do
+O JUnit da revisão está em `.venv/pg-us12-13/review-postgres.xml`; a execução
+anterior, com 924 aprovados e 3 pulados, permanece em `full-postgres.xml` no
+mesmo diretório. Ruff e a formatação dos arquivos Python alterados passaram.
+A conferência final do
 banco encontrou zero linhas em `users`, `trials`, `execucao` e `evento_buraco`,
 confirmando a limpeza das fixtures. O servidor de teste foi encerrado após a
 execução; não ficou serviço em segundo plano.

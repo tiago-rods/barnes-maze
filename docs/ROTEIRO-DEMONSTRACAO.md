@@ -1565,6 +1565,11 @@ do alvo alimenta o resumo total. A qualidade da pose acompanha os relatórios.
 Após uma rodada real, incorporar seu JSON com `events calibration-evidence` e
 apresentar a evidência para G3. O comando não concede aprovação do cliente.
 
+Na revisão final, confirmar também as recusas de série truncada, tempos/FPS
+incompatíveis e qualidade de outra execução. Regenerar a série pelo fluxo de pose
+quando houver esse diagnóstico. Um JSON de rodada com erros ou resumo incoerentes
+deve ser recusado antes de alterar `docs/definicoes-metricas.md`.
+
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:
