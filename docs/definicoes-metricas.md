@@ -68,6 +68,36 @@ _A definir em G3._
 ### Erro
 _A definir em G3._
 
+> **US-17 — nota de implementação, não é a definição do laboratório
+> (`barnes.metrics.errors`, `tests/metrics/test_errors.py`).** A definição acima
+> continua em aberto; as linhas 6-7 seguem "pendente". O que está implementado é
+> só o mecanismo, parametrizado pelas duas chaves de C3:
+>
+> - `erro.criterio = qualquer_buraco_incorreto`: toda checagem de buraco que não é
+>   o alvo é um erro. `acima_de_duracao`: só a checagem incorreta com
+>   dwell ≥ `erro.duracao_minima_s` (inclusivo). Enquanto `erro.criterio` estiver
+>   `null`, a contagem é recusada com erro; nenhum valor provisório foi posto.
+> - Fonte única: a **sequência de visitação** da US-15 (buraco na plataforma e
+>   posição na sala, início da checagem, dwell, se é o alvo). O erro nunca relê a
+>   trajetória nem o vídeo; trocar a definição é recalcular sobre a mesma
+>   sequência (RN02, RN05). Como a US-15 ainda não existe, sem sequência o
+>   resultado é "não calculado" (vazio), nunca "zero erros".
+> - Cada checagem conta, inclusive a revisita a um buraco incorreto já checado.
+>   Checagens do alvo nunca são erro. `total_errors` cobre o trial inteiro,
+>   inclusive depois de achar o alvo.
+> - `primary_errors` (erros até a descoberta do alvo): erros com início antes da
+>   **primeira checagem do alvo** na sequência. Como cada item da sequência
+>   começa no tempo de descoberta do buraco, esse corte é o evento D do alvo
+>   (US-11 RN05, o mesmo de `primary_latency`), mas é lido da sequência. Se o
+>   alvo não é checado, `primary_errors = total_errors`, marcado como censurado
+>   (mesma lógica da censura: o trial não é descartado nem recebe zero).
+> - Sob `acima_de_duracao`, uma checagem incorreta sem dwell medido (US-14)
+>   impede o cálculo, com aviso: contá-la ou descartá-la seria inventar a duração.
+>
+> **Confirmar com o laboratório (C3):** se revisitas contam como novos erros, se
+> o limite de duração é inclusivo (≥) e se erros depois de achar o alvo entram
+> no total.
+
 ### Estratégias: aleatória, serial, espacial
 _A definir em G3 — é a regra que o classificador precisa reproduzir (US-20) e
 contra a qual o kappa é medido (US-21). Sem ela, não há como validar._

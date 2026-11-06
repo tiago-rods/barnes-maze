@@ -38,9 +38,19 @@ dwell:
   duracao_minima_s: null      # C2
 
 # --- Erro (US-17) -------------------------------------------------------------
+# O que conta como erro vem da resposta do laboratório à pergunta C3 (Bloco C,
+# portão G3) — linhas 6-7 de docs/definicoes-metricas.md. Enquanto `criterio`
+# for null, barnes.metrics.errors.load_error_definition RECUSA a configuração
+# (total_errors/primary_errors não são contados); nenhum valor provisório.
+# O erro é derivado só da sequência de visitação (US-15), nunca da trajetória:
+# trocar estes valores recalcula sem reprocessar vídeo nem trajetória (RN05).
+#   qualquer_buraco_incorreto: toda checagem de buraco que não é o alvo conta;
+#                              duracao_minima_s deve ficar null.
+#   acima_de_duracao:          só conta checagem incorreta com
+#                              dwell >= duracao_minima_s (inclusivo, US-14).
 erro:
   criterio: null              # C3 — "qualquer_buraco_incorreto" | "acima_de_duracao"
-  duracao_minima_s: null      # C3 — só se criterio == "acima_de_duracao"
+  duracao_minima_s: null      # C3 — segundos (> 0); só se criterio == "acima_de_duracao"
 
 # --- Estratégia de busca (US-20) ----------------------------------------------
 # Regra explícita e calibrável, não modelo treinado (seção 4 da definição).
