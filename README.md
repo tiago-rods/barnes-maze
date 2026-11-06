@@ -13,6 +13,15 @@ duas coisas é a exportação compatível com `trials.csv` e `probes.csv` (US-25
 A definição de escopo completa — cards, riscos, cronograma e critérios de aceite
 — está em `definicao-projeto.md`, no diretório acima deste repositório.
 
+> **Aviso para quem continuar a implementação — US-12/US-13 (06/11/2026):**
+> o código foi implementado e testado, mas a validação com o laboratório está
+> pendente de D3 (anotação manual) e C2/G3 (parâmetros e aceite escrito).
+> `entrar.raio_fator` e `entrar.duracao_minima_s` continuam `null` de propósito;
+> a detecção de entrada recusa esses valores até serem definidos. Não substituir
+> por números arbitrários nem considerar os testes sintéticos como aceite real.
+> Leia o [aviso de continuidade e as pendências](docs/status-us12-us13.md#aviso-de-continuidade)
+> antes de integrar novas métricas ou exportações.
+
 ## O que este projeto entrega
 
 O que só ele pode entregar, e que a anotação manual não consegue produzir:

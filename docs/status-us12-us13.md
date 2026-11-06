@@ -4,6 +4,40 @@ Branch `US-12_13/Tales`, criada da `origin/main` em `cf94dc2`, sem conflitos.
 Este relatório separa implementação do software de validação experimental e
 aceite do cliente. Nenhum dado do laboratório foi enviado para fora da máquina.
 
+## Aviso de continuidade
+
+**Situação em 06/11/2026: implementação técnica entregue; aceite experimental
+pendente.** Ao puxar esta branch, considere os pontos abaixo na próxima entrega:
+
+1. **Dependência externa:** receber D3 com observador, trial, fonte e data
+   identificados; confirmar área, duração mínima e convenção temporal de E em
+   C2/G3. A entrega/data acordada não foi confirmada. Não criar uma anotação
+   improvisada para declarar a calibração concluída.
+2. **Configuração:** `entrar.raio_fator` e `entrar.duracao_minima_s` permanecem
+   `null`; a recusa pelo detector é intencional. Os valores de descoberta de
+   3 cm/30° são provisórios e não calibrados. Ajustar os limiares no YAML,
+   preservando o algoritmo de US-11. Não marcar a configuração como calibrada
+   nem preencher aceite G3 sem a evidência correspondente.
+3. **Integração:** aplicar as migrações com `uv run barnes db migrate`, incluindo
+   `0009_us13_entry_details.sql`. Consultar eventos por `execucao_id` para não
+   misturar rodadas. Preservar inconsistências D→E, qualidade de pose e valores
+   ausentes; `null` em distância/latência não significa zero. Os totais usam a
+   primeira entrada no alvo. O contrato estatístico completo continua em US-25.
+4. **Dados locais:** D3, trajetórias e artefatos de `data/` não vêm pelo Git.
+   Obter os dados pela infraestrutura autorizada do grupo. Séries sem os quadros
+   originais registrados ou incompatíveis com o trial precisam ser regeneradas
+   por `pose series`/`pose review`; não desativar as verificações para integrá-las.
+5. **Fechamento dos cards:** executar as rodadas reais com `events calibrate`
+   para descoberta (≤ 0,5 s por evento) e entrada (≤ 0,3 s por evento), registrar
+   os limiares/evidência com `events calibration-evidence` e obter aceite escrito
+   em `docs/definicoes-metricas.md`. Se as combinações testadas não convergirem,
+   registrar e discutir a definição operacional com o cliente.
+
+O [guia de operação](eventos-calibracao-entrada.md) detalha o formato D3 e os
+comandos. Os testes automatizados comprovam o comportamento do software; não
+substituem a comparação real nem a decisão do laboratório. Atualize este aviso
+e o README quando as dependências forem resolvidas, indicando a evidência.
+
 ## US-12
 
 | Ticket | O que existe | O que falta para concluir a atividade real |
