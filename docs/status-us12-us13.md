@@ -1,4 +1,4 @@
-# Entrega técnica US-12/US-13 — 05/11/2026
+# Entrega técnica US-12/US-13 — atualização em 06/11/2026
 
 Branch `US-12_13/Tales`, criada da `origin/main` em `cf94dc2`, sem conflitos.
 Este relatório separa implementação do software de validação experimental e
@@ -44,12 +44,28 @@ valores C2/G3 de produção.
 - Relatórios com marca de qualidade de pose, hashes, parâmetros e origem da série.
 - Comparações e reexecução sobre o Parquet sem abertura/decodificação de vídeo.
 - Testes do detector, comparação, histórico, CLI, exportação e falhas de escrita.
-- Verificação em 05/11/2026: suíte completa com **794 testes aprovados e 124
+- Verificação inicial em 05/11/2026: suíte completa com **794 testes aprovados e 124
   pulados**. Dos pulados, 121 dependem do PostgreSQL de teste, dois do backend
   opcional SLEAP-NN e um de sockets AF_UNIX indisponíveis no ambiente. Ruff e
   `git diff --check` passaram.
-- PostgreSQL/Docker não encontrados nesta máquina e DSN de teste não configurado:
-  testes SQL reais e aplicação local da migração permanecem pendentes.
+- Atualização em 06/11/2026: PostgreSQL 16.15 preparado em ambiente local isolado,
+  com banco descartável. Todas as dez migrações foram aplicadas, incluindo
+  `0009_us13_entry_details.sql`; a segunda aplicação não encontrou pendências.
+  A falta de banco para validar esta entrega técnica foi resolvida.
+- Novos testes de CLI com PostgreSQL real verificam reentradas, hesitação e
+  totais exportados, vínculo dos arquivos à execução, comparação D3 sintética
+  nas duas tolerâncias, preservação de rodadas antigas, inconsistências D→E
+  e rollback real diante de falha na escrita dos artefatos.
+- Verificação final em **06/11/2026: 924 testes aprovados, zero falhas/erros e
+  3 pulados**. Nenhum teste PostgreSQL ficou pulado. Restaram somente dois
+  testes do backend opcional SLEAP-NN (US-07/08) e um de sockets AF_UNIX.
+  Ruff e `git diff --check` passaram. Os testes não deixaram registros nas
+  tabelas de usuários, trials, execuções ou eventos; o servidor isolado foi
+  encerrado ao final. [Evidência técnica e reprodução](validacao-us12-us13-postgres.md).
+
+A validação do banco usa exclusivamente dados sintéticos. Ela não altera o
+status experimental de D3/C2/G3 nas tabelas acima. Não houve mudança nos limiares
+de produção, submissão ao cliente nem aceite escrito nesta continuação.
 
 Veja o [guia de operação](eventos-calibracao-entrada.md) para formato D3,
 comandos, convenções e continuação da validação. As definições e o aceite ficam

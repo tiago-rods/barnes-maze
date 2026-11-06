@@ -192,6 +192,12 @@ uv run --no-sync python -m ruff check src/ tests/
 ```
 
 Os testes de CLI usam Parquet real e uma fronteira de banco simulada para conferir
-exportação, identidade, rollback e história. Os testes SQL reais precisam de
-`BARNES_TEST_DATABASE_URL` e das migrações aplicadas no banco descartável. Eles
-são pulados quando esse banco não está configurado; não usam o banco de trabalho.
+exportação, identidade, rollback e história. Além deles,
+`tests/events/test_cli_events_postgres.py` executa os comandos completos com
+PostgreSQL real, sem simular as funções de persistência: confere os eventos e a
+execução gravados, os arquivos CSV/JSON e o rollback após falha de exportação.
+
+Os testes SQL reais precisam de `BARNES_TEST_DATABASE_URL` e das migrações aplicadas
+no banco descartável. São pulados quando esse banco não está configurado; não
+usam o banco de trabalho. A integração foi executada localmente em PostgreSQL
+16.15 em 06/11/2026; veja [a evidência técnica](validacao-us12-us13-postgres.md).
