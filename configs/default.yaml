@@ -52,7 +52,8 @@ estrategia:
 
 # --- Trial (US-03, US-16) -----------------------------------------------------
 trial:
-  tempo_limite_s: null        # B5 — define a censura (trial.censura / primary_event)
+  tempo_limite_s: null        # B5 — define a censura (primary_event/total_event, US-16);
+                              # null = latências recusadas (barnes.metrics.latency)
   recorte_inicio_s: null      # US-03 — null = detecção automática da soltura
   recorte_fim_s: null
 
