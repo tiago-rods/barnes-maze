@@ -744,6 +744,14 @@ aviso de fps variável (US-01), que não é corrigido automaticamente._
 
 ## 7. API e verificação para desenvolvimento
 
+O fluxo de descoberta, calibração contra D3 e entrada física (US-12/US-13)
+está no [guia de calibração e entrada](eventos-calibracao-entrada.md). Ele inclui
+a migração `0009`, os comandos `events enter`, `events calibrate` e
+`events calibration-evidence`, o formato da entrega D3 e as saídas CSV/JSON.
+Área/duração C2 e aceite G3 permanecem pendentes; sem anotação real não há
+validação experimental. Consulte as [pendências por ticket](status-us12-us13.md).
+
+
 ### 7.1 Calibração sem janela
 
 A coleta de cliques (`barnes.io.calibration_ui`), o cálculo

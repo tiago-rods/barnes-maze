@@ -28,6 +28,7 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 1 | Distância para "encontrar" | `encontrar.distancia_cm` | 3 cm (provisório) | C1 | provisório (sem G3) |
 | 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | 30° (provisório) | C1 | provisório (sem G3) |
 | 3 | Critério de "entrar" | `entrar.focinho_dentro` | — | C2 | pendente |
+| 3a | Área de entrada, como fator do raio físico calibrado | `entrar.raio_fator` | — | C2 | pendente (`null`) |
 | 4 | Duração mínima de entrada | `entrar.duracao_minima_s` | — | C2 | pendente |
 | 5 | Duração mínima de dwell | `dwell.duracao_minima_s` | — | C2 | pendente |
 | 6 | O que conta como erro | `erro.criterio` | — | C3 | pendente |
@@ -136,6 +137,58 @@ Registro das rodadas de ajuste contra a anotação manual (US-12, US-13).
 | | | | | | |
 
 Alvos: encontrar ≤ 0,5 s · entrar ≤ 0,3 s.
+
+### 4.1 Situação da entrega US-12/US-13 em 05/11/2026
+
+**D3: entrega não confirmada; calibração real bloqueada por dependência externa.**
+Não foram fornecidos anotação, observador, trial de referência ou data acordada.
+O responsável pelo projeto informou não ter conhecimento da entrega nem das
+decisões C2/G3. Não há limiares finais ou erro experimental a registrar nesta
+entrega. Os testes do software são sintéticos e não representam aceite.
+
+O ferramental está implementado: `barnes events calibrate` compara cada
+descoberta com tolerância inclusiva de 0,5 s e cada entrada com 0,3 s, preservando
+erros assinados/absolutos, ausências e eventos extras. Entradas repetidas são
+pareadas em ordem cronológica por buraco. Todas as ocorrências precisam passar;
+uma média favorável não compensa uma ocorrência reprovada.
+
+Cada rodada cria arquivos JSON/Markdown com o conteúdo do YAML, hashes,
+geometria/escala, série usada, ambiente, máquina, código e origem da anotação.
+Os ajustes acontecem somente na configuração; o algoritmo de US-11 não foi
+alterado. `barnes events calibration-evidence <rodada.json>` acrescenta aqui
+a evidência e os limiares daquela rodada, sem preencher o aceite da seção 5.
+
+Se as combinações testadas não convergirem, apresentar o histórico ao decisor
+como questão de definição operacional, registrar a resposta e revisar os
+limiares/definições. Nenhuma discussão com o cliente foi enviada ou registrada
+como realizada nesta implementação.
+
+### 4.2 Convenções técnicas propostas para entrada — confirmar em C2/G3
+
+- Área circular: raio do buraco em pixels × escala cm/px × `entrar.raio_fator`;
+  fronteira inclusiva. Fator e duração mínima permanecem `null` até definição.
+- Segmento contínuo: focinho válido dentro da área em quadros consecutivos;
+  saída, focinho ausente ou salto de quadro interrompem a duração. Um quadro
+  isolado não comprova duração positiva.
+- Instante E: início do segmento que alcança a duração mínima. O momento da
+  confirmação fica separado em `confirmed_at_s`. Reentradas são preservadas.
+- Cada E é associado à primeira D do mesmo buraco/trial. D no mesmo quadro de E
+  gera hesitação zero pela resolução amostral. D ausente/posterior gera
+  inconsistência identificada; não se inventa descoberta.
+- `delta_latency = t_E − t_D`, em segundos. `delta_distance` é o caminho do
+  centro do corpo entre D e E, em cm. Centros ausentes tornam a distância
+  indisponível, com motivo, sem soma parcial disfarçada de distância completa.
+- A primeira E do alvo, resolvido para a rotação do trial, fornece
+  `total_latency` e `total_distance`. Sem E no alvo, não há sucesso inventado.
+- Tempos relativos ao intervalo útil; distâncias somadas entre amostras. FPS
+  variável mantém a ressalva temporal da série de US-09. A qualidade de pose
+  da US-10 acompanha a saída e os pontos já interpolados continuam identificados
+  na série e em sua proveniência.
+
+Estas são convenções implementadas para revisão; **não são palavras ou decisões
+atribuídas ao laboratório**. Procedimento e formato D3 no
+[guia de calibração e entrada](eventos-calibracao-entrada.md). Pendências por ticket
+no [relatório da entrega](status-us12-us13.md).
 
 ## 5. Aceite
 

@@ -130,6 +130,7 @@ erDiagram
         float t_s "segundos desde o início do intervalo útil (US-03 RN05)"
         float distancia_cm "US-11 — focinho→buraco, opcional"
         float angulo_deg "US-11 — cabeça→buraco, 0-360, opcional"
+        json details "US-13 — confirmação, descoberta associada, hesitação, totais e inconsistências; {} no legado"
     }
     CORRECAO_POSE {
         int id PK
@@ -232,6 +233,28 @@ mantidos — renomear quebraria bancos já em uso — e a correspondência é:
   revisado, `insuficiente` se a cobertura ficou abaixo do mínimo vigente naquela
   execução, senão `suficiente`, e NULL sem cobertura. É a fonte única da marcação para
   o catálogo, `metrics executions`/`metrics process` e a exportação (US-25).
+
+## US-13 — evidência da entrada (migração `0009_us13_entry_details.sql`)
+
+`evento_buraco.details` é um objeto JSONB obrigatório, com `{}` como padrão
+para descobertas da US-11, eventos legados e inserções sem detalhes. A entrada
+continua usando `quadro` e `t_s` para seu instante; `details` preserva a evidência
+complementar calculada pelo detector:
+
+- `confirmed_at_s`: instante em que a duração mínima contínua foi confirmada.
+- `discovery_quadro` e `discovery_t_s`: descoberta anterior associada, no mesmo
+  trial e buraco.
+- `delta_latency` e `delta_distance_cm`: hesitação D→E, em segundos e centímetros.
+- `total_latency` e `total_distance_cm`: medidas até a entrada no alvo, quando
+  aplicáveis, em segundos e centímetros.
+- `issues`: inconsistências identificadas no processamento.
+
+Os tempos usam a origem do intervalo útil (US-03). Uma entrada sem descoberta
+anterior pode ser persistida para auditoria: medidas indisponíveis ficam `null`
+e a inconsistência permanece em `issues`; ausência não é convertida em zero.
+A aplicação valida JSON finito antes da escrita e o banco exige objeto JSON.
+A FK de `execucao_id` e sua associação ao mesmo trial permanecem obrigatórias;
+o chamador grava a execução e os eventos na mesma transação, sem commit interno.
 
 <!--
 Pontos identificados na revisão do schema mas propositalmente adiados —

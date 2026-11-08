@@ -314,8 +314,15 @@ metrica=`trial_results`, sessao=VIEW `sessao`) — see `docs/DER.md`.
 backfill transaction.
 Production training requires NVIDIA; ordinary unit tests need no GPU.
 Native backend smoke tests use synthetic data and do not attest lab quality.
-`events`/`strategy`/`longitudinal`/`stats`/`report` are
-still empty `__init__.py` stubs pending their user story.
+`events/discovery.py` implements US-11 and is not changed by threshold calibration.
+US-12/13 live in `events/calibration.py`, `events/entry.py`, and `cli_events.py`:
+manual D3 comparisons append rounds, entry events include confirmation time and
+D-to-E path length. Numeric C2 parameters remain null pending the lab decision.
+`evento_buraco.details` (0009) stores entry evidence; processing and events share
+one transaction. Recalculation reads the trajectory and its provenance without
+opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions
+and actual acceptance blockers. `strategy`/`longitudinal`/`stats`/`report` remain
+empty `__init__.py` stubs pending their user story.
 
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
 tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because
