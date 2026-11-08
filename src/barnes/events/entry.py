@@ -5,13 +5,21 @@ de quadros consecutivos com o focinho dentro do círculo pode gerar um E. O
 instante E é o início da sequência, confirmado apenas quando a duração entre
 amostras atinge o limiar. Reentradas são preservadas; a primeira entrada no
 alvo fornece as métricas totais do trial na camada que agrega os eventos.
+
+O dwell (US-14) é a duração do mesmo segmento de ocupação, do início (`t_s`)
+até a amostra em que ele deixa de satisfazer o critério de entrada (ou até a
+última amostra disponível, se o segmento ainda estiver aberto no fim da
+trajetória) — por isso reaproveita o critério de região/continuidade de E
+(RN02), sem limiar de configuração próprio. Pressupõe que os buracos da
+montagem não têm áreas sobrepostas: do contrário, dois buracos poderiam
+contar o mesmo quadro em dois dwells simultâneos.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from numbers import Real
 from pathlib import Path
 
@@ -55,7 +63,10 @@ class EntryEvent:
     Descoberta e entrada no mesmo quadro são permitidas pela resolução da
     amostragem: delta é zero. Sem D anterior ou simultâneo, E é preservado,
     os deltas ficam ``None`` e ``issues`` identifica a inconsistência.
-    ``total_*`` só existe para o alvo vigente neste trial.
+    ``total_*`` só existe para o alvo vigente neste trial. ``dwell_s`` (US-14)
+    é a duração do segmento de ocupação completo, não só a janela de
+    confirmação; ``dwell_interpolado`` marca se algum quadro do segmento foi
+    preenchido por interpolação (US-10).
     """
 
     hole_number: int
@@ -68,6 +79,8 @@ class EntryEvent:
     total_distance_cm: float | None
     discovery_quadro: int | None
     discovery_t_s: float | None
+    dwell_s: float
+    dwell_interpolado: bool
     issues: tuple[str, ...] = ()
 
 
@@ -190,6 +203,17 @@ def _columns(table: pa.Table, trial_id: int) -> dict[str, np.ndarray]:
         ]
     else:
         col["nose_valid"] = col["pose_valida"]
+    # Ausência não indica quadro reconstruído: sem a coluna (contrato antigo
+    # ou tabela de teste mínima), dwell_interpolado nunca pode ser marcado.
+    if "interpolado" in table.column_names:
+        column = table.column("interpolado")
+        if not pa.types.is_boolean(column.type):
+            raise EntryDetectionError(f"Trial {trial_id}: interpolado deve ser booleano.")
+        col["interpolado"] = np.asarray(
+            [value is True for value in column.to_pylist()], dtype=bool
+        )[order]
+    else:
+        col["interpolado"] = np.zeros(len(frames), dtype=bool)
     return col
 
 
@@ -305,8 +329,20 @@ def detect_entries(
         )
         start = None
         emitted = False
+        pending_index = None
         for index, present in enumerate(inside):
-            if index and frames[index] != frames[index - 1] + 1:
+            broke = bool(index) and frames[index] != frames[index - 1] + 1
+            # Fecha o segmento em aberto (se algum evento já foi emitido para
+            # ele) antes de resetar start/emitted, para medir o dwell inteiro.
+            if (broke or not present) and start is not None and pending_index is not None:
+                end = index - 1
+                events[pending_index] = replace(
+                    events[pending_index],
+                    dwell_s=float(times[end] - times[start]),
+                    dwell_interpolado=bool(col["interpolado"][start : end + 1].any()),
+                )
+                pending_index = None
+            if broke:
                 start, emitted = None, False
             if not present:
                 start, emitted = None, False
@@ -360,8 +396,20 @@ def detect_entries(
                     total_distance_cm=total_distance,
                     discovery_quadro=discovery.quadro if discovery else None,
                     discovery_t_s=discovery.t_s if discovery else None,
+                    dwell_s=math.nan,
+                    dwell_interpolado=False,
                     issues=tuple(issues),
                 )
             )
             emitted = True
+            pending_index = len(events) - 1
+        # Trajetória acaba com o segmento ainda aberto: dwell vai até a
+        # última amostra disponível, sem extrapolar.
+        if pending_index is not None:
+            end = len(frames) - 1
+            events[pending_index] = replace(
+                events[pending_index],
+                dwell_s=float(times[end] - times[start]),
+                dwell_interpolado=bool(col["interpolado"][start : end + 1].any()),
+            )
     return sorted(events, key=lambda event: (event.t_s, event.hole_number))
