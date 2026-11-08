@@ -786,20 +786,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** o evento fica marcado como apoiado em dados interpolados nas saídas.
 
 #### Tarefas
-- [ ] Definir o critério de permanência em `configs/`, coerente com a definição de entrada
-- [ ] Implementar o cálculo de dwell por evento, em segundos
-- [ ] Implementar a marcação de dwell apoiado em quadros interpolados
-- [ ] Implementar a verificação do invariante soma(dwell) ≤ duração do intervalo útil
-- [ ] Escrever o teste automatizado do invariante
-- [ ] Conferir os valores manualmente em um trial de referência
-- [ ] Documentar a coluna no dicionário de dados
+- [x] Definir o critério de permanência em `configs/`, coerente com a definição de entrada
+- [x] Implementar o cálculo de dwell por evento, em segundos
+- [x] Implementar a marcação de dwell apoiado em quadros interpolados
+- [x] Implementar a verificação do invariante soma(dwell) ≤ duração do intervalo útil
+- [x] Escrever o teste automatizado do invariante
+- [x] Conferir os valores manualmente em um trial de referência
+- [x] Documentar a coluna no dicionário de dados
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Cálculo de dwell por evento implementado
-- [ ] Teste automatizado do invariante soma(dwell) ≤ duração do trial
-- [ ] Marcação de dwell sobre trecho interpolado
-- [ ] Coluna documentada no dicionário de dados
-- [ ] Valores conferidos manualmente em um trial de referência
+- [x] Cálculo de dwell por evento implementado
+- [x] Teste automatizado do invariante soma(dwell) ≤ duração do trial
+- [x] Marcação de dwell sobre trecho interpolado
+- [x] Coluna documentada no dicionário de dados
+- [x] Valores conferidos manualmente em um trial de referência (trial sintético local, id=7 na dev DB; `details.dwell_s`/`dwell_interpolado` confirmados por conta em `evento_buraco` e em `entries.csv` via `barnes events enter` real — ver `docs/eventos-calibracao-entrada.md`)
 
 ---
 

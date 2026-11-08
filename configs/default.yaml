@@ -35,8 +35,14 @@ entrar:
   duracao_minima_s: null      # C2 — duração mínima para contar como entrada
 
 # --- Evento: dwell (US-14) ----------------------------------------------------
+# RN02: o critério de permanência (região e continuidade) é o mesmo já usado
+# para "entrar" acima (entrar.raio_fator/focinho_dentro) — dwell não introduz
+# um novo critério espacial, só mede a duração do segmento de E. O dwell é
+# medido para todo evento de entrada, sem filtro por duração (Cenário 1 do
+# US-14): esta chave segue pendente como pergunta C2 ao laboratório, mas não
+# é lida nem usada por barnes.events.entry; nenhum dwell é descartado por ela.
 dwell:
-  duracao_minima_s: null      # C2
+  duracao_minima_s: null      # C2 — pendente; não consumido pelo cálculo de dwell
 
 # --- Erro (US-17) -------------------------------------------------------------
 # O que conta como erro vem da resposta do laboratório à pergunta C3 (Bloco C,

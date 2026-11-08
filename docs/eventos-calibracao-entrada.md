@@ -91,6 +91,30 @@ distância menor. Um `null` no JSON vira campo vazio no CSV, nunca zero implíci
 Os artefatos carregam a marca de qualidade da US-10 e a proveniência da série;
 qualidade desconhecida é `nao_avaliada` no CSV.
 
+## Dwell por evento (US-14)
+
+O dwell não usa um critério espacial próprio: é a duração do **mesmo**
+segmento contínuo que gerou E (RN02), do seu início (`t_s`) até o quadro em
+que o focinho deixa de satisfazer o critério de entrada, ou até a última
+amostra da trajetória, se o segmento ainda estiver aberto quando ela termina.
+Por isso é sempre ≥ à janela usada para confirmar a entrada
+(`confirmed_at_s - t_s`): a confirmação é só o momento em que a entrada passa
+a valer; o dwell é quanto tempo o animal realmente ficou.
+
+| Campo de exportação | Definição | Unidade |
+|---|---|---|
+| `dwell_s` | Duração do segmento de ocupação completo: do início de E até a saída (ou até a última amostra disponível) | s |
+| `dwell_interpolado` | `true` se algum quadro do segmento tem `interpolado = true` na trajetória da US-10 — o dwell foi medido (ao menos em parte) sobre dado reconstruído, não observado | bool |
+
+`dwell.duracao_minima_s`, em `configs/default.yaml`, segue pendente como
+pergunta C2 ao laboratório, mas **não é usada** por este cálculo: o Cenário 1
+do US-14 exige dwell medido para toda entrada confirmada, sem filtro por
+duração mínima. A invariante de sanidade (RN03) — a soma dos dwells de um
+trial nunca excede a duração do intervalo útil — depende de os buracos da
+montagem não terem áreas sobrepostas (já assumido em outras partes do
+projeto); com áreas sobrepostas, dois buracos distintos poderiam contar o
+mesmo quadro em dois dwells simultâneos.
+
 ## Executar entrada
 
 Após preencher C1/C2 em uma configuração identificada:
