@@ -217,6 +217,63 @@ def test_every_distinct_qualified_segment_is_recorded_once():
     assert [event.delta_distance_cm for event in events] == [0, 5]
 
 
+def test_dwell_covers_the_whole_segment_not_just_the_confirmation_window():
+    # Entra em t=0, confirma em 0.2s (RN de entrada), mas só sai em 0.5s.
+    event = _detect(_table([20] * 6))[0]
+    assert event.confirmed_at_s == 0.2
+    assert event.dwell_s == pytest.approx(0.5)
+    assert event.dwell_s > event.confirmed_at_s - event.t_s
+
+
+def test_dwell_matches_confirmation_window_when_segment_ends_right_after_it():
+    event = _detect(_table([20, 20, 20, 0]))[0]
+    assert event.confirmed_at_s == 0.2
+    assert event.dwell_s == pytest.approx(0.2)
+
+
+def test_dwell_extends_to_last_sample_when_segment_is_still_open_at_the_end():
+    event = _detect(_table([20] * 4))[0]
+    assert event.confirmed_at_s == 0.2
+    assert event.dwell_s == pytest.approx(0.3)
+
+
+def test_each_reentry_gets_its_own_independent_dwell():
+    table = _table([20, 20, 20, 20, 0, 20, 20, 20, 20])
+    events = _detect(table)
+    assert [event.quadro for event in events] == [0, 5]
+    assert [event.dwell_s for event in events] == [pytest.approx(0.3), pytest.approx(0.3)]
+
+
+def test_dwell_is_marked_when_any_frame_of_the_segment_was_interpolated():
+    table = _table([20] * 4).append_column(
+        "interpolado", pa.array([False, False, True, False], type=pa.bool_())
+    )
+    event = _detect(table)[0]
+    assert event.dwell_interpolado is True
+
+
+def test_dwell_is_not_marked_when_no_frame_of_the_segment_was_interpolated():
+    table = _table([20] * 4).append_column(
+        "interpolado", pa.array([False] * 4, type=pa.bool_())
+    )
+    event = _detect(table)[0]
+    assert event.dwell_interpolado is False
+
+
+def test_dwell_without_interpolado_column_defaults_to_not_marked():
+    event = _detect(_table([20] * 4))[0]
+    assert event.dwell_interpolado is False
+
+
+def test_sum_of_dwells_never_exceeds_the_measured_time_span():
+    # Duas reentradas no buraco 1 e uma no 0, intercaladas por saídas; os
+    # buracos da montagem não se sobrepõem (RN03 depende dessa premissa).
+    table = _table([-20, -20, -20, 0, 20, 20, 20, 20, 0, -20, -20, -20])
+    events = _detect(table, [_d(), _d(hole=1)])
+    span = table.column("t_s")[-1].as_py() - table.column("t_s")[0].as_py()
+    assert sum(event.dwell_s for event in events) <= span
+
+
 def test_short_visit_does_not_replace_later_qualified_entry():
     events = _detect(_table([20, 20, 0, 20, 20, 20]))
     assert len(events) == 1
