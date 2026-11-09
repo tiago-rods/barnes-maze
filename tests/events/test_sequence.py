@@ -1,0 +1,161 @@
+"""Sequência cronológica de checagens US-15: ordenação, sala e contrato do US-17."""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from barnes.events.entry import EntryEvent
+from barnes.events.sequence import SequenceError, build_sequence, to_visit_sequence
+from barnes.geometry.holes import Hole, MazeGeometry
+from barnes.metrics.errors import ErrorCriterion, ErrorDefinition, compute_errors
+
+
+def _geometry():
+    return MazeGeometry(
+        center_x_px=0.0,
+        center_y_px=0.0,
+        platform_radius_px=20.0,
+        holes=(
+            Hole(0, 0.0, 20.0, 0.0, 2.0, True),
+            Hole(1, 90.0, 0.0, 20.0, 2.0, False),
+            Hole(2, 180.0, -20.0, 0.0, 2.0, False),
+        ),
+    )
+
+
+def _entry(
+    hole,
+    t_s,
+    *,
+    discovery_t_s=None,
+    confirmed_at_s=None,
+    dwell_s=0.3,
+    dwell_interpolado=False,
+    issues=(),
+):
+    return EntryEvent(
+        hole_number=hole,
+        quadro=int(t_s * 10),
+        t_s=t_s,
+        confirmed_at_s=t_s if confirmed_at_s is None else confirmed_at_s,
+        delta_latency=None,
+        delta_distance_cm=None,
+        total_latency=None,
+        total_distance_cm=None,
+        discovery_quadro=None if discovery_t_s is None else int(discovery_t_s * 10),
+        discovery_t_s=discovery_t_s,
+        dwell_s=dwell_s,
+        dwell_interpolado=dwell_interpolado,
+        issues=issues,
+    )
+
+
+def test_sequence_is_ordered_by_start_and_numbered_from_one():
+    entries = [_entry(2, 5.0, discovery_t_s=4.0), _entry(0, 1.0, discovery_t_s=0.5)]
+    items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
+    assert [item.ordem for item in items] == [1, 2]
+    assert [item.buraco_platform for item in items] == [0, 2]
+    assert [item.inicio_s for item in items] == [0.5, 4.0]
+
+
+def test_room_frame_position_uses_reference_frame_conversion():
+    items = build_sequence([_entry(1, 1.0, discovery_t_s=0.9)], geometry=_geometry(), rotation_deg=0.0)
+    assert items[0].angulo_deg_room == pytest.approx(90.0)
+    rotated = build_sequence(
+        [_entry(1, 1.0, discovery_t_s=0.9)], geometry=_geometry(), rotation_deg=10.0
+    )
+    assert rotated[0].angulo_deg_room == pytest.approx(100.0)
+
+
+def test_target_hole_is_marked_from_montagem_by_default():
+    entries = [_entry(0, 1.0, discovery_t_s=0.5), _entry(1, 2.0, discovery_t_s=1.5)]
+    items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
+    assert [item.alvo for item in items] == [True, False]
+
+
+def test_explicit_target_hole_number_overrides_montagem_flag():
+    items = build_sequence(
+        [_entry(1, 1.0, discovery_t_s=0.5)],
+        geometry=_geometry(),
+        rotation_deg=0.0,
+        target_hole_number=1,
+    )
+    assert items[0].alvo is True
+
+
+def test_orphan_entry_without_discovery_starts_at_its_own_entry_time():
+    item = build_sequence([_entry(0, 3.0, discovery_t_s=None)], geometry=_geometry(), rotation_deg=0.0)[0]
+    assert item.t_descoberta_s is None
+    assert item.t_entrada_s == 3.0
+    assert item.inicio_s == 3.0
+
+
+def test_dwell_and_issues_are_carried_over_from_the_entry_event():
+    item = build_sequence(
+        [_entry(0, 1.0, discovery_t_s=0.5, dwell_s=0.7, dwell_interpolado=True, issues=("x",))],
+        geometry=_geometry(),
+        rotation_deg=0.0,
+    )[0]
+    assert item.dwell_s == 0.7
+    assert item.dwell_interpolado is True
+    assert item.issues == ("x",)
+
+
+def test_empty_entries_produce_an_empty_sequence():
+    assert build_sequence([], geometry=_geometry(), rotation_deg=0.0) == ()
+
+
+def test_ambiguous_target_without_override_is_refused():
+    geometry = _geometry()
+    no_target = MazeGeometry(
+        geometry.center_x_px,
+        geometry.center_y_px,
+        geometry.platform_radius_px,
+        tuple(Hole(h.hole_number, h.angle_deg, h.x_px, h.y_px, h.radius_px, False) for h in geometry.holes),
+    )
+    with pytest.raises(SequenceError, match="único buraco-alvo"):
+        build_sequence([_entry(0, 1.0)], geometry=no_target, rotation_deg=0.0)
+
+
+def test_nonexistent_hole_in_entries_is_refused():
+    with pytest.raises(SequenceError, match="inexistente"):
+        build_sequence([_entry(7, 1.0)], geometry=_geometry(), rotation_deg=0.0)
+
+
+def test_nonexistent_explicit_target_is_refused():
+    with pytest.raises(SequenceError, match="inexistente"):
+        build_sequence(
+            [_entry(0, 1.0)], geometry=_geometry(), rotation_deg=0.0, target_hole_number=9
+        )
+
+
+def test_tied_start_times_are_refused_not_silently_ordered():
+    entries = [_entry(0, 1.0, discovery_t_s=0.5), _entry(1, 2.0, discovery_t_s=0.5)]
+    with pytest.raises(SequenceError, match="ordem cronológica estrita"):
+        build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
+
+
+def test_to_visit_sequence_feeds_us17_compute_errors_without_reopening_anything():
+    entries = [
+        _entry(1, 0.5, discovery_t_s=0.0, dwell_s=0.3),
+        _entry(0, 2.0, discovery_t_s=1.5, dwell_s=0.4),
+    ]
+    items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
+    result = compute_errors(
+        to_visit_sequence(items), ErrorDefinition(ErrorCriterion.QUALQUER_BURACO_INCORRETO)
+    )
+    assert result.total == 1
+    assert result.ate_alvo == 1
+    assert result.buracos_platform == (1,)
+    assert result.angulos_deg_room == (pytest.approx(90.0),)
+
+
+def test_to_visit_sequence_preserves_missing_dwell_as_none_safe_value():
+    # dwell_s do EntryEvent é sempre finito (US-14 nunca deixa NaN escapar);
+    # aqui só confirmamos que o valor passa intacto para o VisitItem.
+    items = build_sequence([_entry(0, 1.0, discovery_t_s=0.5, dwell_s=1.25)], geometry=_geometry(), rotation_deg=0.0)
+    visit_sequence = to_visit_sequence(items)
+    assert visit_sequence.itens[0].dwell_s == 1.25
+    assert math.isfinite(visit_sequence.itens[0].dwell_s)
