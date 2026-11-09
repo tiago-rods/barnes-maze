@@ -22,7 +22,7 @@ from itertools import pairwise
 
 from barnes.events.calibration import ManualAnnotations
 from barnes.events.entry import EntryEvent
-from barnes.geometry.holes import MazeGeometry
+from barnes.geometry.holes import MazeGeometry, resolve_single_target
 from barnes.geometry.reference_frame import hole_to_room_angle
 from barnes.metrics.errors import VisitItem, VisitSequence
 
@@ -102,10 +102,9 @@ def build_sequence(
     """
     holes = {hole.hole_number for hole in geometry.holes}
     if target_hole_number is None:
-        targets = [hole.hole_number for hole in geometry.holes if hole.is_target]
-        if len(targets) != 1:
+        target_hole_number = resolve_single_target(geometry)
+        if target_hole_number is None:
             raise SequenceError("A montagem deve ter um único buraco-alvo.")
-        target_hole_number = targets[0]
     elif target_hole_number not in holes:
         raise SequenceError(f"Buraco-alvo inexistente na montagem: {target_hole_number}.")
 

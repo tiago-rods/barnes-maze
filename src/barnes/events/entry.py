@@ -28,7 +28,7 @@ import pyarrow as pa
 import yaml
 
 from barnes.events.discovery import DiscoveryEvent
-from barnes.geometry.holes import MazeGeometry
+from barnes.geometry.holes import MazeGeometry, resolve_single_target
 
 DEFAULT_CONFIG_PATH = Path("configs/default.yaml")
 
@@ -294,10 +294,9 @@ def detect_entries(
     if len(holes) != len(geometry.holes):
         raise EntryDetectionError(f"Trial {trial_id}: geometria com números de buraco duplicados.")
     if target_hole_number is None:
-        targets = [hole.hole_number for hole in geometry.holes if hole.is_target]
-        if len(targets) != 1:
+        target_hole_number = resolve_single_target(geometry)
+        if target_hole_number is None:
             raise EntryDetectionError(f"Trial {trial_id}: a montagem deve ter um único alvo.")
-        target_hole_number = targets[0]
     if (
         isinstance(target_hole_number, bool)
         or not isinstance(target_hole_number, (int, np.integer))
