@@ -22,7 +22,7 @@ import yaml
 from barnes.db.calibration import require_calibration
 from barnes.db.connection import get_connection
 from barnes.db.executions import get_execution, record_processing_execution
-from barnes.db.hole_events import get_event_pose_quality, insert_hole_event
+from barnes.db.hole_events import get_event_pose_quality, insert_hole_event, list_hole_events
 from barnes.db.maze_configs import get_hole_ids, get_maze_config
 from barnes.db.trials import StoredTrial, get_trial, get_trial_rotations
 from barnes.events.calibration import (
@@ -35,6 +35,7 @@ from barnes.events.calibration import (
 )
 from barnes.events.discovery import DiscoveryEvent, detect_discoveries, load_discovery_params
 from barnes.events.entry import EntryEvent, detect_entries, load_entry_params
+from barnes.events.sequence import SequenceItem, build_sequence
 from barnes.geometry.holes import MazeGeometry
 from barnes.geometry.reference_frame import require_rotations, target_hole_for_trial
 from barnes.pose.dataset import file_sha256, git_revision_record
@@ -325,6 +326,66 @@ def _export_entries(directory: Path, inputs: EventInputs, execution: int, entrie
             )
 
 
+def _load_sequence_entries(
+    trial_id: int, dsn: str | None
+) -> tuple[MazeGeometry, float, int, list[EntryEvent], int | None]:
+    """Lê as entradas já persistidas da execução de eventos mais recente do trial (US-15).
+
+    Não abre a trajetória nem a pose (RN03): só a montagem, a rotação e
+    `evento_buraco`. Entradas de execuções antigas (recalibração) são
+    ignoradas — a sequência nunca mistura rodadas diferentes.
+    """
+    with get_connection(dsn) as conn:
+        stored = get_trial(conn, trial_id)
+        geometry = get_maze_config(conn, stored.maze_config_id)
+        rotations = require_rotations(get_trial_rotations(conn, [trial_id]))
+        rotation_deg = rotations[trial_id]
+        target = target_hole_for_trial(geometry, rotation_deg=rotation_deg)
+        entradas = [e for e in list_hole_events(conn, trial_id=trial_id) if e.tipo == "entrada"]
+    if not entradas:
+        return geometry, rotation_deg, target, [], None
+    execucao_id = max(event.execucao_id for event in entradas)
+    entries = [
+        EntryEvent(**{**event.details, "issues": tuple(event.details.get("issues", ()))})
+        for event in entradas
+        if event.execucao_id == execucao_id
+    ]
+    return geometry, rotation_deg, target, entries, execucao_id
+
+
+def _export_sequence(directory: Path, items: tuple[SequenceItem, ...], report: dict) -> None:
+    with (directory / "sequence.json").open("x", encoding="utf-8") as stream:
+        json.dump(report, stream, indent=2, ensure_ascii=False, allow_nan=False)
+    fields = [
+        "ordem",
+        "buraco_platform",
+        "angulo_deg_room",
+        "t_descoberta_s",
+        "t_entrada_s",
+        "dwell_s",
+        "dwell_interpolado",
+        "alvo",
+        "issues",
+    ]
+    with (directory / "sequencia.csv").open("x", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        for item in items:
+            writer.writerow(
+                {
+                    "ordem": item.ordem,
+                    "buraco_platform": item.buraco_platform,
+                    "angulo_deg_room": item.angulo_deg_room,
+                    "t_descoberta_s": item.t_descoberta_s,
+                    "t_entrada_s": item.t_entrada_s,
+                    "dwell_s": item.dwell_s,
+                    "dwell_interpolado": item.dwell_interpolado,
+                    "alvo": item.alvo,
+                    "issues": json.dumps(item.issues, ensure_ascii=False),
+                }
+            )
+
+
 def _warn_source(provenance: dict) -> None:
     if not GitState.from_record(provenance["source"]).reproducible:
         typer.echo("Aviso: código sem commit limpo; estado registrado para auditoria.", err=True)
@@ -405,6 +466,42 @@ def register_event_commands(events_app: typer.Typer, command_errors: Callable) -
                 typer.echo(f"Inconsistência: {issue}", err=True)
             if issues:
                 raise typer.Exit(code=2)
+
+    @events_app.command("sequence")
+    def sequence(
+        trial: Annotated[int, typer.Option(min=1, help="Id do trial.")],
+        out: Annotated[Path, typer.Option(help="Diretório de novas exportações.")] = Path(
+            "data/events"
+        ),
+        dsn: Annotated[str | None, typer.Option(help="DSN; padrão BARNES_DATABASE_URL.")] = None,
+    ) -> None:
+        """Monta a sequência cronológica de checagens a partir do evento_buraco persistido."""
+        with command_errors():
+            geometry, rotation_deg, target, entries, execucao_id = _load_sequence_entries(
+                trial, dsn
+            )
+            items = build_sequence(
+                entries, geometry=geometry, rotation_deg=rotation_deg, target_hole_number=target
+            )
+            report = {
+                "schema_version": 1,
+                "trial_id": trial,
+                "created_at": datetime.now(UTC).isoformat(),
+                "units": {"time": "s", "angle": "deg_room"},
+                "time_origin": "intervalo_util",
+                "source_execucao_id": execucao_id,
+                "itens": [asdict(item) for item in items],
+            }
+            directory = out / f"sequence-{uuid4().hex}"
+            directory.mkdir(parents=True, exist_ok=False)
+            try:
+                _export_sequence(directory, items, report)
+            except BaseException:
+                for name in ("sequence.json", "sequencia.csv"):
+                    (directory / name).unlink(missing_ok=True)
+                directory.rmdir()
+                raise
+            typer.echo(f"{len(items)} checagem(ns). Saída: {directory}")
 
     @events_app.command("calibrate")
     def calibrate(
