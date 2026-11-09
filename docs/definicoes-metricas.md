@@ -28,6 +28,7 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 1 | Distância para "encontrar" | `encontrar.distancia_cm` | 3 cm (provisório) | C1 | provisório (sem G3) |
 | 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | 30° (provisório) | C1 | provisório (sem G3) |
 | 3 | Critério de "entrar" | `entrar.focinho_dentro` | — | C2 | pendente |
+| 3a | Área de entrada, como fator do raio físico calibrado | `entrar.raio_fator` | — | C2 | pendente (`null`) |
 | 4 | Duração mínima de entrada | `entrar.duracao_minima_s` | — | C2 | pendente |
 | 5 | Duração mínima de dwell | `dwell.duracao_minima_s` | — | C2 | pendente |
 | 6 | O que conta como erro | `erro.criterio` | — | C3 | pendente |
@@ -68,6 +69,36 @@ _A definir em G3._
 ### Erro
 _A definir em G3._
 
+> **US-17 — nota de implementação, não é a definição do laboratório
+> (`barnes.metrics.errors`, `tests/metrics/test_errors.py`).** A definição acima
+> continua em aberto; as linhas 6-7 seguem "pendente". O que está implementado é
+> só o mecanismo, parametrizado pelas duas chaves de C3:
+>
+> - `erro.criterio = qualquer_buraco_incorreto`: toda checagem de buraco que não é
+>   o alvo é um erro. `acima_de_duracao`: só a checagem incorreta com
+>   dwell ≥ `erro.duracao_minima_s` (inclusivo). Enquanto `erro.criterio` estiver
+>   `null`, a contagem é recusada com erro; nenhum valor provisório foi posto.
+> - Fonte única: a **sequência de visitação** da US-15 (buraco na plataforma e
+>   posição na sala, início da checagem, dwell, se é o alvo). O erro nunca relê a
+>   trajetória nem o vídeo; trocar a definição é recalcular sobre a mesma
+>   sequência (RN02, RN05). Como a US-15 ainda não existe, sem sequência o
+>   resultado é "não calculado" (vazio), nunca "zero erros".
+> - Cada checagem conta, inclusive a revisita a um buraco incorreto já checado.
+>   Checagens do alvo nunca são erro. `total_errors` cobre o trial inteiro,
+>   inclusive depois de achar o alvo.
+> - `primary_errors` (erros até a descoberta do alvo): erros com início antes da
+>   **primeira checagem do alvo** na sequência. Como cada item da sequência
+>   começa no tempo de descoberta do buraco, esse corte é o evento D do alvo
+>   (US-11 RN05, o mesmo de `primary_latency`), mas é lido da sequência. Se o
+>   alvo não é checado, `primary_errors = total_errors`, marcado como censurado
+>   (mesma lógica da censura: o trial não é descartado nem recebe zero).
+> - Sob `acima_de_duracao`, uma checagem incorreta sem dwell medido (US-14)
+>   impede o cálculo, com aviso: contá-la ou descartá-la seria inventar a duração.
+>
+> **Confirmar com o laboratório (C3):** se revisitas contam como novos erros, se
+> o limite de duração é inclusivo (≥) e se erros depois de achar o alvo entram
+> no total.
+
 ### Estratégias: aleatória, serial, espacial
 _A definir em G3 — é a regra que o classificador precisa reproduzir (US-20) e
 contra a qual o kappa é medido (US-21). Sem ela, não há como validar._
@@ -80,6 +111,16 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 > errada: sem a marcação, os trials sem sucesso ou são descartados, enviesando o
 > resultado, ou entram como se o animal tivesse achado no último segundo,
 > enviesando na direção oposta.
+
+> **US-16 — implementação (`barnes.metrics.latency`, `tests/metrics/test_latency.py`).**
+> Evento observado até o tempo limite → `*_event = 1` e latência = tempo do evento;
+> sem evento até o limite (ou evento depois dele) → `*_event = 0`, latência = tempo
+> limite e distância = percorrida até o limite. Tempo zero = S (início do intervalo
+> útil). Enquanto `trial.tempo_limite_s` (linha 12, B5) estiver `null`, o cálculo é
+> recusado com erro: nenhum valor provisório foi posto no lugar. "Detector não
+> executado" (hoje o de entrada, US-13) **não** é censura: `total_*` sai vazio, com
+> aviso. Distância percorrida pelo `centro_corpo`, atravessando lacunas de pose em
+> linha reta — **confirmar com o laboratório** qual ponto o `trials.csv` usa.
 
 ## 3. Protocolo de referência
 
@@ -96,6 +137,58 @@ Registro das rodadas de ajuste contra a anotação manual (US-12, US-13).
 | | | | | | |
 
 Alvos: encontrar ≤ 0,5 s · entrar ≤ 0,3 s.
+
+### 4.1 Situação da entrega US-12/US-13 em 05/11/2026
+
+**D3: entrega não confirmada; calibração real bloqueada por dependência externa.**
+Não foram fornecidos anotação, observador, trial de referência ou data acordada.
+O responsável pelo projeto informou não ter conhecimento da entrega nem das
+decisões C2/G3. Não há limiares finais ou erro experimental a registrar nesta
+entrega. Os testes do software são sintéticos e não representam aceite.
+
+O ferramental está implementado: `barnes events calibrate` compara cada
+descoberta com tolerância inclusiva de 0,5 s e cada entrada com 0,3 s, preservando
+erros assinados/absolutos, ausências e eventos extras. Entradas repetidas são
+pareadas em ordem cronológica por buraco. Todas as ocorrências precisam passar;
+uma média favorável não compensa uma ocorrência reprovada.
+
+Cada rodada cria arquivos JSON/Markdown com o conteúdo do YAML, hashes,
+geometria/escala, série usada, ambiente, máquina, código e origem da anotação.
+Os ajustes acontecem somente na configuração; o algoritmo de US-11 não foi
+alterado. `barnes events calibration-evidence <rodada.json>` acrescenta aqui
+a evidência e os limiares daquela rodada, sem preencher o aceite da seção 5.
+
+Se as combinações testadas não convergirem, apresentar o histórico ao decisor
+como questão de definição operacional, registrar a resposta e revisar os
+limiares/definições. Nenhuma discussão com o cliente foi enviada ou registrada
+como realizada nesta implementação.
+
+### 4.2 Convenções técnicas propostas para entrada — confirmar em C2/G3
+
+- Área circular: raio do buraco em pixels × escala cm/px × `entrar.raio_fator`;
+  fronteira inclusiva. Fator e duração mínima permanecem `null` até definição.
+- Segmento contínuo: focinho válido dentro da área em quadros consecutivos;
+  saída, focinho ausente ou salto de quadro interrompem a duração. Um quadro
+  isolado não comprova duração positiva.
+- Instante E: início do segmento que alcança a duração mínima. O momento da
+  confirmação fica separado em `confirmed_at_s`. Reentradas são preservadas.
+- Cada E é associado à primeira D do mesmo buraco/trial. D no mesmo quadro de E
+  gera hesitação zero pela resolução amostral. D ausente/posterior gera
+  inconsistência identificada; não se inventa descoberta.
+- `delta_latency = t_E − t_D`, em segundos. `delta_distance` é o caminho do
+  centro do corpo entre D e E, em cm. Centros ausentes tornam a distância
+  indisponível, com motivo, sem soma parcial disfarçada de distância completa.
+- A primeira E do alvo, resolvido para a rotação do trial, fornece
+  `total_latency` e `total_distance`. Sem E no alvo, não há sucesso inventado.
+- Tempos relativos ao intervalo útil; distâncias somadas entre amostras. FPS
+  variável mantém a ressalva temporal da série de US-09. A qualidade de pose
+  da US-10 acompanha a saída e os pontos já interpolados continuam identificados
+  na série e em sua proveniência.
+
+Estas são convenções implementadas para revisão; **não são palavras ou decisões
+atribuídas ao laboratório**. Procedimento e formato D3 no
+[guia de calibração e entrada](eventos-calibracao-entrada.md). Pendências por ticket
+no [relatório da entrega](status-us12-us13.md).
 
 ## 5. Aceite
 

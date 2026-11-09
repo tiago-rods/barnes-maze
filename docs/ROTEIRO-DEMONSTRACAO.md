@@ -1534,6 +1534,42 @@ responder C1.
 
 ---
 
+### B.16 US-12/US-13 — Calibração e entrada física
+
+**Não usar a pose/anotação simulada desta demonstração como aceite real.** A
+entrega D3 e os critérios C2/G3 ainda não estão confirmados. A calibração real
+fica bloqueada; a demonstração técnica pode executar os testes:
+
+```powershell
+uv run --no-sync python -m pytest tests/events/ tests/db/test_hole_events.py
+```
+
+Quando D3 e os parâmetros acordados estiverem disponíveis, aplicar a migração
+`0009` no banco da demonstração, usar o ID real do trial de referência e seguir
+o [guia de operação](eventos-calibracao-entrada.md):
+
+```powershell
+uv run barnes db migrate
+uv run barnes events enter --trial $trialId --config configs/default.yaml
+uv run barnes events calibrate --trial $trialId --kind descoberta --annotations data/annotations/d3.json
+uv run barnes events calibrate --trial $trialId --kind entrada --annotations data/annotations/d3.json
+```
+
+`$trialId` deve conter o ID do trial que o observador anotou, não um ID escolhido
+para fazer o comando passar. Sem `--annotations`, `calibrate` grava bloqueio D3
+e retorna 2. Em `enter`, código 2 indica inconsistências registradas; inspecionar
+`events.json`, `entries.csv` e a execução. Confirmar que toques curtos não geram E,
+as distâncias estão em cm, reentradas têm linhas próprias e apenas a primeira E
+do alvo alimenta o resumo total. A qualidade da pose acompanha os relatórios.
+
+Após uma rodada real, incorporar seu JSON com `events calibration-evidence` e
+apresentar a evidência para G3. O comando não concede aprovação do cliente.
+
+Na revisão final, confirmar também as recusas de série truncada, tempos/FPS
+incompatíveis e qualidade de outra execução. Regenerar a série pelo fluxo de pose
+quando houver esse diagnóstico. Um JSON de rodada com erros ou resumo incoerentes
+deve ser recusado antes de alterar `docs/definicoes-metricas.md`.
+
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:

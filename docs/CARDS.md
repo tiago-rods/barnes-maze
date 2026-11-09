@@ -632,6 +632,12 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-12] Calibração dos limiares de descoberta contra a anotação manual
 
+> Entrega técnica em 05/11/2026: comparação, histórico auditável, bloqueio D3 e
+> incorporação de evidência implementados. **Calibração real bloqueada:** D3 não
+> foi confirmada e G3 segue pendente. As tarefas de execução/aceite abaixo
+> continuam abertas; [status por ticket](status-us12-us13.md) e
+> [guia dos comandos](eventos-calibracao-entrada.md).
+
 - **Épico / Módulo:** Eventos por buraco (`src/barnes/events/`, `docs/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 3 Pontos · 1,5–2 dias (depende do laboratório, não acelera com IA)
@@ -683,6 +689,11 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-13] Evento de entrada (E) — quando o animal *checa* fisicamente o buraco
 
+> Entrega técnica em 05/11/2026: detector, hesitação, consistência, persistência e
+> exportação implementados e testados com dados sintéticos. Área/duração ainda
+> dependem de C2/G3; a comparação real depende de D3. Não marcar o card aceito
+> antes dessas validações. Ver [status por ticket](status-us12-us13.md).
+
 - **Épico / Módulo:** Eventos por buraco (`src/barnes/events/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 5 Pontos · 2,5–4 dias
@@ -723,20 +734,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 #### Tarefas
 - [ ] Confirmar os critérios de área e de duração mínima saídos de **G3** (pergunta C2)
-- [ ] Declarar os critérios em `barnes.yaml`
-- [ ] Implementar a detecção de focinho dentro da área do buraco
-- [ ] Implementar o critério de duração mínima contínua
-- [ ] Implementar o cálculo da hesitação D→E em tempo e em distância
-- [ ] Implementar a verificação de consistência (entrada sem descoberta prévia)
+- [x] Declarar os critérios em `barnes.yaml` — em `configs/default.yaml`; valores C2 pendentes permanecem `null`
+- [x] Implementar a detecção de focinho dentro da área do buraco
+- [x] Implementar o critério de duração mínima contínua
+- [x] Implementar o cálculo da hesitação D→E em tempo e em distância
+- [x] Implementar a verificação de consistência (entrada sem descoberta prévia)
 - [ ] Comparar com a anotação manual e verificar a tolerância de 0,3 s
-- [ ] Documentar o critério em `docs/definicoes-metricas.md`
+- [x] Documentar o critério em `docs/definicoes-metricas.md` — convenção técnica proposta, ainda sem G3
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Detecção de entrada implementada com área e duração parametrizadas
-- [ ] Hesitação D→E calculada em tempo e distância
-- [ ] Verificação de consistência descoberta→entrada implementada
+- [x] Detecção de entrada implementada com área e duração parametrizadas
+- [x] Hesitação D→E calculada em tempo e distância
+- [x] Verificação de consistência descoberta→entrada implementada
 - [ ] Comparação com anotação manual executada
-- [ ] Critérios documentados em `docs/definicoes-metricas.md`
+- [x] Critérios documentados em `docs/definicoes-metricas.md` — aceite G3 pendente
 
 ---
 
@@ -775,20 +786,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** o evento fica marcado como apoiado em dados interpolados nas saídas.
 
 #### Tarefas
-- [ ] Definir o critério de permanência em `configs/`, coerente com a definição de entrada
-- [ ] Implementar o cálculo de dwell por evento, em segundos
-- [ ] Implementar a marcação de dwell apoiado em quadros interpolados
-- [ ] Implementar a verificação do invariante soma(dwell) ≤ duração do intervalo útil
-- [ ] Escrever o teste automatizado do invariante
-- [ ] Conferir os valores manualmente em um trial de referência
-- [ ] Documentar a coluna no dicionário de dados
+- [x] Definir o critério de permanência em `configs/`, coerente com a definição de entrada
+- [x] Implementar o cálculo de dwell por evento, em segundos
+- [x] Implementar a marcação de dwell apoiado em quadros interpolados
+- [x] Implementar a verificação do invariante soma(dwell) ≤ duração do intervalo útil
+- [x] Escrever o teste automatizado do invariante
+- [x] Conferir os valores manualmente em um trial de referência
+- [x] Documentar a coluna no dicionário de dados
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Cálculo de dwell por evento implementado
-- [ ] Teste automatizado do invariante soma(dwell) ≤ duração do trial
-- [ ] Marcação de dwell sobre trecho interpolado
-- [ ] Coluna documentada no dicionário de dados
-- [ ] Valores conferidos manualmente em um trial de referência
+- [x] Cálculo de dwell por evento implementado
+- [x] Teste automatizado do invariante soma(dwell) ≤ duração do trial
+- [x] Marcação de dwell sobre trecho interpolado
+- [x] Coluna documentada no dicionário de dados
+- [x] Valores conferidos manualmente em um trial de referência (trial sintético local, id=7 na dev DB; `details.dwell_s`/`dwell_interpolado` confirmados por conta em `evento_buraco` e em `entries.csv` via `barnes events enter` real — ver `docs/eventos-calibracao-entrada.md`)
 
 ---
 
@@ -828,20 +839,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** ambas derivam exclusivamente da sequência persistida, sem novo acesso ao Parquet de trajetória.
 
 #### Tarefas
-- [ ] Fixar o esquema da sequência como contrato de dados dos Épicos E e F
-- [ ] Comunicar o contrato aos responsáveis por métricas e por estratégia
-- [ ] Implementar a montagem da sequência ordenada por tempo
-- [ ] Incluir a posição no referencial da sala em cada item da sequência
-- [ ] Implementar a exportação tabular da sequência
-- [ ] Escrever teste de ordenação temporal estrita
-- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95
+- [x] Fixar o esquema da sequência como contrato de dados dos Épicos E e F
+- [ ] Comunicar o contrato aos responsáveis por métricas e por estratégia (ação de equipe — `docs/contrato-sequencia.md` está pronto para esse aviso, mas a comunicação em si não foi feita aqui)
+- [x] Implementar a montagem da sequência ordenada por tempo
+- [x] Incluir a posição no referencial da sala em cada item da sequência
+- [x] Implementar a exportação tabular da sequência
+- [x] Escrever teste de ordenação temporal estrita
+- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95 — **bloqueado por D3**, igual ao US-12/13 (`docs/eventos-calibracao-entrada.md`): mecanismo (`compare_sequence`) implementado e testado com D3 sintético, sem anotação real do laboratório para validar
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Sequência de visitação persistida e exportável
-- [ ] Posição no referencial da sala incluída em cada item
-- [ ] Comparação com anotação manual executada em trial de referência
-- [ ] Contrato de dados documentado para os Épicos E e F
-- [ ] Testes garantindo ordenação temporal estrita
+- [x] Sequência de visitação persistida e exportável (`barnes events sequence`, conferido contra o Postgres de dev com um trial sintético de referência — essa conferência pegou e corrigiu uma colisão real de `inicio_s` em reentradas que compartilham a mesma descoberta)
+- [x] Posição no referencial da sala incluída em cada item
+- [ ] Comparação com anotação manual executada em trial de referência — bloqueada por D3 (ver acima)
+- [x] Contrato de dados documentado para os Épicos E e F (`docs/contrato-sequencia.md`)
+- [x] Testes garantindo ordenação temporal estrita
 
 ---
 

@@ -1,0 +1,133 @@
+# Entrega técnica US-12/US-13 — atualização em 06/11/2026
+
+Branch `US-12_13/Tales`, criada da `origin/main` em `cf94dc2`, sem conflitos.
+Este relatório separa implementação do software de validação experimental e
+aceite do cliente. Nenhum dado do laboratório foi enviado para fora da máquina.
+
+## Aviso de continuidade
+
+**Situação em 06/11/2026: implementação técnica entregue; aceite experimental
+pendente.** Ao puxar esta branch, considere os pontos abaixo na próxima entrega:
+
+1. **Dependência externa:** receber D3 com observador, trial, fonte e data
+   identificados; confirmar área, duração mínima e convenção temporal de E em
+   C2/G3. A entrega/data acordada não foi confirmada. Não criar uma anotação
+   improvisada para declarar a calibração concluída.
+2. **Configuração:** `entrar.raio_fator` e `entrar.duracao_minima_s` permanecem
+   `null`; a recusa pelo detector é intencional. Os valores de descoberta de
+   3 cm/30° são provisórios e não calibrados. Ajustar os limiares no YAML,
+   preservando o algoritmo de US-11. Não marcar a configuração como calibrada
+   nem preencher aceite G3 sem a evidência correspondente.
+3. **Integração:** aplicar as migrações com `uv run barnes db migrate`, incluindo
+   `0009_us13_entry_details.sql`. Consultar eventos por `execucao_id` para não
+   misturar rodadas. Preservar inconsistências D→E, qualidade de pose e valores
+   ausentes; `null` em distância/latência não significa zero. Os totais usam a
+   primeira entrada no alvo. O contrato estatístico completo continua em US-25.
+4. **Dados locais:** D3, trajetórias e artefatos de `data/` não vêm pelo Git.
+   Obter os dados pela infraestrutura autorizada do grupo. Séries sem os quadros
+   originais registrados ou incompatíveis com o trial precisam ser regeneradas
+   por `pose series`/`pose review`; não desativar as verificações para integrá-las.
+5. **Fechamento dos cards:** executar as rodadas reais com `events calibrate`
+   para descoberta (≤ 0,5 s por evento) e entrada (≤ 0,3 s por evento), registrar
+   os limiares/evidência com `events calibration-evidence` e obter aceite escrito
+   em `docs/definicoes-metricas.md`. Se as combinações testadas não convergirem,
+   registrar e discutir a definição operacional com o cliente.
+
+O [guia de operação](eventos-calibracao-entrada.md) detalha o formato D3 e os
+comandos. Os testes automatizados comprovam o comportamento do software; não
+substituem a comparação real nem a decisão do laboratório. Atualize este aviso
+e o README quando as dependências forem resolvidas, indicando a evidência.
+
+## US-12
+
+| Ticket | O que existe | O que falta para concluir a atividade real |
+|---|---|---|
+| SCRUM-160 | Bloqueio D3 documentado; comando registra bloqueio sem improvisar referência | Confirmar entrega, observador, trial e data acordada com o laboratório |
+| SCRUM-161 | Leitura validada de D3 e comparação por evento, com erros assinados/absolutos, faltas e extras | Executar com a anotação real |
+| SCRUM-162 | Reexecução por YAML, histórico JSON/Markdown e proveniência de cada rodada | Testar as combinações acordadas com o laboratório |
+| SCRUM-163 | Tolerância inclusiva de 0,5 s por descoberta implementada e testada | Comprovar no trial de referência real |
+| SCRUM-164 | Documento atualizado e comando para incorporar evidência/limiares de uma rodada | Selecionar limiares finais e anexar a evidência real |
+| SCRUM-165 | Evidência local preparada para revisão; G3 permanece explicitamente pendente | Submeter ao decisor e receber aceite escrito, ou registrar a divergência discutida |
+
+**US-12 não está aceita:** D3 não está disponível/confirmada nesta sessão. Não
+houve calibração real nem afirmação de que a tolerância foi atingida. A entrega
+atual é o ferramental testado para executar a calibração quando D3 chegar.
+
+## US-13
+
+| Ticket | Implementação | Dependência externa |
+|---|---|---|
+| SCRUM-167 | Critério operacional proposto documentado | Confirmar área, duração e convenção de tempo com C2/G3 |
+| SCRUM-168 | `entrar.raio_fator`, `duracao_minima_s`, `focinho_dentro`; valores pendentes recusados | Preencher os dois valores numéricos confirmados; permanecem `null` |
+| SCRUM-169 | Focinho dentro do círculo calibrado, inclusive fronteira | Validar a área no protocolo do laboratório |
+| SCRUM-170 | Duração contínua, interrupção por lacunas/saídas e reentradas | Validar a duração e o instante de referência de E |
+| SCRUM-171 | Hesitação em segundos e caminho do centro em cm; CSV/JSON; primeiro E do alvo fornece totais | Validar com trajetórias reais; exportação estatística completa é US-25 |
+| SCRUM-172 | Entrada sem D ou com D posterior é preservada e sinalizada por trial/buraco; deltas ausentes | Revisar eventuais inconsistências reais |
+| SCRUM-173 | Comparação por entrada com tolerância inclusiva de 0,3 s, sem média que esconda desvios | Executar contra a anotação real de entrada |
+| SCRUM-174 | Critérios e limitações documentados nas definições e no guia de operação | Aceite escrito do laboratório |
+
+**Software da US-13 implementado; aceite experimental pendente.** Os testes
+sintéticos não comprovam o erro de 0,3 s no laboratório. Também não definem os
+valores C2/G3 de produção.
+
+## Integração e verificação
+
+- Comandos `events enter`, `events calibrate` e `events calibration-evidence`.
+- Algoritmo `events/discovery.py` da US-11 preservado.
+- Eventos e `execucao` gravados juntos; detalhes em JSONB na migração `0009`.
+- Relatórios com marca de qualidade de pose, hashes, parâmetros e origem da série.
+- Comparações e reexecução sobre o Parquet sem abertura/decodificação de vídeo.
+- Testes do detector, comparação, histórico, CLI, exportação e falhas de escrita.
+- Verificação inicial em 05/11/2026: suíte completa com **794 testes aprovados e 124
+  pulados**. Dos pulados, 121 dependem do PostgreSQL de teste, dois do backend
+  opcional SLEAP-NN e um de sockets AF_UNIX indisponíveis no ambiente. Ruff e
+  `git diff --check` passaram.
+- Atualização em 06/11/2026: PostgreSQL 16.15 preparado em ambiente local isolado,
+  com banco descartável. Todas as dez migrações foram aplicadas, incluindo
+  `0009_us13_entry_details.sql`; a segunda aplicação não encontrou pendências.
+  A falta de banco para validar esta entrega técnica foi resolvida.
+- Novos testes de CLI com PostgreSQL real verificam reentradas, hesitação e
+  totais exportados, vínculo dos arquivos à execução, comparação D3 sintética
+  nas duas tolerâncias, preservação de rodadas antigas, inconsistências D→E
+  e rollback real diante de falha na escrita dos artefatos.
+- Verificação após a revisão final em **06/11/2026: 951 testes aprovados, zero falhas/erros e
+  3 pulados**. Nenhum teste PostgreSQL ficou pulado. Restaram somente dois
+  testes do backend opcional SLEAP-NN (US-07/08) e um de sockets AF_UNIX.
+  Ruff e `git diff --check` passaram. Os testes não deixaram registros nas
+  tabelas de usuários, trials, execuções ou eventos; o servidor isolado foi
+  encerrado ao final. [Evidência técnica e reprodução](validacao-us12-us13-postgres.md).
+
+A validação do banco usa exclusivamente dados sintéticos. Ela não altera o
+status experimental de D3/C2/G3 nas tabelas acima. Não houve mudança nos limiares
+de produção, submissão ao cliente nem aceite escrito nesta continuação.
+
+## Revisão final requisito por requisito
+
+| Card e requisito | Resultado da revisão |
+|---|---|
+| US-12 RN01 / cenário 1 | Comparação por descoberta e tolerância inclusiva de 0,5 s implementadas; execução experimental pendente de D3 |
+| US-12 RN02 | Ajustes somente por YAML; `events/discovery.py` permanece igual à `main` de origem |
+| US-12 RN03 | Rodadas separadas, limiares, erros, hashes, ambiente e execução registrados; sem sobrescrever tentativas anteriores |
+| US-12 RN04 / cenário 3 | Falta de D3 registrada como bloqueio externo; entrega/data/observador/trial continuam não confirmados |
+| US-12 RN05 | Comando incorpora limiares e evidência em `definicoes-metricas.md`; escolha final e submissão G3 continuam pendentes |
+| US-12 cenário 2 | Rodada reprovada orienta revisão de definição operacional; não houve divergência real escalada ao cliente nesta sessão |
+| US-13 RN01 / cenários 1 e 2 | Área e duração parametrizadas; toques curtos descartados; confirmação contínua e reentradas testadas |
+| US-13 RN02 | Hesitação D→E em s/cm calculada e exportada; distância incompleta fica ausente, com motivo |
+| US-13 RN03 / cenário 4 | D ausente/posterior no mesmo buraco/trial é sinalizado; não há descoberta inventada |
+| US-13 RN04 / cenário 3 | Comparação por entrada e tolerância inclusiva de 0,3 s implementadas; prova experimental pendente de D3 |
+| US-13 RN05 | Primeira E do alvo do trial fornece o resumo total, respeitando a rotação registrada |
+| US-13 documentação / G3 | Convenções de início de E, simultaneidade D/E, área, duração e distância documentadas como propostas ainda sem aceite |
+
+Na revisão foram reproduzidas e corrigidas falhas de validação: uma série
+truncada, com tempos/FPS incompatíveis ou qualidade de outra execução podia
+gerar resultados; agora é recusada antes de gravar. Um JSON com erros/tolerância/
+resumo incoerentes podia ser anexado; agora o cálculo é refeito antes de salvar
+ou anexar evidência. Parâmetros de entrada grandes demais também recebem
+erro de domínio, sem traceback de conversão. Há testes de regressão para esses casos.
+Foram acrescentados 27 casos à suíte anteriormente aprovada (924 testes),
+incluindo recusa de trajetórias truncadas com PostgreSQL real. A suíte completa,
+Ruff e a formatação dos arquivos Python alterados passaram após as correções.
+
+Veja o [guia de operação](eventos-calibracao-entrada.md) para formato D3,
+comandos, convenções e continuação da validação. As definições e o aceite ficam
+em [definicoes-metricas.md](definicoes-metricas.md).

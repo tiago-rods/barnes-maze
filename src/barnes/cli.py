@@ -18,6 +18,7 @@ import numpy as np
 import psycopg
 import typer
 
+from barnes.cli_events import register_event_commands
 from barnes.cli_pose import register_pose_commands
 from barnes.db.calibration import (
     CalibrationRequiredError,
@@ -163,7 +164,7 @@ app.add_typer(catalog_app, name="catalog")
 pose_app = typer.Typer(help="Anotação, treino, avaliação e inferência local de pose (US-06/07/08).")
 app.add_typer(pose_app, name="pose")
 
-events_app = typer.Typer(help="Eventos por buraco a partir da trajetória (US-11).")
+events_app = typer.Typer(help="Descoberta, entrada e calibração de eventos (US-11/12/13).")
 app.add_typer(events_app, name="events")
 
 
@@ -2108,6 +2109,7 @@ def events_discover(
 
 
 register_pose_commands(pose_app, _command_errors)
+register_event_commands(events_app, _command_errors)
 
 if __name__ == "__main__":
     app()
