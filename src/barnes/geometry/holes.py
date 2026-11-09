@@ -144,6 +144,17 @@ def generate_holes(
     )
 
 
+def resolve_single_target(geometry: MazeGeometry) -> int | None:
+    """Índice do único buraco `is_target` da montagem, ou `None` se não houver exatamente um.
+
+    Não levanta: cada chamador decide a exceção e a mensagem a usar quando a
+    montagem não tem um alvo inequívoco (ex. `barnes.events.entry`,
+    `barnes.events.sequence`).
+    """
+    targets = [hole.hole_number for hole in geometry.holes if hole.is_target]
+    return targets[0] if len(targets) == 1 else None
+
+
 def _build_hole(
     *,
     hole_number: int,
