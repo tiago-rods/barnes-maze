@@ -42,8 +42,16 @@ class SequenceItem:
         buraco_platform: Índice do buraco na montagem, 0..N-1.
         angulo_deg_room: Posição do buraco na sala, em graus [0, 360)
             (`barnes.geometry.reference_frame.hole_to_room_angle`).
-        t_descoberta_s: Tempo da descoberta pareada (US-11), ou `None` numa
-            entrada órfã (sem D anterior ou simultânea, US-13).
+        inicio_s: Início da checagem — chave de ordenação. É a descoberta
+            pareada só na **primeira** visita cronológica a esse buraco;
+            reentradas (RN de US-13, preservadas) começam no próprio
+            `t_entrada_s`, porque a descoberta já foi "gasta" pela primeira
+            visita e não pode originar duas checagens no mesmo instante.
+        t_descoberta_s: Tempo da descoberta pareada (US-11), para exibição —
+            `None` numa entrada órfã (sem D anterior ou simultânea, US-13).
+            Preenchido mesmo numa reentrada (é a descoberta do buraco, não
+            desta visita específica); use `inicio_s`, não este campo, para
+            ordenar ou comparar tempos entre checagens.
         t_entrada_s: Tempo de início da entrada confirmada (US-13).
         dwell_s: Permanência da checagem, em segundos (US-14).
         dwell_interpolado: Dwell apoiado em quadro interpolado (US-10/US-14).
@@ -54,17 +62,13 @@ class SequenceItem:
     ordem: int
     buraco_platform: int
     angulo_deg_room: float
+    inicio_s: float
     t_descoberta_s: float | None
     t_entrada_s: float
     dwell_s: float
     dwell_interpolado: bool
     alvo: bool
     issues: tuple[str, ...] = ()
-
-    @property
-    def inicio_s(self) -> float:
-        """Início da checagem (RN02): a descoberta, ou a própria entrada se órfã."""
-        return self.t_entrada_s if self.t_descoberta_s is None else self.t_descoberta_s
 
 
 def build_sequence(
@@ -76,11 +80,11 @@ def build_sequence(
 ) -> tuple[SequenceItem, ...]:
     """Monta a sequência cronológica de checagens de um trial (RN01/RN02).
 
-    Ordena por `inicio_s` (descoberta pareada, ou a própria entrada quando
-    órfã — ver `SequenceItem.inicio_s`) e numera a partir de 1. Não
-    reordena silenciosamente uma ordem ambígua: duas checagens com o mesmo
-    `inicio_s` são um erro de quem produziu os eventos, não um empate a
-    resolver aqui.
+    Ordena por `inicio_s` (ver `SequenceItem.inicio_s`: descoberta pareada só
+    na primeira visita a cada buraco, própria entrada nas reentradas e nas
+    órfãs) e numera a partir de 1. Não reordena silenciosamente uma ordem
+    ambígua: duas checagens com o mesmo `inicio_s` são um erro de quem
+    produziu os eventos, não um empate a resolver aqui.
 
     Args:
         entries: Entradas confirmadas do trial (`barnes.events.entry`),
@@ -105,11 +109,27 @@ def build_sequence(
     elif target_hole_number not in holes:
         raise SequenceError(f"Buraco-alvo inexistente na montagem: {target_hole_number}.")
 
-    staged = []
+    entries = list(entries)
     for entry in entries:
         if entry.hole_number not in holes:
             raise SequenceError(f"Entrada refere buraco inexistente: {entry.hole_number}.")
-        inicio_s = entry.t_s if entry.discovery_t_s is None else entry.discovery_t_s
+
+    # A descoberta é por buraco, não por visita: só a entrada cronologicamente
+    # mais antiga de cada buraco pode usar o tempo de D como início — do
+    # contrário, uma reentrada (US-13) colidiria no mesmo inicio_s da primeira.
+    first_entry_by_hole: dict[int, EntryEvent] = {}
+    for entry in entries:
+        earliest = first_entry_by_hole.get(entry.hole_number)
+        if earliest is None or entry.t_s < earliest.t_s:
+            first_entry_by_hole[entry.hole_number] = entry
+
+    staged = []
+    for entry in entries:
+        is_first_visit = first_entry_by_hole[entry.hole_number] is entry
+        if is_first_visit and entry.discovery_t_s is not None:
+            inicio_s = entry.discovery_t_s
+        else:
+            inicio_s = entry.t_s
         staged.append((inicio_s, entry))
     staged.sort(key=lambda pair: pair[0])
 
@@ -122,6 +142,7 @@ def build_sequence(
                 angulo_deg_room=hole_to_room_angle(
                     geometry, entry.hole_number, rotation_deg=rotation_deg
                 ),
+                inicio_s=inicio_s,
                 t_descoberta_s=entry.discovery_t_s,
                 t_entrada_s=entry.t_s,
                 dwell_s=entry.dwell_s,

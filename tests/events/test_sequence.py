@@ -73,6 +73,18 @@ def _entry(
     )
 
 
+def test_reentry_does_not_collide_on_the_shared_discovery_time():
+    # Mesma descoberta (t=0.0) para as duas entradas no buraco 0 (US-13
+    # preserva reentradas, mas só emite D uma vez por buraco). Reproduz um
+    # caso real encontrado ao conferir manualmente um trial de referência.
+    entries = [_entry(0, 0.0, discovery_t_s=0.0), _entry(0, 0.5, discovery_t_s=0.0)]
+    items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
+    assert [item.inicio_s for item in items] == [0.0, 0.5]
+    assert items[0].t_descoberta_s == items[1].t_descoberta_s == 0.0
+    assert items[1].t_entrada_s == 0.5
+    to_visit_sequence(items)  # não deve levantar por ordem não estritamente crescente
+
+
 def test_sequence_is_ordered_by_start_and_numbered_from_one():
     entries = [_entry(2, 5.0, discovery_t_s=4.0), _entry(0, 1.0, discovery_t_s=0.5)]
     items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
