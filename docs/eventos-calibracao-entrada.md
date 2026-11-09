@@ -115,6 +115,27 @@ montagem não terem áreas sobrepostas (já assumido em outras partes do
 projeto); com áreas sobrepostas, dois buracos distintos poderiam contar o
 mesmo quadro em dois dwells simultâneos.
 
+## Sequência de visitação (US-15)
+
+`barnes events sequence --trial ID` monta a sequência cronológica das
+checagens (entradas confirmadas, cada uma já com a descoberta pareada e o
+dwell) a partir do `evento_buraco` persistido — nunca abre a trajetória de
+pose nem o vídeo. É a **entrada canônica** dos Épicos E (erros, US-17, já
+implementado em `barnes.metrics.errors`, só falta uma CLI) e F (estratégia,
+US-20, pendente); o contrato completo está em
+[`contrato-sequencia.md`](contrato-sequencia.md).
+
+**Concordância com anotação manual (RN04).** `--annotations D3.json` compara
+a sequência automática com a sequência de `hole_number` dos eventos
+`tipo="entrada"` do mesmo D3 já usado para descoberta/entrada — nenhum
+formato novo. Critério de aceite: concordância ≥ 0,95; sem D3, o comando
+registra bloqueio externo (`comparacao.json`), igual ao tratamento D3 do
+US-12/13 descrito acima. **Situação em 09/11/2026: igual ao US-12/13 — D3
+continua não confirmado**, então a validação real da concordância segue
+bloqueada pela mesma dependência externa; o mecanismo está implementado e
+testado com D3 sintético (`tests/events/test_sequence.py`,
+`tests/events/test_cli_events_sequence.py`).
+
 ## Executar entrada
 
 Após preencher C1/C2 em uma configuração identificada:

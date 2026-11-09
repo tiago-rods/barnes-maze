@@ -839,20 +839,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** ambas derivam exclusivamente da sequência persistida, sem novo acesso ao Parquet de trajetória.
 
 #### Tarefas
-- [ ] Fixar o esquema da sequência como contrato de dados dos Épicos E e F
-- [ ] Comunicar o contrato aos responsáveis por métricas e por estratégia
-- [ ] Implementar a montagem da sequência ordenada por tempo
-- [ ] Incluir a posição no referencial da sala em cada item da sequência
-- [ ] Implementar a exportação tabular da sequência
-- [ ] Escrever teste de ordenação temporal estrita
-- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95
+- [x] Fixar o esquema da sequência como contrato de dados dos Épicos E e F
+- [ ] Comunicar o contrato aos responsáveis por métricas e por estratégia (ação de equipe — `docs/contrato-sequencia.md` está pronto para esse aviso, mas a comunicação em si não foi feita aqui)
+- [x] Implementar a montagem da sequência ordenada por tempo
+- [x] Incluir a posição no referencial da sala em cada item da sequência
+- [x] Implementar a exportação tabular da sequência
+- [x] Escrever teste de ordenação temporal estrita
+- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95 — **bloqueado por D3**, igual ao US-12/13 (`docs/eventos-calibracao-entrada.md`): mecanismo (`compare_sequence`) implementado e testado com D3 sintético, sem anotação real do laboratório para validar
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Sequência de visitação persistida e exportável
-- [ ] Posição no referencial da sala incluída em cada item
-- [ ] Comparação com anotação manual executada em trial de referência
-- [ ] Contrato de dados documentado para os Épicos E e F
-- [ ] Testes garantindo ordenação temporal estrita
+- [x] Sequência de visitação persistida e exportável (`barnes events sequence`, conferido contra o Postgres de dev com um trial sintético de referência — essa conferência pegou e corrigiu uma colisão real de `inicio_s` em reentradas que compartilham a mesma descoberta)
+- [x] Posição no referencial da sala incluída em cada item
+- [ ] Comparação com anotação manual executada em trial de referência — bloqueada por D3 (ver acima)
+- [x] Contrato de dados documentado para os Épicos E e F (`docs/contrato-sequencia.md`)
+- [x] Testes garantindo ordenação temporal estrita
 
 ---
 
