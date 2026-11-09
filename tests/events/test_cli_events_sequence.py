@@ -187,3 +187,40 @@ def test_annotations_for_another_trial_is_rejected(scenario, tmp_path):
     result = invoke(scenario, "--annotations", d3)
     assert result.exit_code != 0
     assert not list(scenario.out.glob("*/comparacao.json"))
+
+
+def test_entry_recorded_before_dwell_existed_fails_with_a_clear_message_not_a_traceback(scenario):
+    # details de uma entrada gravada por `barnes events enter` antes do US-14,
+    # sem dwell_s/dwell_interpolado — reconstruir o EntryEvent não pode virar
+    # um TypeError bruto sem mensagem (CalibrationCancelled... nao, ValueError).
+    old_details = {
+        "hole_number": 0,
+        "quadro": 0,
+        "t_s": 0.0,
+        "confirmed_at_s": 0.2,
+        "delta_latency": None,
+        "delta_distance_cm": None,
+        "total_latency": None,
+        "total_distance_cm": None,
+        "discovery_quadro": None,
+        "discovery_t_s": None,
+        "issues": [],
+    }
+    scenario.events = [
+        HoleEvent(
+            id=1,
+            trial_id=7,
+            hole_id=10,
+            execucao_id=501,
+            tipo="entrada",
+            quadro=0,
+            t_s=0.0,
+            distancia_cm=None,
+            angulo_deg=None,
+            details=old_details,
+        )
+    ]
+    result = invoke(scenario)
+    assert result.exit_code == 1, result.output
+    assert "Traceback" not in result.output
+    assert "barnes events enter" in result.output

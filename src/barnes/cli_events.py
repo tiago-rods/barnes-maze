@@ -6,12 +6,12 @@ import csv
 import json
 import math
 import platform
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 import numpy as np
@@ -280,15 +280,21 @@ def _record(
     return execution
 
 
+def _write_report_json(path: Path, payload: Mapping[str, Any]) -> None:
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, indent=2, ensure_ascii=False, allow_nan=False)
+
+
+def _write_report_csv(path: Path, fields: list[str], rows: Iterable[Mapping[str, Any]]) -> None:
+    with path.open("x", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
 def _export_entries(directory: Path, inputs: EventInputs, execution: int, entries, report) -> None:
-    with (directory / "events.json").open("x", encoding="utf-8") as stream:
-        json.dump(
-            {**report, "execucao_id": execution},
-            stream,
-            indent=2,
-            ensure_ascii=False,
-            allow_nan=False,
-        )
+    _write_report_json(directory / "events.json", {**report, "execucao_id": execution})
     fields = [
         "trial_id",
         "execucao_id",
@@ -306,29 +312,27 @@ def _export_entries(directory: Path, inputs: EventInputs, execution: int, entrie
         "qualidade_pose",
         "issues",
     ]
-    with (directory / "entries.csv").open("x", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields)
-        writer.writeheader()
-        for entry in entries:
-            writer.writerow(
-                {
-                    "trial_id": inputs.trial.id,
-                    "execucao_id": execution,
-                    "hole_number_platform": entry.hole_number,
-                    "quadro": entry.quadro,
-                    "t_s": entry.t_s,
-                    "confirmed_at_s": entry.confirmed_at_s,
-                    "dwell_s": entry.dwell_s,
-                    "dwell_interpolado": entry.dwell_interpolado,
-                    "discovery_t_s": entry.discovery_t_s,
-                    "delta_latency": entry.delta_latency,
-                    "delta_distance": entry.delta_distance_cm,
-                    "total_latency": entry.total_latency,
-                    "total_distance": entry.total_distance_cm,
-                    "qualidade_pose": inputs.quality.get("qualidade") or "nao_avaliada",
-                    "issues": json.dumps(entry.issues, ensure_ascii=False),
-                }
-            )
+    rows = (
+        {
+            "trial_id": inputs.trial.id,
+            "execucao_id": execution,
+            "hole_number_platform": entry.hole_number,
+            "quadro": entry.quadro,
+            "t_s": entry.t_s,
+            "confirmed_at_s": entry.confirmed_at_s,
+            "dwell_s": entry.dwell_s,
+            "dwell_interpolado": entry.dwell_interpolado,
+            "discovery_t_s": entry.discovery_t_s,
+            "delta_latency": entry.delta_latency,
+            "delta_distance": entry.delta_distance_cm,
+            "total_latency": entry.total_latency,
+            "total_distance": entry.total_distance_cm,
+            "qualidade_pose": inputs.quality.get("qualidade") or "nao_avaliada",
+            "issues": json.dumps(entry.issues, ensure_ascii=False),
+        }
+        for entry in entries
+    )
+    _write_report_csv(directory / "entries.csv", fields, rows)
 
 
 def _load_sequence_entries(
@@ -350,17 +354,22 @@ def _load_sequence_entries(
     if not entradas:
         return geometry, rotation_deg, target, [], None
     execucao_id = max(event.execucao_id for event in entradas)
-    entries = [
-        EntryEvent(**{**event.details, "issues": tuple(event.details.get("issues", ()))})
-        for event in entradas
-        if event.execucao_id == execucao_id
-    ]
+    try:
+        entries = [
+            EntryEvent(**{**event.details, "issues": tuple(event.details.get("issues", ()))})
+            for event in entradas
+            if event.execucao_id == execucao_id
+        ]
+    except TypeError as exc:
+        raise ValueError(
+            f"Trial {trial_id}: a execução #{execucao_id} tem entradas sem dwell (US-14). "
+            "Rode `barnes events enter` de novo para regenerar os eventos com dwell."
+        ) from exc
     return geometry, rotation_deg, target, entries, execucao_id
 
 
 def _export_sequence(directory: Path, items: tuple[SequenceItem, ...], report: dict) -> None:
-    with (directory / "sequence.json").open("x", encoding="utf-8") as stream:
-        json.dump(report, stream, indent=2, ensure_ascii=False, allow_nan=False)
+    _write_report_json(directory / "sequence.json", report)
     fields = [
         "ordem",
         "buraco_platform",
@@ -372,23 +381,21 @@ def _export_sequence(directory: Path, items: tuple[SequenceItem, ...], report: d
         "alvo",
         "issues",
     ]
-    with (directory / "sequencia.csv").open("x", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields)
-        writer.writeheader()
-        for item in items:
-            writer.writerow(
-                {
-                    "ordem": item.ordem,
-                    "buraco_platform": item.buraco_platform,
-                    "angulo_deg_room": item.angulo_deg_room,
-                    "t_descoberta_s": item.t_descoberta_s,
-                    "t_entrada_s": item.t_entrada_s,
-                    "dwell_s": item.dwell_s,
-                    "dwell_interpolado": item.dwell_interpolado,
-                    "alvo": item.alvo,
-                    "issues": json.dumps(item.issues, ensure_ascii=False),
-                }
-            )
+    rows = (
+        {
+            "ordem": item.ordem,
+            "buraco_platform": item.buraco_platform,
+            "angulo_deg_room": item.angulo_deg_room,
+            "t_descoberta_s": item.t_descoberta_s,
+            "t_entrada_s": item.t_entrada_s,
+            "dwell_s": item.dwell_s,
+            "dwell_interpolado": item.dwell_interpolado,
+            "alvo": item.alvo,
+            "issues": json.dumps(item.issues, ensure_ascii=False),
+        }
+        for item in items
+    )
+    _write_report_csv(directory / "sequencia.csv", fields, rows)
 
 
 def _warn_source(provenance: dict) -> None:
