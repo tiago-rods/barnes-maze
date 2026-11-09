@@ -35,7 +35,12 @@ from barnes.events.calibration import (
 )
 from barnes.events.discovery import DiscoveryEvent, detect_discoveries, load_discovery_params
 from barnes.events.entry import EntryEvent, detect_entries, load_entry_params
-from barnes.events.sequence import SequenceItem, build_sequence
+from barnes.events.sequence import (
+    SequenceItem,
+    blocked_sequence_round,
+    build_sequence,
+    compare_sequence,
+)
 from barnes.geometry.holes import MazeGeometry
 from barnes.geometry.reference_frame import require_rotations, target_hole_for_trial
 from barnes.pose.dataset import file_sha256, git_revision_record
@@ -470,6 +475,9 @@ def register_event_commands(events_app: typer.Typer, command_errors: Callable) -
     @events_app.command("sequence")
     def sequence(
         trial: Annotated[int, typer.Option(min=1, help="Id do trial.")],
+        annotations: Annotated[
+            Path | None, typer.Option(help="JSON D3 do observador treinado (RN04, opcional).")
+        ] = None,
         out: Annotated[Path, typer.Option(help="Diretório de novas exportações.")] = Path(
             "data/events"
         ),
@@ -492,16 +500,34 @@ def register_event_commands(events_app: typer.Typer, command_errors: Callable) -
                 "source_execucao_id": execucao_id,
                 "itens": [asdict(item) for item in items],
             }
+            comparison = None
+            if annotations is not None:
+                if not annotations.is_file():
+                    comparison = blocked_sequence_round(trial)
+                else:
+                    manual = load_manual_annotations(annotations)
+                    if manual.trial_id != trial:
+                        raise ValueError("O trial de D3 difere de --trial.")
+                    comparison = compare_sequence(
+                        manual, [item.buraco_platform for item in items]
+                    )
             directory = out / f"sequence-{uuid4().hex}"
             directory.mkdir(parents=True, exist_ok=False)
             try:
                 _export_sequence(directory, items, report)
+                if comparison is not None:
+                    with (directory / "comparacao.json").open("x", encoding="utf-8") as stream:
+                        json.dump(comparison, stream, indent=2, ensure_ascii=False, allow_nan=False)
             except BaseException:
-                for name in ("sequence.json", "sequencia.csv"):
+                for name in ("sequence.json", "sequencia.csv", "comparacao.json"):
                     (directory / name).unlink(missing_ok=True)
                 directory.rmdir()
                 raise
             typer.echo(f"{len(items)} checagem(ns). Saída: {directory}")
+            if comparison is not None:
+                typer.echo(f"Concordância (RN04): {comparison['status']}")
+                if not comparison["passed"]:
+                    raise typer.Exit(code=2)
 
     @events_app.command("calibrate")
     def calibrate(

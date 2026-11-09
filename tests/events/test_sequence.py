@@ -6,10 +6,31 @@ import math
 
 import pytest
 
+from barnes.events.calibration import ManualAnnotations, ManualEvent
 from barnes.events.entry import EntryEvent
-from barnes.events.sequence import SequenceError, build_sequence, to_visit_sequence
+from barnes.events.sequence import (
+    SequenceError,
+    blocked_sequence_round,
+    build_sequence,
+    compare_sequence,
+    to_visit_sequence,
+)
 from barnes.geometry.holes import Hole, MazeGeometry
 from barnes.metrics.errors import ErrorCriterion, ErrorDefinition, compute_errors
+
+
+def _manual(holes, *, trial_id=7):
+    return ManualAnnotations(
+        trial_id=trial_id,
+        observer="observador fixture",
+        source="somente teste",
+        delivered_on="2026-11-05",
+        time_origin="intervalo_util",
+        events=tuple(
+            ManualEvent(tipo="entrada", hole_number=hole, t_s=float(index))
+            for index, hole in enumerate(holes)
+        ),
+    )
 
 
 def _geometry():
@@ -159,3 +180,52 @@ def test_to_visit_sequence_preserves_missing_dwell_as_none_safe_value():
     visit_sequence = to_visit_sequence(items)
     assert visit_sequence.itens[0].dwell_s == 1.25
     assert math.isfinite(visit_sequence.itens[0].dwell_s)
+
+
+def test_compare_sequence_full_agreement_passes():
+    report = compare_sequence(_manual([0, 1, 2]), [0, 1, 2])
+    assert report["agreement"] == 1.0
+    assert report["passed"] is True
+    assert report["status"] == "passed"
+
+
+def test_compare_sequence_partial_agreement_is_scored_not_rounded_up():
+    # 1 de 4 posições coincide: 0,25 de concordância, abaixo do limiar 0,95.
+    report = compare_sequence(_manual([0, 1, 2, 3]), [0, 5, 6, 7])
+    assert report["agreement"] == pytest.approx(0.25)
+    assert report["passed"] is False
+    assert report["status"] == "divergence_review_required"
+
+
+def test_compare_sequence_different_lengths_count_missing_positions_as_divergence():
+    # 2 posições coincidem, mas a automática tem 1 checagem extra sem par manual.
+    report = compare_sequence(_manual([0, 1]), [0, 1, 2])
+    assert report["agreement"] == pytest.approx(2 / 3)
+    assert report["manual_sequence"] == [0, 1]
+    assert report["automatic_sequence"] == [0, 1, 2]
+
+
+def test_compare_sequence_ignores_manual_discoveries_and_sorts_by_time():
+    manual = ManualAnnotations(
+        trial_id=7,
+        observer="observador fixture",
+        source="somente teste",
+        delivered_on="2026-11-05",
+        time_origin="intervalo_util",
+        events=(
+            ManualEvent(tipo="descoberta", hole_number=9, t_s=0.0),
+            ManualEvent(tipo="entrada", hole_number=2, t_s=5.0),
+            ManualEvent(tipo="entrada", hole_number=1, t_s=1.0),
+        ),
+    )
+    report = compare_sequence(manual, [1, 2])
+    assert report["manual_sequence"] == [1, 2]
+    assert report["agreement"] == 1.0
+
+
+def test_blocked_sequence_round_never_claims_a_result():
+    report = blocked_sequence_round(7)
+    assert report["status"] == "blocked_missing_d3"
+    assert report["passed"] is False
+    assert report["manual_sequence"] is None
+    assert report["automatic_sequence"] is None

@@ -72,10 +72,25 @@ def scenario(tmp_path, monkeypatch):
     return state
 
 
-def invoke(scenario):
+def invoke(scenario, *extra):
     return runner.invoke(
-        cli.app, ["events", "sequence", "--trial", "7", "--out", str(scenario.out)]
+        cli.app,
+        ["events", "sequence", "--trial", "7", "--out", str(scenario.out), *map(str, extra)],
     )
+
+
+def _d3(tmp_path, holes, *, trial_id=7):
+    document = {
+        "trial_id": trial_id,
+        "observer": "fixture sintética",
+        "source": "somente teste",
+        "delivered_on": "2026-11-05",
+        "time_origin": "intervalo_util",
+        "events": [{"tipo": "entrada", "hole_number": hole, "t_s": index} for index, hole in enumerate(holes)],
+    }
+    path = tmp_path / "d3.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
 
 
 def test_sequence_is_exported_ordered_without_touching_the_trajectory(scenario):
@@ -135,3 +150,40 @@ def test_discovery_only_rows_are_not_treated_as_checks(scenario):
     assert result.exit_code == 0, result.output
     report = json.loads(next(scenario.out.glob("*/sequence.json")).read_text(encoding="utf-8"))
     assert report["itens"] == []
+
+
+def test_annotations_matching_agreement_exits_zero(scenario, tmp_path):
+    scenario.events = [_entry_event(0, 1.0, discovery_t_s=0.5), _entry_event(1, 2.0, discovery_t_s=1.5)]
+    d3 = _d3(tmp_path, [0, 1])
+    result = invoke(scenario, "--annotations", d3)
+    assert result.exit_code == 0, result.output
+    comparison = json.loads(next(scenario.out.glob("*/comparacao.json")).read_text(encoding="utf-8"))
+    assert comparison["agreement"] == 1.0
+    assert comparison["status"] == "passed"
+
+
+def test_annotations_below_threshold_exits_nonzero(scenario, tmp_path):
+    scenario.events = [_entry_event(0, 1.0, discovery_t_s=0.5), _entry_event(1, 2.0, discovery_t_s=1.5)]
+    d3 = _d3(tmp_path, [1, 0])
+    result = invoke(scenario, "--annotations", d3)
+    assert result.exit_code == 2, result.output
+    comparison = json.loads(next(scenario.out.glob("*/comparacao.json")).read_text(encoding="utf-8"))
+    assert comparison["agreement"] == 0.0
+    assert comparison["status"] == "divergence_review_required"
+
+
+def test_missing_annotations_file_is_blocked_not_fabricated(scenario, tmp_path):
+    scenario.events = [_entry_event(0, 1.0, discovery_t_s=0.5)]
+    result = invoke(scenario, "--annotations", tmp_path / "nao-existe.json")
+    assert result.exit_code == 2, result.output
+    comparison = json.loads(next(scenario.out.glob("*/comparacao.json")).read_text(encoding="utf-8"))
+    assert comparison["status"] == "blocked_missing_d3"
+    assert comparison["manual_sequence"] is None
+
+
+def test_annotations_for_another_trial_is_rejected(scenario, tmp_path):
+    scenario.events = [_entry_event(0, 1.0, discovery_t_s=0.5)]
+    d3 = _d3(tmp_path, [0], trial_id=99)
+    result = invoke(scenario, "--annotations", d3)
+    assert result.exit_code != 0
+    assert not list(scenario.out.glob("*/comparacao.json"))

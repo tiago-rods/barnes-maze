@@ -16,14 +16,17 @@ que `barnes.metrics.errors` (US-17) já fixa.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 
+from barnes.events.calibration import ManualAnnotations
 from barnes.events.entry import EntryEvent
 from barnes.geometry.holes import MazeGeometry
 from barnes.geometry.reference_frame import hole_to_room_angle
 from barnes.metrics.errors import VisitItem, VisitSequence
+
+SEQUENCE_AGREEMENT_THRESHOLD = 0.95
 
 
 class SequenceError(ValueError):
@@ -156,3 +159,62 @@ def to_visit_sequence(items: Iterable[SequenceItem]) -> VisitSequence:
         )
         for item in items
     )
+
+
+def compare_sequence(manual: ManualAnnotations, automatic: Sequence[int]) -> dict:
+    """Concordância entre a sequência de buracos checados e a anotação manual (RN04).
+
+    A referência manual é a sequência de `hole_number` dos eventos
+    ``tipo="entrada"`` do mesmo D3 já usado por US-12/13 (`ManualAnnotations`
+    — nenhum formato novo). Concordância = fração de posições em que as duas
+    sequências coincidem, sobre o tamanho da maior; sequências de tamanhos
+    diferentes nunca são truncadas em silêncio — a posição que falta de um
+    lado conta como divergência.
+    """
+    if not isinstance(manual, ManualAnnotations):
+        raise SequenceError("É necessária uma referência ManualAnnotations válida de D3.")
+    manual_sequence = tuple(
+        event.hole_number
+        for event in sorted((e for e in manual.events if e.tipo == "entrada"), key=lambda e: e.t_s)
+    )
+    automatic_sequence = tuple(automatic)
+    length = max(len(manual_sequence), len(automatic_sequence))
+    agreement = (
+        1.0
+        if length == 0
+        else sum(
+            manual_hole == auto_hole
+            for manual_hole, auto_hole in zip(manual_sequence, automatic_sequence, strict=False)
+        )
+        / length
+    )
+    passed = agreement >= SEQUENCE_AGREEMENT_THRESHOLD
+    return {
+        "schema_version": 1,
+        "story": "US-15",
+        "kind": "sequencia",
+        "trial_id": manual.trial_id,
+        "manual_sequence": list(manual_sequence),
+        "automatic_sequence": list(automatic_sequence),
+        "agreement": agreement,
+        "threshold": SEQUENCE_AGREEMENT_THRESHOLD,
+        "passed": passed,
+        "status": "passed" if passed else "divergence_review_required",
+    }
+
+
+def blocked_sequence_round(trial_id: int | None) -> dict:
+    """Registra a dependência externa (D3 ausente), sem inventar referência (RN04)."""
+    return {
+        "schema_version": 1,
+        "story": "US-15",
+        "kind": "sequencia",
+        "trial_id": trial_id,
+        "status": "blocked_missing_d3",
+        "passed": False,
+        "manual_sequence": None,
+        "automatic_sequence": None,
+        "agreement": None,
+        "threshold": SEQUENCE_AGREEMENT_THRESHOLD,
+        "reason": "Anotação manual D3 do laboratório não entregue ou não confirmada.",
+    }
