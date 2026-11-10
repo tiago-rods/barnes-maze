@@ -93,6 +93,19 @@ uv sync --extra anotacao      # leitor do .slp do SLEAP (sleap-io), sem CUDA (US
 uv sync --extra longitudinal  # DTW / Fréchet (US-24)
 ```
 
+> **Cuidado: o `uv sync` remove os extras que não estão no comando.** Ele deixa o
+> `.venv` exatamente igual ao pedido: `uv sync` sozinho desinstala `pose`,
+> `anotacao` etc. que estavam instalados, e rodar os comandos acima um depois do
+> outro deixa só o último. Junte todos os extras que você usa num único comando e
+> repita sempre esse mesmo comando, inclusive depois de `git pull`:
+>
+> ```bash
+> uv sync --extra anotacao                    # exemplo: quem só anota
+> uv sync --extra anotacao --extra pose       # exemplo: máquina de GPU
+> ```
+>
+> `uv run ...` não remove extras já instalados.
+
 ## Uso
 
 Carregar um vídeo de trial e ver os metadados (US-01):

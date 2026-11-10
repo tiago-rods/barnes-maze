@@ -38,6 +38,10 @@ uv sync --extra anotacao             # + sleap-io, reads SLEAP .slp files, no CU
     # scripts needing a test helper must put the folder on sys.path instead
     # (e.g. `sys.path.insert(0, 'tests/io'); from test_trim import …`).
 uv sync --extra longitudinal         # + DTW/Fréchet (US-24)
+    # NB: `uv sync` makes .venv match exactly the requested extras and UNINSTALLS
+    # the others — a bare `uv sync` removes sleap-io/torch already installed.
+    # Always pass every extra the machine uses in ONE command
+    # (e.g. `uv sync --extra anotacao --extra pose`); check before syncing someone's env.
 
 uv run pytest                        # full suite
 uv run pytest tests/io/test_video.py -v   # single file
