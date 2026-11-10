@@ -64,7 +64,7 @@ dev = [
 ]
 
 [project.scripts]
-barnes = "barnes.cli:app"
+barnes = "barnes.cli:main"   # main() força stdout/stderr UTF-8 e chama o app Typer
 
 [build-system]
 requires = ["hatchling"]

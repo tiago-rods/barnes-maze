@@ -268,9 +268,12 @@ incompatible change. Missing pose is NaN + `*_valido=false`, never forward-fille
 θ (`theta_deg_image`) =
 `atan2(dy, dx)` centro→focinho in image axes = `holes.angle_deg` convention.
 Positions are cm in image axes (`_image`, origin top-left). `t_s` is from the
-useful-interval start. Typer `--help` crashes on the Windows cp1252 console with
-characters like θ or → in a command's docstring/help — keep CLI help text
-cp1252-safe (use "theta", "->").
+useful-interval start. With stdout/stderr redirected (file or pipe), Windows
+Python writes cp1252 and Typer/Rich crashed on characters like θ or → in a
+command's help. The console script is therefore `barnes.cli:main`, not the Typer
+`app`: `main()` calls `ensure_utf8_output()` (reconfigures non-UTF-8 streams to
+UTF-8) before `app()`. Keep it as the entry point; regression test in
+`tests/test_cli_encoding.py`.
 
 US-10 pose quality (`pose/quality.py`, pure, in **pixels** before `build_series`):
 `pose series` builds the series as a pure function of the inference's `pose.csv`
