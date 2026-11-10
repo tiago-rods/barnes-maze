@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import codecs
 import csv
 import getpass
 import json
 import math
+import sys
 from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -2109,5 +2111,42 @@ def events_discover(
 
 register_pose_commands(pose_app, _command_errors)
 
-if __name__ == "__main__":
+
+def _is_utf8(encoding: str | None) -> bool:
+    if not encoding:
+        return False
+    try:
+        return codecs.lookup(encoding).name == "utf-8"
+    except LookupError:
+        return False
+
+
+def ensure_utf8_output() -> None:
+    """Faz stdout/stderr escreverem UTF-8, para a CLI imprimir qualquer texto não ASCII.
+
+    No Windows, com a saída redirecionada para arquivo ou pipe, o Python usa a
+    codificação ANSI (cp1252) em vez de UTF-8, e a ajuda/mensagens com "→", "θ" ou
+    acentos fora do cp1252 quebram com `UnicodeEncodeError`. Reconfigura só o fluxo
+    que não está em UTF-8; fluxos sem `reconfigure` (ex.: `CliRunner` nos testes,
+    `None` sob pythonw) ficam como estão.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None or _is_utf8(getattr(stream, "encoding", None)):
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (ValueError, OSError):
+            continue  # fluxo fechado ou que não aceita troca: segue com o que tem
+
+
+def main() -> None:
+    """Entry point do comando `barnes` (`[project.scripts]` em `pyproject.toml`)."""
+    ensure_utf8_output()
     app()
+
+
+if __name__ == "__main__":
+    main()
