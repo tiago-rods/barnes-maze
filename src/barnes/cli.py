@@ -244,8 +244,9 @@ def load_video(
     trial_in_day: int = typer.Option(1, help="Ordem do trial dentro do dia."),
     rotation_deg: float = typer.Option(
         0.0,
-        help="Rotação da plataforma no trial, em graus (US-05). Padrão 0 porque o LNBio "
-        "não rotaciona a plataforma (resposta B4, RN04); o valor é gravado explicitamente.",
+        help="Rotação da plataforma no trial, em graus (US-05). Padrão 0: suposição da "
+        "equipe de que a plataforma não rotaciona (B4, sem resposta do LNBio); o valor é "
+        "gravado explicitamente.",
     ),
     start_s: float = typer.Option(
         None,

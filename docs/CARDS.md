@@ -900,7 +900,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a diferença é **≤ 1 s**.
 
 #### Tarefas
-- [ ] Confirmar com o laboratório o tempo limite do trial e o tratamento do insucesso (pergunta B5)
+- [x] Confirmar com o laboratório o tempo limite do trial e o tratamento do insucesso (pergunta B5) *(sem contato com o LNBio: decisão da equipe, 180 s com censura — `docs/decisoes-sem-laboratorio.md` §6)*
 - [ ] Declarar o tempo limite em `configs/`
 - [ ] Implementar `primary_latency` e `total_latency` a partir dos eventos D e E
 - [ ] Implementar as versões em distância, `primary_distance` e `total_distance`
@@ -914,7 +914,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [ ] Colunas de censura preenchidas conforme convenção do pipeline existente (1 = evento, 0 = censurado)
 - [ ] Teste automatizado garantindo que nenhum trial censurado é descartado
 - [ ] Comparação com cronometragem manual executada
-- [ ] Tempo limite parametrizado a partir da resposta de B5
+- [x] Tempo limite parametrizado a partir da resposta de B5 *(`trial.tempo_limite_s: 180`, decisão da equipe sem G3)*
 
 ---
 
@@ -954,7 +954,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a diferença absoluta é **≤ 1**.
 
 #### Tarefas
-- [ ] Confirmar a definição de erro usada pelo laboratório (pergunta C3)
+- [x] Confirmar a definição de erro usada pelo laboratório (pergunta C3) *(sem contato com o LNBio: decisão da equipe, `qualquer_buraco_incorreto` — `docs/decisoes-sem-laboratorio.md` §8)*
 - [ ] Declarar a definição como parâmetro em `configs/`
 - [ ] Implementar a contagem de erros a partir da sequência de [US-15]
 - [ ] Implementar a sequência ordenada dos buracos incorretos checados
@@ -1019,15 +1019,15 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] SCRUM-220 — Implementar a velocidade média sobre o intervalo útil (distância ÷ duração)
 - [x] SCRUM-221 — Implementar o relato da fração interpolada junto da métrica
 - [x] SCRUM-222 — Marcar a velocidade média com a ressalva de base temporal nos trials com fps variável
-- [ ] SCRUM-223 — Confirmar com o laboratório se as velocidades por fase do `barnes_maze.py` são derivadas ou lidas do CSV *(evidência no código: derivadas; aguardando confirmação escrita)*
+- [x] SCRUM-223 — Confirmar com o laboratório se as velocidades por fase do `barnes_maze.py` são derivadas ou lidas do CSV *(sem contato com o LNBio: derivadas, pela evidência no código; registrado como decisão da equipe em `docs/decisoes-sem-laboratorio.md` §3)*
 - [x] SCRUM-224 — Alinhar os nomes de coluna com o esquema de [US-25]
-- [ ] SCRUM-225 — Medir a correlação com a referência manual e verificar r ≥ 0,95 *(ferramenta pronta; bloqueado pela referência manual)*
+- [ ] SCRUM-225 — Medir a correlação com a referência manual e verificar r ≥ 0,95 *(ferramenta pronta; sem referência manual — mantido como limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Distância total e velocidade média implementadas, uma de cada por trial
 - [ ] Correlação com referência manual calculada e ≥ 0,95
 - [x] Ressalva de fps variável aplicada à velocidade média
-- [ ] Resposta do laboratório sobre as velocidades por fase registrada
+- [x] Resposta do laboratório sobre as velocidades por fase registrada *(substituída por decisão da equipe: não houve contato com o LNBio)*
 - [x] Colunas alinhadas com o esquema de [US-25]
 
 ---
@@ -1393,6 +1393,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 #### Regras de Negócio & Escopo
 - [RN01] O esquema de saída reproduz o do laboratório: `animal`, `group`, `day`, `trial`, `primary_latency`, `primary_distance`, `primary_event`, `delta_latency`, `delta_distance`, `total_latency`, `total_distance`, `total_event`.
 - [RN02] Nomes de coluna, ordem, unidades e codificação de censura (1 = evento observado, 0 = censurado) seguem o padrão existente, sem adaptação do lado do laboratório.
+  - *Decisão da equipe (12/11/2026, sem o LNBio): o padrão existente é o que o `barnes_maze.py` lê — latências em s, **distâncias em metros** (o software calcula em cm e converte na exportação), colunas de `trials.csv` e `probes.csv` conforme `docs/decisoes-sem-laboratorio.md` §4.*
 - [RN03] O `barnes_maze.py` atual deve **carregar e processar o CSV gerado sem edição de código** — este é o teste de aceitação do card.
 - [RN04] Colunas adicionais produzidas por este projeto (estratégia, entropia, eficiência de rota, cobertura de pose, identificação da execução) vão em **arquivo complementar** ou em colunas ao final, sem quebrar a leitura do arquivo pelo pipeline existente.
 - [RN05] Cada linha exportada carrega a identificação da execução ([US-27]), para que se saiba qual modelo e quais limiares produziram aquele número.

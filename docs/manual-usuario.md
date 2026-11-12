@@ -733,7 +733,7 @@ da US-25 vai usar:
 
 | Coluna | Unidade | Conteúdo |
 |---|---|---|
-| `path_distance` | cm | distância total no intervalo útil (não é o `total_distance` do laboratório, que é S→E) |
+| `path_distance` | cm (metros na exportação da US-25) | distância total no intervalo útil (não é o `total_distance` do laboratório, que é S→E) |
 | `mean_speed` | cm/s | velocidade média |
 | `interpolated_fraction` | 0–1 | fração interpolada das amostras usadas |
 | `speed_time_base_approx` | verdadeiro/falso | velocidade com base temporal aproximada (fps variável) |

@@ -217,12 +217,18 @@ pattern alongside the synthetic-video tests.
 
 `configs/default.yaml` (behavioral thresholds: discovery distance/angle,
 dwell, error criteria, strategy classification) is intentionally versioned
-YAML with most values `null` — populated from the lab via gate **G3** (see
-`docs/definicoes-metricas.md`, currently DRAFT/unsigned) and calibrated
-against manual annotation, never hardcoded or guessed. Don't fill it in
-"reasonably" — a value chosen for convenience produces plausible,
-well-formatted numbers with no relationship to what the lab actually means
-by e.g. "discovery latency".
+YAML, meant to be populated from the lab via gate **G3** (see
+`docs/definicoes-metricas.md`, DRAFT/unsigned) and calibrated against manual
+annotation, never hardcoded or guessed. **Contact with the lab never happened**:
+on 2026-11-12 the team approved its own values, each justified in
+`docs/decisoes-sem-laboratorio.md` and filled in with
+`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3` (copied into every
+`execucao.limiares`). G3 stays open and the report declares it. Don't change a
+threshold "reasonably" outside that document — a value chosen for convenience
+produces plausible, well-formatted numbers with no relationship to what the lab
+means by e.g. "discovery latency". The US-25 export follows the schema the lab's
+`barnes_maze.py` (outside the repo, in the parent folder) actually reads —
+including **distances in metres**, while every metric is computed in cm.
 
 Per-rig geometry/camera calibration (center, radius, N holes, target hole,
 px→cm scale) used to live in `configs/montagens/*.yaml`; US-04 moved it to
@@ -321,7 +327,7 @@ Native backend smoke tests use synthetic data and do not attest lab quality.
 `events/discovery.py` implements US-11 and is not changed by threshold calibration.
 US-12/13 live in `events/calibration.py`, `events/entry.py`, and `cli_events.py`:
 manual D3 comparisons append rounds, entry events include confirmation time and
-D-to-E path length. Numeric C2 parameters remain null pending the lab decision.
+D-to-E path length. Numeric C2 parameters are team decisions (raio_fator 1.0, 0.2 s), not lab-calibrated.
 `evento_buraco.details` (0009) stores entry evidence; processing and events share
 one transaction. Recalculation reads the trajectory and its provenance without
 opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions

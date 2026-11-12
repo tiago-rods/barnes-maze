@@ -250,3 +250,26 @@ a nova; as decisões de implementação estão no [manual](manual-usuario.md) §
   (`barnes metrics distance-validate`) está pronta e testada com dados sintéticos; a
   medida manual de referência não existe. As pendências estão em
   `definicoes-metricas.md` §4.3.
+
+## Decisões sem o laboratório (12/11/2026)
+
+O contato com o LNBio não ocorreu. As pendências de G3 e dos blocos B/C/D viraram
+decisões da equipe, aprovadas em 12/11/2026 e registradas com justificativa em
+[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md). G3 não fecha; o
+relatório declara a limitação. O que muda nos cards:
+
+- **`configs/default.yaml` preenchido** com os valores aprovados, marcados com
+  `versao_definicoes: decisoes-equipe-2026-11-12-sem-G3` (copiado em toda
+  `execucao.limiares`): tempo limite 180 s (B5, US-16), entrada com o focinho no
+  buraco por 0,2 s (C2, US-13), erro = qualquer buraco incorreto (C3, US-17) e os
+  parâmetros de estratégia de Harrison 2006 (C4, US-20). `encontrar` (C1) continua
+  provisório.
+- **US-25:** o esquema de `trials.csv`/`probes.csv` é o que o `barnes_maze.py` lê,
+  com **distâncias em metros**. As métricas continuam em cm; a exportação converte.
+- **US-18:** SCRUM-223 fechada como decisão da equipe (sem colunas de velocidade);
+  r ≥ 0,95 (SCRUM-225) mantido como limitação declarada.
+- **US-26:** probe com plataforma limpa, 90 s, região do alvo antigo só pela posição
+  na sala.
+- **US-05:** "a plataforma não rotaciona" passa a ser suposição da equipe, não
+  resposta do LNBio.
+- **Comitê de ética (D4):** fora do escopo do documento.

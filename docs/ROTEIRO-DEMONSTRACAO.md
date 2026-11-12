@@ -1678,24 +1678,24 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 |---|---|---|
 | US-01 | fps variável | Por decisão do grupo, o sistema só avisa e não corrige. Coberto por teste; não há vídeo assim no acervo. |
 | US-02 | Mensagem do bloqueio sem escala | O card pede que a mensagem indique **o comando** para calibrar. Hoje ela diz que a montagem exige calibração, mas não cita o `barnes scale calibrate`. |
-| US-02 / US-04 | Medidas físicas (B2) | A demonstração usa 92 cm de plataforma e 5 cm de buraco, que são valores típicos. As distâncias em cm só serão reais com as medidas do LNBio. |
-| US-03 | Detecção da soltura | Funciona no vídeo sintético. Nos vídeos reais o animal já começa solto. Pergunta ao LNBio: os vídeos sempre começam assim? |
-| US-05 | Buraco físico de referência | Precisa ser combinado com o laboratório (`docs/definicoes-metricas.md`, seção 6.2). |
-| US-05 | B4: quem respondeu e quando | A resposta ("não rotaciona") está registrada; faltam o nome de quem respondeu e a data. |
+| US-02 / US-04 | Medidas físicas (B2) | A demonstração usa 92 cm de plataforma e 5 cm de buraco, que são valores típicos. Sem acesso ao aparato, as distâncias ficam condicionadas a uma dimensão assumida (decisão da equipe, `docs/decisoes-sem-laboratorio.md` §12). Um fator de escala não muda os hazard ratios. |
+| US-03 | Detecção da soltura | Funciona no vídeo sintético. Nos vídeos reais o animal já começa solto; a equipe trata o início do vídeo como S (`docs/decisoes-sem-laboratorio.md` §2). |
+| US-05 | Buraco físico de referência | Decisão da equipe: escolhido visualmente por quem monta a configuração, sempre o mesmo buraco físico (`docs/decisoes-sem-laboratorio.md` §1). |
+| US-05 | B4: rotação | "Não rotaciona" é **suposição da equipe**, não resposta do LNBio (§13 do documento de decisões). O padrão 0° está no `--rotation-deg` do `video load`. |
 | US-05 | Câmera deslocada entre dias | **Não é detectada automaticamente.** O procedimento é criar uma montagem nova e recalibrar a escala (manual, seção 3.7). Só um vídeo com resolução diferente é recusado automaticamente. |
 | US-06 | Rodada de anotação | O ferramental está pronto; a anotação na B.9 é simulada. A rodada real depende dos 3 trials de G1 e da resposta D4 (uso dos quadros e CEUA). |
 | US-04 | Raio do buraco | É ajustado a olho na janela (`[`/`]`). Não sai do diâmetro em cm, porque a escala só é calibrada depois da montagem existir. |
 | US-07 | Modelo treinado | Ferramental pronto (diagnóstico, plano, pacote de dados, treino, registro). Falta o treino real: depende da anotação real (US-06), de uma máquina NVIDIA elegível (só esta máquina foi inventariada; faltam as dos outros integrantes) e, se for preciso usar nuvem, da D4. |
-| US-07 | GPU institucional (D2) | A disponibilidade ainda não foi confirmada. Por isso o plano fica `pending` (B.10). |
+| US-07 | GPU institucional (D2) | Decisão da equipe: o treino roda nas máquinas da equipe; a GPU institucional deixou de ser pendência. O plano da B.10 continua `pending` até haver máquina NVIDIA elegível. |
 | US-08 | Avaliação real por região | Critério e relatório por região implementados e testados com dados sintéticos. O erro real depende do modelo do US-07. |
 | US-08 | Inferência offline no laboratório | Fluxo local implementado. Falta a validação na máquina do laboratório com a rede física desligada, com o registro de máquina, operador e duração. |
 | US-09 | Série dos 3 trials representativos (SCRUM-123) | A série é gerada e conferida pelo contrato, mas nesta demonstração a pose é **simulada**. Falta gerá-la com o modelo real para os 3 trials de G1. |
-| US-10 | Limites de tratamento da pose | Lacuna curta de 5 quadros (0,2 s), mediana de 5 quadros e cobertura mínima de 0,98 são valores propostos pelo grupo. Pergunta ao LNBio: interpolar até 0,2 s é aceitável? |
+| US-10 | Limites de tratamento da pose | Lacuna curta de 5 quadros (0,2 s), mediana de 5 quadros e cobertura mínima de 0,98: decisão da equipe (`docs/decisoes-sem-laboratorio.md` §15). |
 | US-10 | fps instável (RN07) | A US-01 detecta fps variável por trial, não por trecho. A ressalva vale para o trial inteiro. |
-| US-11 | Limiares de descoberta (G3, C1) | Implementado e testado, mas `encontrar.distancia_cm`/`angulo_graus` (3 cm / 30°) são **provisórios**: o laboratório ainda não respondeu C1. Não é o valor acordado; ver `docs/definicoes-metricas.md`. |
-| US-18 | Velocidades por fase (SCRUM-223) | Pelo código, o `barnes_maze.py` deriva `primary/decision/total_speed` das distâncias e latências do CSV. Pergunta ao LNBio: o `trials.csv` pode vir sem colunas de velocidade? Os 90 s do probe são fixos? |
-| US-18 | Aceite r ≥ 0,95 (SCRUM-225) | Ferramenta pronta; falta a medida manual de distância (quem mede, método, quais trials). Ver `docs/definicoes-metricas.md` §4.3. |
-| US-18 | Ponto do corpo | A distância usa o centro do corpo, como a US-16. Pergunta ao LNBio: qual ponto o `trials.csv` de vocês usa? |
+| US-11 | Limiares de descoberta (G3, C1) | Implementado e testado; `encontrar.distancia_cm`/`angulo_graus` (3 cm / 30°) continuam **provisórios** e não calibrados. Sem contato com o laboratório, G3 não fecha; ver `docs/definicoes-metricas.md`. |
+| US-18 | Velocidades por fase (SCRUM-223) | O `barnes_maze.py` deriva `primary/decision/total_speed` das distâncias e latências; decisão da equipe: `trials.csv` sem colunas de velocidade, probe de 90 s (§3 e §11 do documento de decisões). |
+| US-18 | Aceite r ≥ 0,95 (SCRUM-225) | Ferramenta pronta; não há medida manual de distância. Mantido como limitação declarada (`docs/decisoes-sem-laboratorio.md` §5). |
+| US-13 / US-16 / US-18 / US-17 | Limiares de entrada, tempo limite, erro e ponto do corpo | Decisões da equipe sem G3, em `configs/default.yaml` (`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`): entrada de 0,2 s, tempo limite de 180 s, erro = qualquer buraco incorreto, distâncias pelo centro do corpo. |
 | US-27 | Banco no laboratório | Decidido: PostgreSQL nativo na máquina do laboratório (SCRUM-148, manual §2.2.2). A instalação lá ainda não foi feita. |
 | Geral | Métricas a partir da pose | A distância e a velocidade média já saem da série de pose (US-18, B.17). O `metrics process` da US-02 (B.8) continua lendo a trajetória de exemplo em CSV. |
 | Geral | Cadastro de usuário, experimento e animal | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |

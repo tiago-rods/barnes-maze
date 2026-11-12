@@ -154,7 +154,7 @@ def _load(make_mp4, *extra_args):
 
 
 def test_video_load_records_zero_rotation_explicitly_by_default(fake_db, make_mp4) -> None:
-    # B4/RN04: o LNBio não rotaciona; o 0° é gravado explicitamente, não por DEFAULT do banco.
+    # B4/RN04: suposição da equipe (sem resposta do LNBio); o 0° é gravado explicitamente, não por DEFAULT do banco.
     result = _load(make_mp4)
 
     assert result.exit_code == 0, result.output

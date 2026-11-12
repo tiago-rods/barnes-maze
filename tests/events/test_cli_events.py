@@ -201,12 +201,23 @@ def test_missing_d3_is_blocked_without_touching_database(tmp_path, monkeypatch):
     assert list(out.glob("*.md"))
 
 
-def test_unset_c2_fails_before_querying_database(monkeypatch):
+def test_unset_c2_fails_before_querying_database(tmp_path, monkeypatch):
+    # O YAML de produção tem C2 preenchido (decisão da equipe, sem G3); a recusa de
+    # critério ausente é verificada com um YAML que deixa C2 vazio.
+    config = tmp_path / "c2-vazio.yaml"
+    config.write_text(
+        "encontrar:\n  distancia_cm: 3\n  angulo_graus: 30\n"
+        "entrar:\n  focinho_dentro: true\n  raio_fator: null\n  duracao_minima_s: null\n",
+        encoding="utf-8",
+    )
+
     def forbid(*args, **kwargs):
         pytest.fail("Critérios pendentes devem ser recusados antes do banco.")
 
     monkeypatch.setattr(cli_events, "get_connection", forbid)
-    result = runner.invoke(cli.app, ["events", "enter", "--trial", "7"])
+    result = runner.invoke(
+        cli.app, ["events", "enter", "--trial", "7", "--config", str(config)]
+    )
     assert result.exit_code == 1 and "C2/G3" in result.output
 
 
