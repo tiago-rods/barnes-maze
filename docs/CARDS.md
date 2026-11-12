@@ -901,19 +901,19 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 #### Tarefas
 - [x] Confirmar com o laboratório o tempo limite do trial e o tratamento do insucesso (pergunta B5) *(sem contato com o LNBio: decisão da equipe, 180 s com censura — `docs/decisoes-sem-laboratorio.md` §6)*
-- [ ] Declarar o tempo limite em `configs/`
-- [ ] Implementar `primary_latency` e `total_latency` a partir dos eventos D e E
-- [ ] Implementar as versões em distância, `primary_distance` e `total_distance`
-- [ ] Implementar a marcação de censura em `primary_event` e `total_event`
-- [ ] Implementar o ancoramento do tempo zero no evento S
-- [ ] Escrever teste garantindo que nenhum trial censurado é descartado
-- [ ] Comparar com a cronometragem manual e verificar a tolerância de 1 s
+- [x] Declarar o tempo limite em `configs/` *(`trial.tempo_limite_s: 180`, decisão da equipe)*
+- [x] Implementar `primary_latency` e `total_latency` a partir dos eventos D e E *(`metrics.latency.compute_target_latencies`)*
+- [x] Implementar as versões em distância, `primary_distance` e `total_distance` *(`travelled_distance_cm`, pelo centro do corpo)*
+- [x] Implementar a marcação de censura em `primary_event` e `total_event`
+- [x] Implementar o ancoramento do tempo zero no evento S
+- [x] Escrever teste garantindo que nenhum trial censurado é descartado *(`tests/metrics/test_latency.py::test_no_censored_trial_is_discarded`)*
+- [ ] Comparar com a cronometragem manual e verificar a tolerância de 1 s *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Latências de descoberta e total calculadas em tempo e em distância
-- [ ] Colunas de censura preenchidas conforme convenção do pipeline existente (1 = evento, 0 = censurado)
-- [ ] Teste automatizado garantindo que nenhum trial censurado é descartado
-- [ ] Comparação com cronometragem manual executada
+- [x] Latências de descoberta e total calculadas em tempo e em distância
+- [x] Colunas de censura preenchidas conforme convenção do pipeline existente (1 = evento, 0 = censurado)
+- [x] Teste automatizado garantindo que nenhum trial censurado é descartado
+- [ ] Comparação com cronometragem manual executada *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
 - [x] Tempo limite parametrizado a partir da resposta de B5 *(`trial.tempo_limite_s: 180`, decisão da equipe sem G3)*
 
 ---
@@ -955,20 +955,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 #### Tarefas
 - [x] Confirmar a definição de erro usada pelo laboratório (pergunta C3) *(sem contato com o LNBio: decisão da equipe, `qualquer_buraco_incorreto` — `docs/decisoes-sem-laboratorio.md` §8)*
-- [ ] Declarar a definição como parâmetro em `configs/`
-- [ ] Implementar a contagem de erros a partir da sequência de [US-15]
-- [ ] Implementar a sequência ordenada dos buracos incorretos checados
-- [ ] Implementar o recorte "erros até a descoberta do alvo", usado pela classificação de estratégia
-- [ ] Escrever teste de recálculo sob nova definição, sem acesso ao vídeo
-- [ ] Comparar com a contagem manual e verificar a tolerância de 1 erro
-- [ ] Registrar a definição adotada em `docs/definicoes-metricas.md`
+- [x] Declarar a definição como parâmetro em `configs/` *(`erro.criterio: qualquer_buraco_incorreto`, decisão da equipe)*
+- [x] Implementar a contagem de erros a partir da sequência de [US-15] *(`metrics.errors.compute_errors`, sobre `events.sequence.to_visit_sequence`)*
+- [x] Implementar a sequência ordenada dos buracos incorretos checados
+- [x] Implementar o recorte "erros até a descoberta do alvo", usado pela classificação de estratégia
+- [x] Escrever teste de recálculo sob nova definição, sem acesso ao vídeo *(`test_recalculation_under_new_definition_never_touches_video_or_trajectory`)*
+- [ ] Comparar com a contagem manual e verificar a tolerância de 1 erro *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [x] Registrar a definição adotada em `docs/definicoes-metricas.md` *(nota da US-17 e decisão C3 em `definicoes-metricas.md`)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Definição de erro parametrizada em `configs/`
-- [ ] Contagem, sequência e erros-até-o-alvo implementados
-- [ ] Recálculo sem acesso a vídeo verificado por teste
-- [ ] Comparação com contagem manual executada
-- [ ] Definição adotada registrada em `docs/definicoes-metricas.md`
+- [x] Definição de erro parametrizada em `configs/`
+- [x] Contagem, sequência e erros-até-o-alvo implementados
+- [x] Recálculo sem acesso a vídeo verificado por teste
+- [ ] Comparação com contagem manual executada *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [x] Definição adotada registrada em `docs/definicoes-metricas.md`
 
 ---
 

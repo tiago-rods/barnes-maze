@@ -1,9 +1,14 @@
-# Roteiro de demonstração ao cliente (LNBio): Sprints 1 e 2
+# Roteiro de demonstração ao cliente (LNBio): Sprints 1 a 3
 
-Comandos, na ordem, para demonstrar **os cards do Sprint 1 (US-01 a US-06)** e
-**os do Sprint 2 entregues até agora (US-07, US-08, US-09, US-10, US-27 e
-US-11)**. Cada passo indica o cenário de aceite do card (`docs/CARDS.md`, com
-os ajustes de `docs/revisao-cards.md`) que ele demonstra.
+Comandos, na ordem, para demonstrar **os cards do Sprint 1 (US-01 a US-06)**,
+**os do Sprint 2 (US-07, US-08, US-09, US-10, US-27 e US-11)** e **os do Sprint 3
+entregues até agora (US-13, US-14, US-15 e US-18; US-12, US-16 e US-17 pelos
+testes)**. Cada passo indica o cenário de aceite do card (`docs/CARDS.md`, com os
+ajustes de `docs/revisao-cards.md`) que ele demonstra.
+
+**Sem contato com o laboratório:** os limiares de entrada, tempo limite e erro usados
+a partir da B.16 são decisões da equipe, não do LNBio
+(`docs/decisoes-sem-laboratorio.md`). Diga isso ao cliente antes de mostrar números.
 
 | Sprint | Card | Tema | Seção |
 |---|---|---|---|
@@ -19,14 +24,20 @@ os ajustes de `docs/revisao-cards.md`) que ele demonstra.
 | 2 | US-10 | Suavização, interpolação e revisão de falhas de pose | B.13 |
 | 2 | US-27 | Proveniência das execuções e catálogo de trials | B.8, B.14 |
 | 2 | US-11 | Detecção do evento de descoberta (D) | B.15 |
-| 3 | US-12/US-13 | Calibração e entrada física | B.16 |
+| 3 | US-13 | Entrada física e hesitação D→E | B.16 |
+| 3 | US-14 | Dwell (permanência no buraco) | B.16 |
+| 3 | US-15 | Sequência de visitação no referencial da sala | B.16 |
+| 3 | US-12 | Calibração contra anotação manual — bloqueada sem D3 | B.16 |
+| 3 | US-16, US-17 | Latência com censura e contagem de erros — só testes, sem comando | B.16 |
 | 3 | US-18 | Distância total e velocidade média | B.17 |
+| 3 | US-28 | Trial de referência com teste de regressão — **não implementado** | — |
 
 A ordem das seções segue a dependência entre os cards, não o número deles: a
 montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela;
 o catálogo (US-27) reúne o que já foi processado quando já há métricas, série de
-pose e revisão para mostrar; e o evento de descoberta (US-11, B.15) fecha a
-demonstração, porque depende da série de pose da B.12/B.13.
+pose e revisão para mostrar; o evento de descoberta (US-11, B.15) depende da série
+de pose da B.12/B.13; e o Sprint 3 (B.16, B.17) vem por último, porque entrada,
+sequência e distância dependem da descoberta e da série tratada.
 
 **O que não dá para mostrar com dados reais ainda (diga isso ao cliente):** não
 existe modelo de pose treinado. A anotação real (US-06) não aconteceu, e o treino
@@ -116,10 +127,11 @@ Apague também os arquivos de uma demonstração anterior. Eles ficam em disco, 
 no banco: os quadros exportados no US-06 (a B.9 recusa reamostrar um trial que já
 tem quadros), os relatórios e a pose simulada do Sprint 2 (os comandos de
 diagnóstico e de plano não sobrescrevem um relatório existente) e as séries de
-pose da demonstração:
+pose da demonstração, além das saídas de eventos e da correlação da distância do
+Sprint 3:
 
 ```powershell
-Remove-Item -Recurse -Force data\demo_anotacao, data\pose\demo, data\demo_interim -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force data\demo_anotacao, data\pose\demo, data\demo_interim, data\demo_events, data\demo_validation -ErrorAction SilentlyContinue
 ```
 
 ### A.3 Arquivos usados na demonstração
@@ -1536,41 +1548,105 @@ responder C1.
 
 ---
 
-### B.16 US-12/US-13 — Calibração e entrada física
+### B.16 US-13/US-14/US-15 — Entrada, dwell e sequência de visitação (e US-12 bloqueada)
 
-**Não usar a pose/anotação simulada desta demonstração como aceite real.** A
-entrega D3 e os critérios C2/G3 ainda não estão confirmados. A calibração real
-fica bloqueada; a demonstração técnica pode executar os testes:
+O que dizer antes: a descoberta (D, B.15) é a cabeça perto e virada para o buraco;
+a **entrada** (E) é o focinho dentro do buraco por um tempo mínimo. A diferença
+D→E é a hesitação que o `barnes_maze.py` modela (`delta_latency`/`delta_distance`).
+Tudo sai da série tratada (`$serie`), sem abrir o vídeo.
+
+**Os limiares são decisão da equipe, não do laboratório — diga isso ao cliente.**
+Não houve contato com o LNBio; os valores foram aprovados pela equipe em 12/11/2026
+e estão marcados no YAML (`docs/decisoes-sem-laboratorio.md`):
 
 ```powershell
-uv run --no-sync python -m pytest tests/events/ tests/db/test_hole_events.py
+Select-String -Path configs\default.yaml -Pattern "versao_definicoes|raio_fator|duracao_minima_s: 0|tempo_limite_s|criterio:"
 ```
 
-Quando D3 e os parâmetros acordados estiverem disponíveis, aplicar a migração
-`0009` no banco da demonstração, usar o ID real do trial de referência e seguir
-o [guia de operação](eventos-calibracao-entrada.md):
+O esperado: `versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`, entrada com
+`raio_fator: 1.0` e `duracao_minima_s: 0.2`, tempo limite de 180 s e erro =
+qualquer buraco incorreto.
+
+A migração `0009` (detalhes da entrada) precisa estar aplicada:
 
 ```powershell
 uv run barnes db migrate
-uv run barnes events enter --trial $trialId --config configs/default.yaml
-uv run barnes events calibrate --trial $trialId --kind descoberta --annotations data/annotations/d3.json
-uv run barnes events calibrate --trial $trialId --kind entrada --annotations data/annotations/d3.json
 ```
 
-`$trialId` deve conter o ID do trial que o observador anotou, não um ID escolhido
-para fazer o comando passar. Sem `--annotations`, `calibrate` grava bloqueio D3
-e retorna 2. Em `enter`, código 2 indica inconsistências registradas; inspecionar
-`events.json`, `entries.csv` e a execução. Confirmar que toques curtos não geram E,
-as distâncias estão em cm, reentradas têm linhas próprias e apenas a primeira E
-do alvo alimenta o resumo total. A qualidade da pose acompanha os relatórios.
+**US-13 + US-14 — entradas, hesitação e dwell.**
 
-Após uma rodada real, incorporar seu JSON com `events calibration-evidence` e
-apresentar a evidência para G3. O comando não concede aprovação do cliente.
+```powershell
+uv run barnes events enter --trial $t1 --out data\demo_events
+```
 
-Na revisão final, confirmar também as recusas de série truncada, tempos/FPS
-incompatíveis e qualidade de outra execução. Regenerar a série pelo fluxo de pose
-quando houver esse diagnóstico. Um JSON de rodada com erros ou resumo incoerentes
-deve ser recusado antes de alterar `docs/definicoes-metricas.md`.
+O esperado: `Execução #N: K entrada(s). Saída: data\demo_events\entry-...`. Código de
+saída **2** não é falha do comando: indica inconsistências registradas (por exemplo,
+uma entrada sem descoberta anterior, comum com a pose simulada). Elas aparecem no
+terminal como `Inconsistência: ...` e ficam gravadas, nunca escondidas.
+
+```powershell
+$entrada = (Get-ChildItem data\demo_events -Directory -Filter entry-* | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+```
+```powershell
+Import-Csv "$entrada\entries.csv" | Format-Table hole_number_platform, t_s, discovery_t_s, delta_latency, delta_distance, dwell_s, dwell_interpolado, qualidade_pose
+```
+
+O que mostrar: uma linha por entrada (reentradas no mesmo buraco têm linha
+própria); `delta_latency` (s) e `delta_distance` (cm) são a hesitação D→E; `dwell_s` é
+quanto tempo o focinho ficou no buraco (US-14) e `dwell_interpolado` diz se algum
+quadro desse trecho veio da interpolação da US-10. Se a lista vier vazia, o animal
+simulado não ficou 0,2 s com o focinho dentro de nenhum buraco — também é
+comportamento correto (toque curto não é entrada).
+
+**US-15 — sequência de visitação**, montada só a partir das entradas gravadas, no
+referencial da sala:
+
+```powershell
+uv run barnes events sequence --trial $t1 --out data\demo_events
+```
+```powershell
+$sequencia = (Get-ChildItem data\demo_events -Directory -Filter sequence-* | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+```
+```powershell
+Import-Csv "$sequencia\sequencia.csv" | Format-Table ordem, buraco_platform, angulo_deg_room, t_descoberta_s, t_entrada_s, dwell_s, alvo
+```
+
+O que mostrar: a ordem cronológica das checagens, cada buraco com o ângulo fixo na
+sala (`_room`, US-05) e a marca do alvo. É a fonte única da contagem de erros (US-17)
+e da classificação de estratégia (US-20).
+
+**A execução registra os limiares usados** — inclusive a marca de decisão da equipe:
+
+```powershell
+$exec_ent = (docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -q -t -A -c "SELECT max(id) FROM execucao WHERE trial_id = $t1 AND parametros->>'comando' = 'events enter'").Trim()
+```
+```powershell
+uv run barnes execution show $exec_ent
+```
+
+O que mostrar: em `limiares`, o `versao_definicoes` e a seção `entrar` com os valores
+da equipe. Qualquer número gerado com esses limiares é rastreável até a decisão.
+
+**US-12 — calibração contra anotação manual: bloqueada.** Sem anotação de um
+observador (D3), a rodada é registrada como bloqueada, sem inventar referência:
+
+```powershell
+uv run barnes events calibrate --trial $t1 --out data\demo_events\calibracao
+```
+
+O esperado: `Bloqueado por D3: anotação não entregue.` e código de saída 2.
+
+**US-16 e US-17 — latência com censura e contagem de erros.** Estão implementadas e
+testadas, mas ainda **não têm comando** de linha de comando; mostre pelos testes:
+
+```powershell
+uv run pytest tests/metrics/test_latency.py tests/metrics/test_errors.py tests/events/test_sequence.py -v
+```
+
+O que dizer: `primary_*`/`total_*` com censura em 180 s (US-16) e
+`total_errors`/`primary_errors` a partir da sequência (US-17) já são calculados pelo
+código; falta o comando que os gera a partir de um trial gravado, e a exportação
+`trials.csv` é a US-25.
 
 ---
 
@@ -1631,7 +1707,7 @@ medida manual de distância. A ferramenta registra a rodada como bloqueada e sai
 código 2:
 
 ```powershell
-uv run barnes metrics distance-validate
+uv run barnes metrics distance-validate --saida data\demo_validation
 ```
 
 O que dizer: a lista do que falta para medir está em `docs/definicoes-metricas.md`
@@ -1696,6 +1772,9 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | US-18 | Velocidades por fase (SCRUM-223) | O `barnes_maze.py` deriva `primary/decision/total_speed` das distâncias e latências; decisão da equipe: `trials.csv` sem colunas de velocidade, probe de 90 s (§3 e §11 do documento de decisões). |
 | US-18 | Aceite r ≥ 0,95 (SCRUM-225) | Ferramenta pronta; não há medida manual de distância. Mantido como limitação declarada (`docs/decisoes-sem-laboratorio.md` §5). |
 | US-13 / US-16 / US-18 / US-17 | Limiares de entrada, tempo limite, erro e ponto do corpo | Decisões da equipe sem G3, em `configs/default.yaml` (`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`): entrada de 0,2 s, tempo limite de 180 s, erro = qualquer buraco incorreto, distâncias pelo centro do corpo. |
+| US-12 / US-13 / US-15 | Comparação com anotação manual | Ferramentas prontas (`events calibrate`, `compare_sequence`); sem anotação de um observador (D3), a calibração e a concordância não podem ser medidas. Limitação declarada. |
+| US-16 / US-17 | Latência, censura e erros | Calculados e testados (B.16, pelos testes), mas ainda sem comando que os gere de um trial gravado; a exportação `trials.csv` é a US-25. |
+| US-28 | Trial de referência e teste de regressão | Não implementado. |
 | US-27 | Banco no laboratório | Decidido: PostgreSQL nativo na máquina do laboratório (SCRUM-148, manual §2.2.2). A instalação lá ainda não foi feita. |
 | Geral | Métricas a partir da pose | A distância e a velocidade média já saem da série de pose (US-18, B.17). O `metrics process` da US-02 (B.8) continua lendo a trajetória de exemplo em CSV. |
 | Geral | Cadastro de usuário, experimento e animal | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |
