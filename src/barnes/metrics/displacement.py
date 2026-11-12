@@ -47,7 +47,8 @@ SPEED_FPS_CAVEAT = (
 )
 
 # Colunas complementares do `trials.csv` (US-25 RN04): o esquema do laboratório não tem
-# velocidade nem distância do intervalo inteiro (`total_distance` lá é S→E).
+# velocidade nem distância do intervalo inteiro (`total_distance` lá é S→E). Valores em
+# cm aqui; a exportação da US-25 converte para metros.
 EXPORT_COLUMNS = ("path_distance", "mean_speed", "interpolated_fraction", "speed_time_base_approx")
 
 
@@ -90,9 +91,13 @@ class Displacement:
     def as_export_columns(self) -> dict[str, float | bool | None]:
         """As colunas complementares do `trials.csv` (US-25 RN04, SCRUM-224).
 
-        Nomes no estilo do laboratório (inglês, sem unidade no nome): distância em cm,
-        velocidade em cm/s, fração em [0, 1]. `speed_time_base_approx` é a marca da
-        ressalva de fps variável na velocidade.
+        Nomes no estilo do laboratório (inglês, sem unidade no nome), fração em [0, 1].
+        `speed_time_base_approx` é a marca da ressalva de fps variável na velocidade.
+
+        **Unidades: os valores saem em cm e cm/s, as unidades internas do software.**
+        O `trials.csv` do laboratório usa metros (`docs/decisoes-sem-laboratorio.md`
+        §4): a conversão de `path_distance` e `mean_speed` é feita pela exportação da
+        US-25, nunca aqui. Não copie estes números direto para o CSV final.
         """
         return {
             "path_distance": self.distance_cm,

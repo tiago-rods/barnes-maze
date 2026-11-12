@@ -992,7 +992,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 #### Regras de Negócio & Escopo
 - [RN01] Distância em **cm** e velocidade em **cm/s**, sempre a partir da série calibrada de [US-09].
 - [RN02] Uma única velocidade por trial: a média sobre o intervalo útil inteiro. Não há segmentação da trajetória por fase.
-- [RN03] As velocidades por fase que o pipeline do laboratório usa não são calculadas aqui — a confirmar com o laboratório.
+- [RN03] As velocidades por fase que o pipeline do laboratório usa não são calculadas aqui — a confirmar com o laboratório. *(Sem contato com o LNBio: o `barnes_maze.py` as deriva de distância e latência; decisão da equipe em `docs/decisoes-sem-laboratorio.md` §3.)*
 - [RN04] As distâncias por fase exigidas por `trials.csv` vêm de outros cards; este card não participa delas.
 - [RN05] Trechos interpolados por [US-10] entram no cálculo, com a fração interpolada reportada junto da métrica.
 - [RN06] Critério de aceite: correlação da distância com a medida manual **r ≥ 0,95**.
@@ -1025,7 +1025,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Distância total e velocidade média implementadas, uma de cada por trial
-- [ ] Correlação com referência manual calculada e ≥ 0,95
+- [ ] Correlação com referência manual calculada e ≥ 0,95 *(não há referência manual: mantido como limitação declarada, `docs/decisoes-sem-laboratorio.md` §5; ferramenta pronta em `barnes metrics distance-validate`)*
 - [x] Ressalva de fps variável aplicada à velocidade média
 - [x] Resposta do laboratório sobre as velocidades por fase registrada *(substituída por decisão da equipe: não houve contato com o LNBio)*
 - [x] Colunas alinhadas com o esquema de [US-25]
