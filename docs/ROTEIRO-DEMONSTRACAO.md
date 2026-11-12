@@ -19,6 +19,8 @@ os ajustes de `docs/revisao-cards.md`) que ele demonstra.
 | 2 | US-10 | Suavização, interpolação e revisão de falhas de pose | B.13 |
 | 2 | US-27 | Proveniência das execuções e catálogo de trials | B.8, B.14 |
 | 2 | US-11 | Detecção do evento de descoberta (D) | B.15 |
+| 3 | US-12/US-13 | Calibração e entrada física | B.16 |
+| 3 | US-18 | Distância total e velocidade média | B.17 |
 
 A ordem das seções segue a dependência entre os cards, não o número deles: a
 montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela;
@@ -1570,6 +1572,79 @@ incompatíveis e qualidade de outra execução. Regenerar a série pelo fluxo de
 quando houver esse diagnóstico. Um JSON de rodada com erros ou resumo incoerentes
 deve ser recusado antes de alterar `docs/definicoes-metricas.md`.
 
+---
+
+### B.17 US-18 — Distância total e velocidade média
+
+O que dizer antes: uma distância em cm e uma velocidade média em cm/s **por trial**,
+calculadas a partir da série tratada da B.12/B.13 (`$serie`), nunca do vídeo. As
+velocidades por fase (`primary_speed` etc.) não são calculadas aqui, porque o
+`barnes_maze.py` do laboratório as deriva do próprio `trials.csv`. Peça a confirmação
+ao LNBio (pergunta em `docs/definicoes-metricas.md`, US-18 / SCRUM-223).
+
+A migração `0010` precisa estar aplicada no banco da demonstração:
+
+```powershell
+uv run barnes db migrate
+```
+
+**Cenário 1 — uma distância e uma velocidade por trial.** O trial 1 já tem a série
+revisada (B.13):
+
+```powershell
+uv run barnes metrics displacement --trial $t1
+```
+
+O que mostrar no JSON:
+
+- `distance_cm` e `mean_speed_cm_s`;
+- `duration_s` (primeiro ao último quadro com o centro do corpo) ao lado de
+  `interval_duration_s`;
+- `interpolated_fraction`: as lacunas curtas que a B.13 interpolou entram no cálculo e
+  aparecem aqui;
+- `colunas_exportacao`, as quatro colunas que a US-25 vai levar ao `trials.csv`.
+
+Se a simulação deixou o centro do corpo ausente numa borda, o aviso no terminal diz
+quanto tempo ficou fora da velocidade.
+
+**Prova de que o vídeo não é lido.** Mova o vídeo e rode de novo. O resultado é o
+mesmo, sem erro:
+
+```powershell
+Move-Item $v1 data\raw\movidos\renomeado.mp4
+```
+```powershell
+uv run barnes metrics displacement --trial $t1
+```
+```powershell
+Move-Item data\raw\movidos\renomeado.mp4 $v1
+```
+
+**O resultado fica gravado com a execução que o gerou** (uma linha por execução, US-27):
+
+```powershell
+docker exec barnes-maze-postgres-1 psql -U barnes -d barnes_demo -c "SELECT tr.execucao_id, round(tr.distance_cm::numeric,2) AS distancia_cm, round(tr.speed_mean_cm::numeric,2) AS velocidade_cm_s, round(tr.interpolated_fraction::numeric,3) AS fracao_interpolada, t.fps_is_variable AS ressalva_velocidade FROM trial_results tr JOIN trials t ON t.id = tr.trial_id WHERE tr.trial_id = $t1 ORDER BY tr.execucao_id"
+```
+
+**Cenário 2 — correlação com a medida manual (r ≥ 0,95): bloqueado.** Não existe
+medida manual de distância. A ferramenta registra a rodada como bloqueada e sai com
+código 2:
+
+```powershell
+uv run barnes metrics distance-validate
+```
+
+O que dizer: a lista do que falta para medir está em `docs/definicoes-metricas.md`
+§4.3 (quem mede, método, quais trials, inferência real).
+
+**Cenário 3 — fps variável** e os demais casos (borda sem pose, lacuna atravessada,
+ausência nunca vira zero, correlação aprovada/reprovada) estão cobertos por teste. Os
+vídeos da demonstração não têm fps variável:
+
+```powershell
+uv run pytest tests/metrics/test_displacement.py tests/metrics/test_validation.py tests/metrics/test_cli_metrics.py tests/metrics/test_cli_metrics_postgres.py -v
+```
+
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:
@@ -1578,7 +1653,7 @@ Volte o terminal para o banco de desenvolvimento:
 Remove-Item Env:BARNES_DATABASE_URL, Env:BARNES_TEST_DATABASE_URL
 ```
 
-Confira que o vídeo movido na B.14 e na B.15 voltou ao lugar e que o arquivo de
+Confira que o vídeo movido na B.14, na B.15 e na B.17 voltou ao lugar e que o arquivo de
 "alteração não commitada" foi apagado. O esperado é `True` e a lista vazia:
 
 ```powershell
@@ -1618,8 +1693,11 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | US-10 | Limites de tratamento da pose | Lacuna curta de 5 quadros (0,2 s), mediana de 5 quadros e cobertura mínima de 0,98 são valores propostos pelo grupo. Pergunta ao LNBio: interpolar até 0,2 s é aceitável? |
 | US-10 | fps instável (RN07) | A US-01 detecta fps variável por trial, não por trecho. A ressalva vale para o trial inteiro. |
 | US-11 | Limiares de descoberta (G3, C1) | Implementado e testado, mas `encontrar.distancia_cm`/`angulo_graus` (3 cm / 30°) são **provisórios**: o laboratório ainda não respondeu C1. Não é o valor acordado; ver `docs/definicoes-metricas.md`. |
+| US-18 | Velocidades por fase (SCRUM-223) | Pelo código, o `barnes_maze.py` deriva `primary/decision/total_speed` das distâncias e latências do CSV. Pergunta ao LNBio: o `trials.csv` pode vir sem colunas de velocidade? Os 90 s do probe são fixos? |
+| US-18 | Aceite r ≥ 0,95 (SCRUM-225) | Ferramenta pronta; falta a medida manual de distância (quem mede, método, quais trials). Ver `docs/definicoes-metricas.md` §4.3. |
+| US-18 | Ponto do corpo | A distância usa o centro do corpo, como a US-16. Pergunta ao LNBio: qual ponto o `trials.csv` de vocês usa? |
 | US-27 | Banco no laboratório | Decidido: PostgreSQL nativo na máquina do laboratório (SCRUM-148, manual §2.2.2). A instalação lá ainda não foi feita. |
-| Geral | Métricas a partir da pose | As métricas (US-02) ainda leem a trajetória de exemplo em CSV. Calcular a partir da série de pose é das próximas histórias (Épico E). |
+| Geral | Métricas a partir da pose | A distância e a velocidade média já saem da série de pose (US-18, B.17). O `metrics process` da US-02 (B.8) continua lendo a trajetória de exemplo em CSV. |
 | Geral | Cadastro de usuário, experimento e animal | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |
 
 ## Se algo der errado

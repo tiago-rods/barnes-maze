@@ -162,6 +162,15 @@ def _load_inputs(trial_id: int, dsn: str | None, *, entry: bool) -> EventInputs:
         )
 
 
+def load_trajectory_inputs(trial_id: int, dsn: str | None) -> EventInputs:
+    """Série do trial já conferida contra o banco, para métricas que leem a trajetória.
+
+    Mesmas conferências dos eventos (identidade, escala, FPS, recorte, tempos e
+    execução da qualidade), sem exigir rotação. Usada pela US-18.
+    """
+    return _load_inputs(trial_id, dsn, entry=False)
+
+
 def _detect(inputs: EventInputs, config: Path, *, entry: bool):
     params = load_discovery_params(config)
     if not math.isfinite(params.distance_cm) or not math.isfinite(params.angle_deg):

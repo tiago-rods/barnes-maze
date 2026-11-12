@@ -19,6 +19,7 @@ import psycopg
 import typer
 
 from barnes.cli_events import register_event_commands
+from barnes.cli_metrics import register_metric_commands
 from barnes.cli_pose import register_pose_commands
 from barnes.db.calibration import (
     CalibrationRequiredError,
@@ -152,7 +153,7 @@ app.add_typer(maze_app, name="maze")
 scale_app = typer.Typer(help="Calibração da escala px→cm por orientação de câmera (US-02).")
 app.add_typer(scale_app, name="scale")
 
-metrics_app = typer.Typer(help="Métricas calculadas com a escala calibrada (US-02).")
+metrics_app = typer.Typer(help="Métricas calculadas com a escala calibrada (US-02, US-18).")
 app.add_typer(metrics_app, name="metrics")
 
 execution_app = typer.Typer(help="Proveniência das execuções registradas (US-27).")
@@ -2110,6 +2111,7 @@ def events_discover(
 
 register_pose_commands(pose_app, _command_errors)
 register_event_commands(events_app, _command_errors)
+register_metric_commands(metrics_app, _command_errors)
 
 if __name__ == "__main__":
     app()

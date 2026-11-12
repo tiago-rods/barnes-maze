@@ -82,6 +82,10 @@ uv run barnes pose review --trial N [--video PATH] [--todos] [--margem 10]
     # n/p segment, a/d frame, 1/2/3 point, click = mark, right/Backspace = undo,
     # Enter = segment reviewed, s = save, Esc/x = cancel (nothing saved)
 
+# US-18 (distance + mean speed from the trajectory parquet; no video)
+uv run barnes metrics displacement --trial N [--ponto centro_corpo]
+uv run barnes metrics distance-validate [--manual CSV] [--saida DIR]   # r >= 0.95; no CSV = blocked
+
 # US-27 (provenance + catalog)
 uv run barnes execution show ID      # model, thresholds, params, commit, dirty, "reproduzivel"
 uv run barnes catalog list [--experiment-id N] [--verificar-hash] [--procurar-em DIR] [--json]
@@ -323,6 +327,19 @@ one transaction. Recalculation reads the trajectory and its provenance without
 opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions
 and actual acceptance blockers. `strategy`/`longitudinal`/`stats`/`report` remain
 empty `__init__.py` stubs pending their user story.
+
+US-18 (`metrics/displacement.py`, `metrics/validation.py`, `cli_metrics.py`): one
+distance and one mean speed per trial from the US-09 parquet (narrowed card: no
+per-phase speeds — the lab's `barnes_maze.py` derives those from trials.csv). Reuses
+US-16's `travelled_distance_cm` (gaps bridged in a straight line, `centro_corpo`); speed
+divides by first→last valid sample, not the whole interval. `cli_metrics` loads the
+series through `cli_events.load_trajectory_inputs` (same identity/scale/fps/interval
+checks as events). `trial_results.interpolated_fraction` (0010) is stored; the
+variable-fps speed caveat is **derived** from `trials.fps_is_variable` on read, never
+stored. US-25 complementary columns: `path_distance`, `mean_speed`,
+`interpolated_fraction`, `speed_time_base_approx` (`Displacement.as_export_columns`).
+The r >= 0.95 acceptance is blocked until a manual reference exists
+(`docs/definicoes-metricas.md` §4.3).
 
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
 tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because
