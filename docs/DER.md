@@ -160,6 +160,7 @@ erDiagram
         datetime calculated_at "US-02 — quando as métricas foram calculadas"
         float px_per_10cm_used "US-02 RN05 — escala usada; obsoleta se != maze_configs.px_per_10cm"
         float route_efficiency "US-02 RN03 — caminho ideal / caminho percorrido"
+        float interpolated_fraction "US-18 RN05 — fração interpolada das amostras usadas, 0..1"
     }
     HOLE_VISIT {
         int id PK
@@ -256,6 +257,22 @@ A aplicação valida JSON finito antes da escrita e o banco exige objeto JSON.
 A FK de `execucao_id` e sua associação ao mesmo trial permanecem obrigatórias;
 o chamador grava a execução e os eventos na mesma transação, sem commit interno.
 
+## US-18 — distância e velocidade média (migração `0010_us18_deslocamento.sql`)
+
+`barnes metrics displacement` grava uma linha em `trial_results` por execução, como os
+demais processamentos. Ela reaproveita `distance_cm` e `speed_mean_cm` da 0001, que
+passam a poder ser NULL quando não há pose válida, porque ausência não é zero.
+`route_efficiency` fica NULL. A migração só acrescenta:
+
+- `interpolated_fraction` (0..1, `CHECK`): fração das amostras usadas na distância que
+  vieram de linhas `interpolado` da série (RN05). É NULL nas linhas antigas e nas do
+  `metrics process` (US-02), que lê um CSV sem a marca de interpolação.
+
+A ressalva de base temporal da velocidade (RN07) **não é coluna**: é derivada na
+leitura de `trials.fps_is_variable` (`StoredTrialResult.speed_time_base_approx`), no
+mesmo espírito de `is_stale` e da VIEW `qualidade_pose`. O comando recusa calcular se a
+marca da série difere da do trial.
+
 <!--
 Pontos identificados na revisão do schema mas propositalmente adiados —
 retomar quando os cards correspondentes forem abertos:
@@ -268,7 +285,5 @@ retomar quando os cards correspondentes forem abertos:
 - US-21 / US-29 (kappa entre classificação automática e observador humano):
   falta onde guardar o rótulo manual de estratégia para comparar contra o
   `search_strategy` automático.
-- US-18 (velocidade por fase): hoje só há `speed_mean_cm`/`speed_max_cm`
-  agregados do trial inteiro; falta quebra por fase S→D vs. D→E.
 -->
 
