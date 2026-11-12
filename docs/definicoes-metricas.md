@@ -122,6 +122,51 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 > aviso. Distância percorrida pelo `centro_corpo`, atravessando lacunas de pose em
 > linha reta — **confirmar com o laboratório** qual ponto o `trials.csv` usa.
 
+### Distância total e velocidade média
+
+> **US-18 — nota de implementação, não é a definição do laboratório
+> (`barnes.metrics.displacement`, `tests/metrics/test_displacement.py`,
+> `barnes metrics displacement`).**
+>
+> - **Uma** distância e **uma** velocidade média por trial, sobre o intervalo útil, a
+>   partir da série da US-09. Não há velocidade por fase (ver SCRUM-223 abaixo).
+> - Distância: soma dos segmentos do `centro_corpo` entre amostras válidas, com
+>   lacunas atravessadas em linha reta. É a mesma regra da US-16, e o mesmo ponto a
+>   confirmar.
+> - Velocidade média = distância ÷ tempo do **primeiro ao último ponto válido**
+>   (decisão da equipe). Dividir pelo intervalo inteiro subestimaria a velocidade
+>   sempre que falta pose numa borda. A duração do intervalo e o tempo sem pose nas
+>   bordas saem junto.
+> - Trechos interpolados pela US-10 entram, e a fração interpolada das amostras usadas
+>   sai junto. A marca é por linha, então a fração é conservadora.
+> - fps variável: a distância sai normal; a velocidade sai com a ressalva de base
+>   temporal aproximada.
+> - Sem amostra válida, distância e velocidade ficam vazias, nunca zero.
+>
+> **SCRUM-223 — velocidades por fase: derivadas pelo laboratório, não lidas do CSV
+> (evidência no código; aguardando confirmação escrita).** O `barnes_maze.py` entregue
+> pelo laboratório calcula as três velocidades a partir das colunas de distância e
+> latência:
+>
+> - em `trials.csv`: `primary_speed = primary_distance / primary_latency` quando
+>   `primary_event == 1`; `decision_speed = delta_distance / delta_latency` e
+>   `total_speed = total_distance / total_latency` quando `primary_event == 1` e
+>   `total_event == 1`;
+> - em `probes.csv`: `primary_speed = primary_distance / primary_latency`,
+>   `decision_speed = (total_distance − primary_distance) / (90 − primary_latency)` e
+>   `total_speed = total_distance / 90`, com `probe_time = 90` fixo no código.
+>
+> Consequência: basta exportar as distâncias e latências (US-13, US-16, US-25), sem
+> coluna de velocidade. Pergunta a enviar ao laboratório: *"O `barnes_maze.py` calcula
+> `primary_speed`, `decision_speed` e `total_speed` a partir das colunas de distância e
+> latência. Podemos considerar que o `trials.csv` gerado pelo software não precisa
+> trazer colunas de velocidade? E os 90 s do probe são fixos para todos os probes?"*
+>
+> | | |
+> |---|---|
+> | Resposta do laboratório | _aguardando_ |
+> | Respondido por / data | _a preencher_ |
+
 ## 3. Protocolo de referência
 
 | | |
@@ -189,6 +234,30 @@ Estas são convenções implementadas para revisão; **não são palavras ou dec
 atribuídas ao laboratório**. Procedimento e formato D3 no
 [guia de calibração e entrada](eventos-calibracao-entrada.md). Pendências por ticket
 no [relatório da entrega](status-us12-us13.md).
+
+### 4.3 Distância da US-18 contra a medida manual (SCRUM-225)
+
+**Aceite r ≥ 0,95: bloqueado por dependência externa.** Não há medida manual de
+distância para nenhum trial. A ferramenta está pronta: `barnes metrics distance-validate
+--manual <csv>` pareia o resultado atual de cada trial (gravado por `metrics
+displacement`) com a referência. O relatório traz r, viés médio e erro relativo médio,
+porque r não vê erro de escala: um valor automático 20% maior ainda dá r = 1. Sem
+referência, a rodada é registrada como bloqueada. Os testes são sintéticos e não
+representam aceite.
+
+Pendências para destravar:
+
+1. **Quem mede**: laboratório (D3) ou equipe, e quem assina o aceite (C6).
+2. **Método**: ferramenta, ponto do corpo (centro do corpo, o mesmo da métrica) e de
+   quantos em quantos quadros se marca a posição. Marcar a cada k quadros encurta o
+   caminho em relação ao vídeo a 25 fps, então o método precisa estar no CSV.
+3. **Trecho medido**: o mesmo intervalo útil registrado no trial (da soltura ao fim).
+4. **Unidade**: cm com a mesma calibração da montagem, ou px convertidos por nós.
+5. **Quais trials e quantos**: sugestão de ≥ 10–15, misturando buscas curtas e longas.
+   Sem variação entre trials, r não diz nada.
+6. **Inferência de pose real** nesses trials (modelo das US-07/08 treinado). Sobre a
+   inferência simulada do roteiro, o r não vale como aceite.
+7. **Formato de entrega**: CSV `trial_id,distance_cm_manual,observador,metodo,data`.
 
 ## 5. Aceite
 

@@ -16,7 +16,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - **Definição de Pronto.** Adaptada ao domínio: o projeto é um pipeline Python offline com saída em CSV/Parquet/SQLite, não uma aplicação web. Os itens de DoD do template referentes a frontend e console foram substituídos pelos equivalentes deste contexto.
 - **Vocabulário de eventos.** Herdado do pipeline existente: **S** = soltura, **D** = descoberta (encontrar), **E** = entrada. Fase primária = S→D; fase de decisão = D→E; período total = S→E.
 - **Escala de estimativa.** Fibonacci: **3 (P) · 5 (M) · 8 (G) · 13 (GG)**. Os valores 1 e 2 não aparecem porque nenhum card deste projeto é trivial — todos carregam custo fixo de vídeo, calibração ou configuração. O valor 13 extrapola a escala sugerida no guia e é usado deliberadamente em dois cards, como sinalização de que devem ser fatiados. As estimativas foram **derivadas das tarefas**, não do enunciado da história: cada tarefa recebeu peso P (0,5), M (1) ou G (2) unidades, e a soma foi remapeada para a escala ancorando em US-15 = 3 pontos. O método está detalhado ao final.
-- **Distribuição por sprint.** Os cinco sprints têm **6 cards cada**. Essa alocação difere da que consta em `Apresentacao.md` e `definicao-projeto.md`: quatro cards — **US-05, US-10, US-18 e US-24** — foram antecipados em um sprint. A justificativa de cada movimento está registrada nas regras de negócio do próprio card e resumida ao final deste documento.
+- **Distribuição por sprint.** No planejamento original, os cinco sprints tinham **6 cards cada**. No planejamento do Sprint 3 (novembro de 2026), o **US-17 e o US-18 passaram do S4 para o S3**: o S3 ficou com 8 cards e o S4 com 4 (ver **Distribuição por sprint e esforço**). A alocação original difere da que consta em `Apresentacao.md` e `definicao-projeto.md`: quatro cards — **US-05, US-10, US-18 e US-24** — foram antecipados em um sprint. A justificativa de cada movimento está registrada nas regras de negócio do próprio card e resumida ao final deste documento.
 
 ---
 
@@ -923,7 +923,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - **Épico / Módulo:** Métricas por trial (`src/barnes/metrics/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 3 Pontos · 1,5–2 dias
-- **Sprint:** S4
+- **Sprint:** S3 (puxado do S4 no planejamento do Sprint 3)
 
 #### Narrativa de Usuário
 - **Como** pesquisador,
@@ -972,59 +972,63 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ---
 
-### [US-18] Distância, velocidade média e velocidade por fase
+### [US-18] Distância total e velocidade média
 
 - **Épico / Módulo:** Métricas por trial (`src/barnes/metrics/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 5 Pontos · 2,5–4 dias
-- **Sprint:** S4
+- **Sprint:** S3
+
+> **Versão estreitada (novembro de 2026).** A versão anterior pedia velocidades por fase
+> (`primary_speed`, `decision_speed`, `total_speed`), série de velocidade instantânea e
+> `decision_speed` ausente. Isso saiu do escopo porque o `barnes_maze.py` deriva as
+> velocidades por fase do próprio `trials.csv`. Decisões em `docs/revisao-cards.md`.
 
 #### Narrativa de Usuário
 - **Como** pesquisador,
-- **Quero** distância total, velocidade média e velocidade instantânea discriminadas por fase,
-- **Para que** eu avalie a busca independentemente do tempo total e compare grupos como o pipeline atual já faz.
+- **Quero** a distância total percorrida e a velocidade média do animal em cada trial,
+- **Para que** eu avalie a busca independentemente do tempo total.
 
 #### Regras de Negócio & Escopo
-- [RN01] Distância em **cm** e velocidades em **cm/s**, sempre a partir da série calibrada de [US-09].
-- [RN02] As velocidades são reportadas por fase, na convenção do pipeline existente: **primária** (S→D), **de decisão** (D→E) e **total** (S→E) — correspondendo a `primary_speed`, `decision_speed` e `total_speed`.
-- [RN03] A série de velocidade instantânea é exportável quadro a quadro.
-- [RN04] Trechos interpolados por [US-10] entram no cálculo mas a fração interpolada é reportada junto da métrica.
-- [RN05] Critério de aceite do projeto: correlação com a medida manual de referência **r ≥ 0,95**.
-- [RN06] Quando a fase de decisão não existe (animal descobriu mas não entrou), `decision_speed` é ausente — nunca zero.
-- [RN07] O pipeline do laboratório modela tempo e distância simetricamente. Este card produz a metade em distância do par que [US-16] produz em tempo, e ambos alimentam as colunas de `trials.csv` em [US-25].
+- [RN01] Distância em **cm** e velocidade em **cm/s**, sempre a partir da série calibrada de [US-09].
+- [RN02] Uma única velocidade por trial: a média sobre o intervalo útil inteiro. Não há segmentação da trajetória por fase.
+- [RN03] As velocidades por fase que o pipeline do laboratório usa não são calculadas aqui — a confirmar com o laboratório.
+- [RN04] As distâncias por fase exigidas por `trials.csv` vêm de outros cards; este card não participa delas.
+- [RN05] Trechos interpolados por [US-10] entram no cálculo, com a fração interpolada reportada junto da métrica.
+- [RN06] Critério de aceite: correlação da distância com a medida manual **r ≥ 0,95**.
+- [RN07] A velocidade média herda a base temporal; a distância não. Em trials com fps variável, a velocidade sai com ressalva.
 
 #### Critérios de Aceite (Cenários Executáveis / BDD)
-- **Cenário 1: Fluxo principal — métricas por fase**
-  - **Dado que** um trial tem eventos S, D e E registrados,
+- **Cenário 1: Fluxo principal — distância e velocidade média**
+  - **Dado que** um trial tem intervalo útil definido e trajetória calibrada,
   - **Quando** as métricas de deslocamento são calculadas,
-  - **Então** o sistema reporta distância total em cm e as três velocidades (primária, decisão, total) em cm/s.
+  - **Então** o sistema reporta a distância total em cm e a velocidade média em cm/s — uma de cada por trial.
 
 - **Cenário 2: Correlação com a referência manual**
   - **Dado que** um conjunto de trials teve a distância medida manualmente,
   - **Quando** os valores automáticos são correlacionados com os manuais,
   - **Então** **r ≥ 0,95**.
 
-- **Cenário 3: Fluxo alternativo — trial sem fase de decisão**
-  - **Dado que** o animal descobriu o alvo mas não entrou,
+- **Cenário 3: Trial com fps variável**
+  - **Dado que** o vídeo do trial recebeu aviso de fps variável em [US-01],
   - **Quando** as métricas são calculadas,
-  - **Então** `decision_speed` sai como ausente, e não como 0, para não enviesar as comparações entre grupos.
+  - **Então** a distância é reportada normalmente e a velocidade média sai marcada com a ressalva de base temporal aproximada.
 
 #### Tarefas
-- [ ] Implementar a integração da distância percorrida a partir da série calibrada
-- [ ] Implementar a segmentação da trajetória pelas fases S→D, D→E e S→E
-- [ ] Implementar as velocidades médias por fase (`primary_speed`, `decision_speed`, `total_speed`)
-- [ ] Implementar a série de velocidade instantânea e sua exportação
-- [ ] Implementar o valor ausente quando a fase de decisão não existe
-- [ ] Implementar o relato da fração interpolada junto da métrica
-- [ ] Alinhar os nomes de coluna com o esquema de [US-25]
-- [ ] Medir a correlação com a referência manual e verificar r ≥ 0,95
+- [x] SCRUM-219 — Implementar a integração da distância percorrida a partir da série calibrada
+- [x] SCRUM-220 — Implementar a velocidade média sobre o intervalo útil (distância ÷ duração)
+- [x] SCRUM-221 — Implementar o relato da fração interpolada junto da métrica
+- [x] SCRUM-222 — Marcar a velocidade média com a ressalva de base temporal nos trials com fps variável
+- [ ] SCRUM-223 — Confirmar com o laboratório se as velocidades por fase do `barnes_maze.py` são derivadas ou lidas do CSV *(evidência no código: derivadas; aguardando confirmação escrita)*
+- [x] SCRUM-224 — Alinhar os nomes de coluna com o esquema de [US-25]
+- [ ] SCRUM-225 — Medir a correlação com a referência manual e verificar r ≥ 0,95 *(ferramenta pronta; bloqueado pela referência manual)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Distância e velocidades por fase implementadas
-- [ ] Série de velocidade instantânea exportável
+- [x] Distância total e velocidade média implementadas, uma de cada por trial
 - [ ] Correlação com referência manual calculada e ≥ 0,95
-- [ ] Ausência (não zero) tratada e coberta por teste
-- [ ] Colunas alinhadas com o esquema de [US-25]
+- [x] Ressalva de fps variável aplicada à velocidade média
+- [ ] Resposta do laboratório sobre as velocidades por fase registrada
+- [x] Colunas alinhadas com o esquema de [US-25]
 
 ---
 
@@ -1716,10 +1720,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 |---|---|---|---|---|
 | **S1** | 1–2 | US-01, US-02, US-03, US-04, US-05, US-06 | 31 · **19,75 p-d** | **M1** — escopo congelado, definições assinadas |
 | **S2** | 3–4 | US-07, US-08, US-09, US-10, US-11, US-27 | 31 · **19,75 p-d** | **M2** — trajetória com orientação e primeiro evento de buraco |
-| **S3** | 5–6 | US-12, US-13, US-14, US-15, US-16, US-28 | 23 · **14,25 p-d** | **M3** — eventos calibrados e travados por teste de regressão |
-| **S4** | 7–8 | US-17, US-18, US-19, US-20, US-21, US-22 | 32 · **20,00 p-d** | **M4** — métricas, estratégia e Incremento 1 entregues |
+| **S3** | 5–6 | US-12, US-13, US-14, US-15, US-16, **US-17**, **US-18**, US-28 | 31 · **19,25 p-d** | **M3** — eventos calibrados e travados por teste de regressão |
+| **S4** | 7–8 | US-19, US-20, US-21, US-22 | 24 · **15,00 p-d** | **M4** — métricas, estratégia e Incremento 1 entregues |
 | **S5** | 9–10 | US-23, US-24, US-25, US-26, US-29, US-30 | 36 · **22,50 p-d** | **M5** — validação · **M6** — entrega |
-| | | **6 cards por sprint · 30** | **153 pontos · 96,25 pessoa-dias** | |
+| | | **30 cards** | **153 pontos · 96,25 pessoa-dias** | |
+
+> **Replanejamento do Sprint 3 (novembro de 2026).** Dois cards foram puxados do S4
+> para o S3; o total do backlog não muda.
+>
+> - **US-17** (3 pontos · 1,75 p-d), contagem e sequência de erros. Depende da sequência
+>   de visitação da US-15, que está no mesmo sprint.
+> - **US-18** (5 pontos · 3,25 p-d), numa versão estreitada: uma distância e uma
+>   velocidade média por trial, sem velocidades por fase (ver o card e
+>   `docs/revisao-cards.md`). Com isso, o card deixou de depender do evento E (US-13) e
+>   passou a depender só da série de pose (US-09/US-10), já entregue no S2.
 
 > **p-d = pessoa-dias.** Conversão pela régua, usando o ponto médio de cada faixa: 3 → 1,75 dias · 5 → 3,25 dias · 8 → 5 dias · 13 → 10 dias.
 
@@ -1792,6 +1806,11 @@ Com a régua absoluta, o backlog deixa de ser uma lista de tamanhos relativos e 
 
 A carga entre sprints ficou plana: **de 14,25 (S3) a 22,5 (S5) pessoa-dias**, amplitude de 8,25. O S3 é deliberadamente mais leve — é o sprint seguinte ao aperto de pose e serve de colchão para o que escorregar do S2. Vale manter assim: se trabalho for puxado para dentro dele, o colchão desaparece.
 
+> **Atualização (novembro de 2026):** com o US-17 e o US-18 puxados para o S3, a carga
+> passou a ir **de 15,00 (S4) a 22,5 (S5) pessoa-dias**, amplitude de 7,5, e o S3 subiu
+> para 19,25. O colchão do S3 foi consumido por esses dois cards; o S4 virou o sprint
+> mais leve.
+
 **Nenhum card permanece em 13 pontos.** As três quebras ([US-07], [US-10], [US-30]) resolveram os casos que a régua marcava como obrigatórios, e o maior card do backlog agora é de 8 pontos.
 
 Alavancas restantes, caso a dedicação acordada fique abaixo de 2 dias por semana:
@@ -1857,8 +1876,8 @@ Os cards ficaram contíguos por sprint, o que mantém o quadro legível: S1 = US
 | US-12 | US-11 (S2) + **D3** (anotação manual) | Externa, bloqueante |
 | US-13 | US-11 (S2), US-09, US-10 | Técnica |
 | US-15 | US-11, US-13 | Técnica — contrato de dados |
-| US-17, US-20 | US-15 (S3) | Técnica — fonte única |
-| US-18 | US-09 (S2), US-11 (S2), US-13 (S3) | Técnica — velocidade por fase exige o evento E |
+| US-17, US-20 | US-15 (S3; **mesmo sprint** para US-17) | Técnica — fonte única |
+| US-18 | US-09 (S2), US-10 (S2) | Técnica — série calibrada com a marca de interpolação (versão estreitada: sem fases, não depende mais de US-11/US-13) |
 | US-21 | US-20 (**mesmo sprint**) + **D3** | Externa, bloqueante |
 | US-24, US-26 | US-05 (S1 — referencial da sala) | Técnica — sem isso, resultado sem significado |
 | US-25 | US-16 (S3), US-18 (S4) | Técnica — é a única ponte para a análise do laboratório |

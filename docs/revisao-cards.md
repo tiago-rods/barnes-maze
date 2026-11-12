@@ -211,3 +211,42 @@ Decisões (detalhes no [contrato da trajetória](contrato-trajetoria.md), seçã
 - **Contrato da trajetória continua na versão 1:** `interpolado` passou a ser usado como
   previsto e entrou o metadado opcional `pos_processamento`. Linha interpolada sem esse
   metadado é recusada.
+
+## US-18 — distância total e velocidade média (novembro de 2026)
+
+O card foi **estreitado** ao entrar no Sprint 3. A versão de `CARDS.md` foi reescrita para
+a nova; as decisões de implementação estão no [manual](manual-usuario.md) §4.8 e em
+[definicoes-metricas.md](definicoes-metricas.md):
+
+- **Sai do escopo:** velocidades por fase (`primary_speed`, `decision_speed`,
+  `total_speed`), a série de velocidade instantânea e o `decision_speed` ausente.
+  Fica **uma** distância e **uma** velocidade média por trial, sobre o intervalo útil
+  inteiro, sem segmentar a trajetória (RN02). As distâncias por fase continuam com a
+  US-16 (`primary_distance`, `total_distance`) e a US-13 (`delta_distance`).
+- **Por que as velocidades por fase saíram (SCRUM-223):** o `barnes_maze.py` do
+  laboratório as **deriva** do próprio CSV. Para trials, `primary_distance /
+  primary_latency`, `delta_distance / delta_latency` e `total_distance / total_latency`,
+  só quando o evento é 1. Para probes, com `probe_time = 90` fixo no código. Exportar
+  distâncias e latências basta; falta a confirmação escrita do laboratório.
+- **Fonte:** a série da US-09 (`data/interim/trial_<id>.parquet`), lida por
+  `barnes metrics displacement` sem abrir o vídeo. O `metrics process` da US-02 (CSV em
+  pixels) continua existindo, mas não é a fonte da US-18.
+- **Ponto e lacunas:** `centro_corpo`, com lacunas atravessadas em linha reta, mesma
+  regra do `total_distance` da US-16. O ponto do laboratório continua a confirmar.
+- **Duração da velocidade (SCRUM-220):** do primeiro ao último ponto válido. Dividir
+  pelo intervalo inteiro subestimaria a velocidade sempre que falta pose numa borda. A
+  duração do intervalo e o tempo sem pose nas bordas saem junto.
+- **Fração interpolada (RN05):** fração das amostras usadas que vêm de linhas
+  `interpolado`. É marcada por linha, então é conservadora. Gravada em
+  `trial_results.interpolated_fraction` (migração 0010).
+- **fps variável (RN07):** a distância sai normal; a velocidade sai com a ressalva de
+  base temporal aproximada. A marca **não é gravada**: é derivada de
+  `trials.fps_is_variable` na leitura.
+- **Colunas da US-25 (SCRUM-224):** o `trials.csv` não tem velocidade nem distância do
+  intervalo inteiro (`total_distance` lá é S→E). Vão como colunas complementares
+  (US-25 RN04): `path_distance`, `mean_speed`, `interpolated_fraction`,
+  `speed_time_base_approx`.
+- **Aceite r ≥ 0,95 (SCRUM-225): bloqueado por dependência externa.** A ferramenta
+  (`barnes metrics distance-validate`) está pronta e testada com dados sintéticos; a
+  medida manual de referência não existe. As pendências estão em
+  `definicoes-metricas.md` §4.3.
