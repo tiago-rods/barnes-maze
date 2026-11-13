@@ -7,12 +7,25 @@ from pathlib import Path
 
 import psycopg
 from dotenv import find_dotenv, load_dotenv
+from psycopg.conninfo import conninfo_to_dict
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "database" / "migrations"
+
+CONNECT_TIMEOUT_S = 10
+"""Tempo máximo para abrir a conexão. Sem ele, uma porta sem resposta trava o comando."""
 
 
 class DatabaseConfigError(Exception):
     """Erro de configuração de conexão com o banco de dados."""
+
+
+class DatabaseUnavailableError(DatabaseConfigError, psycopg.OperationalError):
+    """Não foi possível abrir a conexão (banco fora do ar, porta errada, credenciais).
+
+    É também um `psycopg.OperationalError`, para que quem já trata o banco
+    indisponível (ex.: `pose` preservando os artefatos) continue funcionando.
+    A mensagem nunca contém a string de conexão nem a senha.
+    """
 
 
 def load_local_env() -> None:
@@ -34,12 +47,16 @@ def get_connection(dsn: str | None = None) -> psycopg.Connection:
             Se omitida, usa a variável de ambiente ``BARNES_DATABASE_URL``,
             lida também do `.env` local (`load_local_env`).
 
+    A conexão desiste depois de `CONNECT_TIMEOUT_S` segundos, a menos que o
+    DSN traga o próprio ``connect_timeout``.
+
     Returns:
         Uma conexão psycopg aberta.
 
     Raises:
         DatabaseConfigError: Se nenhum DSN foi passado e a variável de
             ambiente também não está definida.
+        DatabaseUnavailableError: Se a conexão não pôde ser aberta.
     """
     if not dsn:
         load_local_env()
@@ -47,9 +64,28 @@ def get_connection(dsn: str | None = None) -> psycopg.Connection:
     if not dsn:
         raise DatabaseConfigError(
             "Defina a variável de ambiente BARNES_DATABASE_URL ou passe o "
-            "DSN explicitamente (ex.: postgresql://usuario:senha@localhost:5432/barnes)."
+            "DSN explicitamente (ex.: postgresql://usuario:senha@localhost:5433/barnes)."
         )
-    return psycopg.connect(dsn)
+    params = conninfo_to_dict(dsn)
+    extra = {} if "connect_timeout" in params else {"connect_timeout": CONNECT_TIMEOUT_S}
+    try:
+        return psycopg.connect(dsn, **extra)
+    except psycopg.OperationalError as exc:
+        raise DatabaseUnavailableError(_unavailable_message(params)) from exc
+
+
+def _unavailable_message(params: dict) -> str:
+    """Mensagem de falha de conexão com host, porta e banco — nunca usuário ou senha."""
+    host = params.get("host") or "localhost"
+    port = params.get("port") or "5432"
+    dbname = params.get("dbname") or "(padrão)"
+    timeout = params.get("connect_timeout", CONNECT_TIMEOUT_S)
+    return (
+        f"Não foi possível conectar ao banco '{dbname}' em {host}:{port} "
+        f"(limite de {timeout} s). Confira se o Postgres está rodando "
+        "(docker compose up -d), se a porta da URL é a que o Docker publica "
+        "(BARNES_PG_PORT no .env; 5433 por padrão) e se usuário e senha estão certos."
+    )
 
 
 def _fetch_applied(conn: psycopg.Connection) -> set[str]:
