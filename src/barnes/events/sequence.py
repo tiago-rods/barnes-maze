@@ -122,10 +122,17 @@ def build_sequence(
         if earliest is None or entry.t_s < earliest.t_s:
             first_entry_by_hole[entry.hole_number] = entry
 
+    # D posterior a E (inconsistência D->E já registrada pela US-13) não pode
+    # adiar o início da visita: a checagem começou na entrada, e usar D faria a
+    # primeira visita colidir com (ou passar à frente de) uma reentrada.
     staged = []
     for entry in entries:
         is_first_visit = first_entry_by_hole[entry.hole_number] is entry
-        if is_first_visit and entry.discovery_t_s is not None:
+        if (
+            is_first_visit
+            and entry.discovery_t_s is not None
+            and entry.discovery_t_s <= entry.t_s
+        ):
             inicio_s = entry.discovery_t_s
         else:
             inicio_s = entry.t_s
