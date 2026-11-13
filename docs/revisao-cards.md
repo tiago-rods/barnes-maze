@@ -279,3 +279,24 @@ relatório declara a limitação. O que muda nos cards:
   comparações com anotação manual saem do critério de pronto: US-12 inteira, as
   comparações de US-13, US-15, US-16, US-17 e US-18, o kappa da US-21 e a comparação
   de hazard ratios da US-25 (`decisoes-sem-laboratorio.md` §5.1).
+
+## US-28 — trial de referência e teste de regressão (novembro de 2026)
+
+O que a implementação estreita no card:
+
+- **Fixture sintético, não um trecho de trial real (RN01).** Não há modelo de pose
+  treinado no repositório. O vídeo (`tests/fixtures/trial_referencia.mp4`, 96 quadros,
+  200×150 px, 20 fps) exercita o carregamento e o recorte (US-01/US-03). A trajetória
+  conhecida é injetada como pose e passa por `build_series`, então o teste protege o
+  cálculo a partir do contrato da trajetória, não a qualidade da pose.
+- **Tolerância única, absoluta, de 1e-6 (RN02).** O fixture é determinístico; as
+  tolerâncias "da seção de critérios de aceite" valem para dados reais, não aqui.
+- **Limiares no próprio YAML do fixture**, desacoplados de `configs/default.yaml`.
+  Coincidem com as decisões da equipe, exceto o tempo limite (10 s, vídeo curto).
+- **Gate antes de merge (RN05) é regra de revisão**: o repositório não tem CI.
+- **Integração com a US-18 (12/11/2026):** o esperado ganhou a seção `deslocamento`
+  (`compute_displacement` sobre a série do contrato), e o teste confere que ela
+  concorda com a rota da US-02 (72,43 cm; 17,04 cm/s).
+- **Fora do fixture:** lacunas de pose, censura e fps variável ficam nos testes
+  unitários de cada módulo. As métricas do Sprint 4 (US-19 a US-22) entram no
+  esperado quando forem implementadas.

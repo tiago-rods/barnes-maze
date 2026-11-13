@@ -30,14 +30,15 @@ a partir da B.16 são decisões da equipe, não do LNBio
 | 3 | US-12 | Calibração contra anotação manual — bloqueada sem D3 | B.16 |
 | 3 | US-16, US-17 | Latência com censura e contagem de erros — só testes, sem comando | B.16 |
 | 3 | US-18 | Distância total e velocidade média | B.17 |
-| 3 | US-28 | Trial de referência com teste de regressão — **não implementado** | — |
+| 3 | US-28 | Trial de referência com teste de regressão | B.18 |
 
 A ordem das seções segue a dependência entre os cards, não o número deles: a
 montagem (US-04) vem antes da escala e dos trials, porque os dois dependem dela;
 o catálogo (US-27) reúne o que já foi processado quando já há métricas, série de
 pose e revisão para mostrar; o evento de descoberta (US-11, B.15) depende da série
 de pose da B.12/B.13; e o Sprint 3 (B.16, B.17) vem por último, porque entrada,
-sequência e distância dependem da descoberta e da série tratada.
+sequência e distância dependem da descoberta e da série tratada. A B.18 (US-28)
+fecha a parte B: o teste de regressão trava tudo o que foi mostrado antes.
 
 **O que não dá para mostrar com dados reais ainda (diga isso ao cliente):** não
 existe modelo de pose treinado. A anotação real (US-06) não aconteceu, e o treino
@@ -1721,6 +1722,48 @@ vídeos da demonstração não têm fps variável:
 uv run pytest tests/metrics/test_displacement.py tests/metrics/test_validation.py tests/metrics/test_cli_metrics.py tests/metrics/test_cli_metrics_postgres.py -v
 ```
 
+### B.18 US-28 — Trial de referência e teste de regressão
+
+O que mostrar: um vídeo curto versionado no repositório (`tests/fixtures/trial_referencia.mp4`)
+e um arquivo com o valor esperado de cada métrica (`tests/fixtures/trial_referencia_esperado.yaml`).
+O teste roda o pipeline inteiro sobre esse vídeo e falha se qualquer métrica mudar.
+
+O que dizer: o vídeo é **sintético**. A trajetória é conhecida de antemão e injetada como
+pose, porque não há modelo de pose treinado no repositório. O teste protege o cálculo
+(descoberta, entrada, dwell, sequência, erros, latências, distância e velocidade), não a
+qualidade da pose.
+
+**Cenário 1 — pipeline íntegro.** Dez verificações, em cerca de 1,5 s:
+
+```powershell
+uv run pytest tests/test_us28_trial_referencia.py -v
+```
+
+**Cenário 2 — detecção de regressão.** Simule uma mudança que altera a contagem de erros:
+guarde uma cópia do esperado, troque `total_errors: 1` por `2` e rode o teste. Ele deve falhar
+dizendo `erros.total_errors: esperado 2, obtido 1`:
+
+```powershell
+Copy-Item tests\fixtures\trial_referencia_esperado.yaml $env:TEMP\esperado_us28.bak
+@'
+from pathlib import Path
+p = Path("tests/fixtures/trial_referencia_esperado.yaml")
+p.write_text(p.read_text(encoding="utf-8").replace("total_errors: 1", "total_errors: 2"), encoding="utf-8")
+'@ | uv run python -
+uv run pytest tests/test_us28_trial_referencia.py -q --tb=short
+```
+
+Restaure o arquivo **antes de continuar** e confira que o teste volta a passar:
+
+```powershell
+Copy-Item $env:TEMP\esperado_us28.bak tests\fixtures\trial_referencia_esperado.yaml -Force
+uv run pytest tests/test_us28_trial_referencia.py -q
+```
+
+**Cenário 3 — atualização legítima do esperado.** É regra de processo: o commit que muda
+o YAML diz qual métrica mudou, por quê e qual decisão motivou a mudança (README, seção
+US-28). Exemplo real: a integração da US-18 acrescentou a seção `deslocamento` ao esperado.
+
 ## Parte C — Encerramento
 
 Volte o terminal para o banco de desenvolvimento:
@@ -1729,8 +1772,9 @@ Volte o terminal para o banco de desenvolvimento:
 Remove-Item Env:BARNES_DATABASE_URL, Env:BARNES_TEST_DATABASE_URL
 ```
 
-Confira que o vídeo movido na B.14, na B.15 e na B.17 voltou ao lugar e que o arquivo de
-"alteração não commitada" foi apagado. O esperado é `True` e a lista vazia:
+Confira que o vídeo movido na B.14, na B.15 e na B.17 voltou ao lugar, que o arquivo de
+"alteração não commitada" foi apagado e que o esperado da B.18 foi restaurado
+(`tests/fixtures` não aparece na lista). O esperado é `True` e a lista vazia:
 
 ```powershell
 Test-Path $v1
@@ -1774,7 +1818,7 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | US-13 / US-16 / US-18 / US-17 | Limiares de entrada, tempo limite, erro e ponto do corpo | Decisões da equipe sem G3, em `configs/default.yaml` (`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`): entrada de 0,2 s, tempo limite de 180 s, erro = qualquer buraco incorreto, distâncias pelo centro do corpo. |
 | US-12 / US-13 / US-15 / US-16 / US-17 / US-18 / US-21 | Comparação com anotação manual | **Pulada.** Não há anotação manual de Barnes maze, nem do laboratório nem pública (busca de 12/11/2026, `docs/decisoes-sem-laboratorio.md` §5.1). As ferramentas (`events calibrate`, `compare_sequence`, `metrics distance-validate`) estão prontas caso uma anotação apareça. |
 | US-16 / US-17 | Latência, censura e erros | Calculados e testados (B.16, pelos testes), mas ainda sem comando que os gere de um trial gravado; a exportação `trials.csv` é a US-25. |
-| US-28 | Trial de referência e teste de regressão | Não implementado. |
+| US-28 | Trial de referência e teste de regressão | Implementado sobre um vídeo **sintético** (B.18); não exercita lacunas de pose, censura nem fps variável. O "teste obrigatório antes de merge" é regra de processo: o repositório não tem CI. |
 | US-27 | Banco no laboratório | Decidido: PostgreSQL nativo na máquina do laboratório (SCRUM-148, manual §2.2.2). A instalação lá ainda não foi feita. |
 | Geral | Métricas a partir da pose | A distância e a velocidade média já saem da série de pose (US-18, B.17). O `metrics process` da US-02 (B.8) continua lendo a trajetória de exemplo em CSV. |
 | Geral | Cadastro de usuário, experimento e animal | Ainda não há comando nem tela; nesta demonstração ele é feito direto no banco. |

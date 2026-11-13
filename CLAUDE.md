@@ -347,6 +347,15 @@ stored. US-25 complementary columns: `path_distance`, `mean_speed`,
 The r >= 0.95 acceptance is blocked until a manual reference exists
 (`docs/definicoes-metricas.md` §4.3).
 
+US-28 (`tests/test_us28_trial_referencia.py`): regression test over a versioned
+**synthetic** video (`tests/fixtures/trial_referencia.mp4`) with a known trajectory
+injected as `PoseFrames` → `build_series`; expected values (abs. tolerance 1e-6) and
+its own thresholds live in `tests/fixtures/trial_referencia_esperado.yaml`, decoupled
+from `configs/default.yaml`. When a story adds a metric (US-19..22 next), add it to
+the expected YAML; changing an existing expected value needs a justification in the
+commit message (RN04). It must pass before merging to the main branch — a review
+rule, there is no CI. The fixture has no pose gaps, no censoring and constant fps.
+
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
 tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because
 RN07 may still swap SLEAP for YOLO-pose. Trials are keyed by

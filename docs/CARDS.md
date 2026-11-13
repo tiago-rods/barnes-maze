@@ -1593,20 +1593,33 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** o commit traz a justificativa e a referência à decisão que motivou a mudança.
 
 #### Tarefas
-- [ ] Selecionar e recortar um trecho curto de trial para servir de fixture
-- [ ] Versionar o vídeo e seus metadados em `tests/fixtures/`
-- [ ] Registrar os valores esperados de todas as métricas, com as tolerâncias da seção 10
-- [ ] Implementar o teste de regressão comparando a saída do pipeline ao esperado
-- [ ] Garantir tempo de execução aceitável para rodar a cada mudança
-- [ ] Incorporar o teste ao fluxo obrigatório antes de merge na branch principal
-- [ ] Documentar no README a política de atualização dos valores esperados
+- [x] Selecionar e recortar um trecho curto de trial para servir de fixture *(vídeo **sintético** de 96 quadros, 200×150 px, 20 fps — não um trecho de trial real; a trajetória é injetada como pose sintética, porque não há modelo treinado no repositório)*
+- [x] Versionar o vídeo e seus metadados em `tests/fixtures/` *(`trial_referencia.mp4`, 33 KB, e `trial_referencia_esperado.yaml`)*
+- [x] Registrar os valores esperados de todas as métricas, com as tolerâncias da seção 10 *(tolerância única, absoluta, de 1e-6: o fixture é determinístico. Inclui a US-18, acrescentada na integração de 12/11/2026)*
+- [x] Implementar o teste de regressão comparando a saída do pipeline ao esperado *(`tests/test_us28_trial_referencia.py`; cada falha diz a métrica, o esperado e o obtido)*
+- [x] Garantir tempo de execução aceitável para rodar a cada mudança *(~1,5 s)*
+- [ ] Incorporar o teste ao fluxo obrigatório antes de merge na branch principal *(hoje é regra de processo, na revisão do PR; não há CI no repositório)*
+- [x] Documentar no README a política de atualização dos valores esperados
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Vídeo curto de referência versionado em `tests/fixtures/`
-- [ ] Valores esperados de todas as métricas registrados com tolerância
-- [ ] Teste automatizado implementado e executando em tempo aceitável
-- [ ] Teste incorporado ao fluxo obrigatório antes de merge
-- [ ] Política de atualização do esperado documentada no README
+- [x] Vídeo curto de referência versionado em `tests/fixtures/`
+- [x] Valores esperados de todas as métricas registrados com tolerância *(as implementadas até o Sprint 3, US-18 incluída; estratégia, kappa e análises longitudinais entram quando existirem)*
+- [x] Teste automatizado implementado e executando em tempo aceitável
+- [ ] Teste incorporado ao fluxo obrigatório antes de merge *(só regra de processo; ver ressalvas)*
+- [x] Política de atualização do esperado documentada no README
+
+> **Ressalvas da integração (12/11/2026).**
+> - O fixture não exercita lacunas de pose (fração interpolada = 0), trial
+>   censurado nem fps variável. Esses casos ficam nos testes unitários de cada
+>   módulo. Um segundo fixture com lacuna e censura mudaria todos os esperados,
+>   então fica para quando houver motivo.
+> - Os limiares ficam no YAML do fixture, desacoplados de `configs/default.yaml`.
+>   Hoje coincidem com as decisões da equipe, exceto o tempo limite (10 s, porque
+>   o vídeo tem menos de 5 s).
+> - **Ao implementar US-19 a US-22 (Sprint 4), acrescentar as métricas novas ao
+>   esperado**, com justificativa no commit (RN04), como foi feito com a US-18.
+> - O "fluxo obrigatório antes de merge" depende de CI, que o repositório não
+>   tem. Até lá, o revisor do PR roda `uv run pytest tests/test_us28_trial_referencia.py`.
 
 ---
 
