@@ -289,6 +289,53 @@ Veja o [guia de operação](docs/eventos-calibracao-entrada.md) e o
 [status por subtask](docs/status-us12-us13.md). A validação experimental e o
 aceite do laboratório continuam pendentes.
 
+## Trial de referência e teste de regressão (US-28)
+
+`tests/fixtures/trial_referencia.mp4` é um vídeo curto e sintético (96
+quadros, 200x150px, 20fps), versionado em Git, que exercita o carregamento
+de vídeo e o recorte do intervalo útil (US-01/US-03) de ponta a ponta.
+`tests/fixtures/trial_referencia_esperado.yaml` registra a geometria, os
+limiares e os valores esperados de todas as métricas do pipeline para esse
+vídeo. `tests/test_us28_trial_referencia.py` roda o pipeline sobre o fixture
+e falha se qualquer métrica sair da tolerância declarada, identificando qual
+métrica e por quanto:
+
+```powershell
+uv run pytest tests/test_us28_trial_referencia.py -v
+```
+
+Sem modelo de pose treinado no repositório (`models/` é gitignorado), a
+trajetória não vem de inferência real: é injetada diretamente como
+`PoseFrames` sintético, com a mesma função de trajeto usada para desenhar o
+vídeo (`_scenario_path`), e passada por `barnes.pose.series.build_series`
+para entrar no contrato oficial da trajetória. O vídeo exercita US-01/US-03
+de verdade; os estágios de pose em diante usam essa trajetória conhecida de
+antemão, não o conteúdo de pixel do vídeo.
+
+Os limiares usados (`encontrar`, `entrar`, `erro`, `trial`) são fixados no
+próprio YAML do fixture, não lidos de `configs/default.yaml` — esse arquivo
+tem a maioria dos valores em `null`, pendentes do aceite do laboratório em
+G3, e usá-lo aqui acoplaria o teste a uma configuração que ainda vai mudar.
+
+**Atualizar os valores esperados exige justificativa no commit.** Ajustar o
+esperado só para fazer o teste passar depois de uma mudança é exatamente o
+que este teste existe para impedir. Uma atualização legítima (ex.: mudança
+de definição acordada em G3, correção de um bug no cálculo anterior) precisa
+dizer, na mensagem do commit, qual métrica mudou, por quê, e qual decisão ou
+issue motivou a mudança.
+
+Este teste **passa antes de qualquer merge na branch principal** — é a
+defesa do projeto contra regressão silenciosa com cinco pessoas mexendo em
+módulos interdependentes. Hoje isso é uma regra de processo (revisão de PR),
+não uma verificação automática de CI; não há `.github/workflows` configurado
+neste repositório ainda.
+
+Cobertura atual: pose, descoberta (D), entrada (E) e dwell, sequência de
+visitação, erros, latência/distância com censura (S→D e S→E), distância
+percorrida, velocidade média e eficiência de rota. **Não coberto** (ainda não
+implementado no pipeline): classificação de estratégia/entropia (US-20),
+kappa contra observador (US-21), DTW/Fréchet e demais análises longitudinais.
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:
