@@ -632,6 +632,8 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-12] Calibração dos limiares de descoberta contra a anotação manual
 
+> **Card pulado (12/11/2026).** Ele inteiro depende de anotação manual de eventos, que não existe: nem do laboratório, com quem não houve contato, nem em fonte pública (`docs/decisoes-sem-laboratorio.md` §5.1). A ferramenta (`barnes events calibrate`) está pronta e testada com dados sintéticos; os limiares em uso são decisão da equipe, sem calibração.
+
 > Entrega técnica em 05/11/2026: comparação, histórico auditável, bloqueio D3 e
 > incorporação de evidência implementados. **Calibração real bloqueada:** D3 não
 > foi confirmada e G3 segue pendente. As tarefas de execução/aceite abaixo
@@ -680,7 +682,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [ ] Levar os limiares acordados ao PI para o aceite por escrito de **G3**
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Comparação com anotação manual executada em trial de referência
+- [ ] Comparação com anotação manual executada em trial de referência *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [ ] Tolerância de 0,5 s atingida, ou divergência escalada ao PI com registro
 - [ ] Histórico das rodadas de calibração registrado
 - [ ] `docs/definicoes-metricas.md` atualizado e submetido ao aceite do PI
@@ -739,14 +741,14 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] Implementar o critério de duração mínima contínua
 - [x] Implementar o cálculo da hesitação D→E em tempo e em distância
 - [x] Implementar a verificação de consistência (entrada sem descoberta prévia)
-- [ ] Comparar com a anotação manual e verificar a tolerância de 0,3 s
+- [ ] Comparar com a anotação manual e verificar a tolerância de 0,3 s *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [x] Documentar o critério em `docs/definicoes-metricas.md` — convenção técnica proposta, ainda sem G3
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Detecção de entrada implementada com área e duração parametrizadas
 - [x] Hesitação D→E calculada em tempo e distância
 - [x] Verificação de consistência descoberta→entrada implementada
-- [ ] Comparação com anotação manual executada
+- [ ] Comparação com anotação manual executada *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [x] Critérios documentados em `docs/definicoes-metricas.md` — aceite G3 pendente
 
 ---
@@ -845,12 +847,12 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] Incluir a posição no referencial da sala em cada item da sequência
 - [x] Implementar a exportação tabular da sequência
 - [x] Escrever teste de ordenação temporal estrita
-- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95 — **bloqueado por D3**, igual ao US-12/13 (`docs/eventos-calibracao-entrada.md`): mecanismo (`compare_sequence`) implementado e testado com D3 sintético, sem anotação real do laboratório para validar
+- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95 *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)* (ferramenta pronta: `compare_sequence`)
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Sequência de visitação persistida e exportável (`barnes events sequence`, conferido contra o Postgres de dev com um trial sintético de referência — essa conferência pegou e corrigiu uma colisão real de `inicio_s` em reentradas que compartilham a mesma descoberta)
 - [x] Posição no referencial da sala incluída em cada item
-- [ ] Comparação com anotação manual executada em trial de referência — bloqueada por D3 (ver acima)
+- [ ] Comparação com anotação manual executada em trial de referência *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [x] Contrato de dados documentado para os Épicos E e F (`docs/contrato-sequencia.md`)
 - [x] Testes garantindo ordenação temporal estrita
 
@@ -907,13 +909,13 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] Implementar a marcação de censura em `primary_event` e `total_event`
 - [x] Implementar o ancoramento do tempo zero no evento S
 - [x] Escrever teste garantindo que nenhum trial censurado é descartado *(`tests/metrics/test_latency.py::test_no_censored_trial_is_discarded`)*
-- [ ] Comparar com a cronometragem manual e verificar a tolerância de 1 s *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [ ] Comparar com a cronometragem manual e verificar a tolerância de 1 s *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Latências de descoberta e total calculadas em tempo e em distância
 - [x] Colunas de censura preenchidas conforme convenção do pipeline existente (1 = evento, 0 = censurado)
 - [x] Teste automatizado garantindo que nenhum trial censurado é descartado
-- [ ] Comparação com cronometragem manual executada *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [ ] Comparação com cronometragem manual executada *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [x] Tempo limite parametrizado a partir da resposta de B5 *(`trial.tempo_limite_s: 180`, decisão da equipe sem G3)*
 
 ---
@@ -960,14 +962,14 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] Implementar a sequência ordenada dos buracos incorretos checados
 - [x] Implementar o recorte "erros até a descoberta do alvo", usado pela classificação de estratégia
 - [x] Escrever teste de recálculo sob nova definição, sem acesso ao vídeo *(`test_recalculation_under_new_definition_never_touches_video_or_trajectory`)*
-- [ ] Comparar com a contagem manual e verificar a tolerância de 1 erro *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [ ] Comparar com a contagem manual e verificar a tolerância de 1 erro *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [x] Registrar a definição adotada em `docs/definicoes-metricas.md` *(nota da US-17 e decisão C3 em `definicoes-metricas.md`)*
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Definição de erro parametrizada em `configs/`
 - [x] Contagem, sequência e erros-até-o-alvo implementados
 - [x] Recálculo sem acesso a vídeo verificado por teste
-- [ ] Comparação com contagem manual executada *(sem anotação manual: limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [ ] Comparação com contagem manual executada *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [x] Definição adotada registrada em `docs/definicoes-metricas.md`
 
 ---
@@ -1021,11 +1023,11 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] SCRUM-222 — Marcar a velocidade média com a ressalva de base temporal nos trials com fps variável
 - [x] SCRUM-223 — Confirmar com o laboratório se as velocidades por fase do `barnes_maze.py` são derivadas ou lidas do CSV *(sem contato com o LNBio: derivadas, pela evidência no código; registrado como decisão da equipe em `docs/decisoes-sem-laboratorio.md` §3)*
 - [x] SCRUM-224 — Alinhar os nomes de coluna com o esquema de [US-25]
-- [ ] SCRUM-225 — Medir a correlação com a referência manual e verificar r ≥ 0,95 *(ferramenta pronta; sem referência manual — mantido como limitação declarada, `docs/decisoes-sem-laboratorio.md` §5)*
+- [ ] SCRUM-225 — Medir a correlação com a referência manual e verificar r ≥ 0,95 *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)* (ferramenta pronta: `barnes metrics distance-validate`)
 
 #### Definição de Pronto (DoD Específica do Card)
 - [x] Distância total e velocidade média implementadas, uma de cada por trial
-- [ ] Correlação com referência manual calculada e ≥ 0,95 *(não há referência manual: mantido como limitação declarada, `docs/decisoes-sem-laboratorio.md` §5; ferramenta pronta em `barnes metrics distance-validate`)*
+- [ ] Correlação com referência manual calculada e ≥ 0,95 *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)* (ferramenta pronta: `barnes metrics distance-validate`)
 - [x] Ressalva de fps variável aplicada à velocidade média
 - [x] Resposta do laboratório sobre as velocidades por fase registrada *(substituída por decisão da equipe: não houve contato com o LNBio)*
 - [x] Colunas alinhadas com o esquema de [US-25]
@@ -1156,6 +1158,8 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 ---
 
 ### [US-21] Concordância da classificação automática com o observador (kappa)
+
+> **A medição do kappa está pulada (decisão de 12/11/2026).** Não há rótulos de estratégia de um observador humano, nem do laboratório nem em fonte pública (`docs/decisoes-sem-laboratorio.md` §5.1). O cálculo do kappa pode ser implementado e testado com rótulos sintéticos, sem valor de aceite.
 
 - **Épico / Módulo:** Estratégia — validação (`src/barnes/strategy/`)
 - **Prioridade Sugerida:** Alta

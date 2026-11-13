@@ -273,3 +273,9 @@ relatório declara a limitação. O que muda nos cards:
 - **US-05:** "a plataforma não rotaciona" passa a ser suposição da equipe, não
   resposta do LNBio.
 - **Comitê de ética (D4):** fora do escopo do documento.
+- **Anotação manual: pulada.** A busca por fontes públicas (Zenodo, Hugging Face, GitHub,
+  Mendeley, OSF e literatura) não achou anotação humana de Barnes maze; o único
+  dataset com Barnes (Multi-Task Mouse Behaviour) tem pose gerada por máquina. As
+  comparações com anotação manual saem do critério de pronto: US-12 inteira, as
+  comparações de US-13, US-15, US-16, US-17 e US-18, o kappa da US-21 e a comparação
+  de hazard ratios da US-25 (`decisoes-sem-laboratorio.md` §5.1).

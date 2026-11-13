@@ -199,6 +199,17 @@ Registro das rodadas de ajuste contra a anotação manual (US-12, US-13).
 
 Alvos: encontrar ≤ 0,5 s · entrar ≤ 0,3 s.
 
+### 4.0 Calibração contra anotação manual: pulada (12/11/2026)
+
+Não há anotação manual de Barnes maze: o laboratório não foi contatado, e a busca por
+fontes públicas não encontrou nenhuma com pontuação humana
+([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §5.1). Por decisão
+da equipe, **as comparações com anotação manual estão puladas**: a calibração da
+US-12, as comparações da US-13, US-15, US-16 e US-17, o r ≥ 0,95 da US-18 e o kappa
+da US-21. As seções 4.1 a 4.3 abaixo ficam como registro do ferramental, que
+continua pronto caso uma anotação apareça. Nenhum limiar deste documento foi
+calibrado contra anotação humana.
+
 ### 4.1 Situação da entrega US-12/US-13 em 05/11/2026
 
 **D3: entrega não confirmada; calibração real bloqueada por dependência externa.**
@@ -227,7 +238,8 @@ como realizada nesta implementação.
 ### 4.2 Convenções técnicas propostas para entrada — confirmar em C2/G3
 
 - Área circular: raio do buraco em pixels × escala cm/px × `entrar.raio_fator`;
-  fronteira inclusiva. Fator e duração mínima permanecem `null` até definição.
+  fronteira inclusiva. Fator 1,0 e duração mínima de 0,2 s por decisão da equipe
+  (12/11/2026, sem G3).
 - Segmento contínuo: focinho válido dentro da área em quadros consecutivos;
   saída, focinho ausente ou salto de quadro interrompem a duração. Um quadro
   isolado não comprova duração positiva.
@@ -253,10 +265,10 @@ no [relatório da entrega](status-us12-us13.md).
 
 ### 4.3 Distância da US-18 contra a medida manual (SCRUM-225)
 
-**Aceite r ≥ 0,95: bloqueado por dependência externa — mantido como limitação
-declarada** (decisão da equipe em 12/11/2026,
-[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §5; a equipe pode
-medir ela mesma se sobrar tempo, seguindo a lista abaixo). Não há medida manual de
+**Aceite r ≥ 0,95: pulado** — não há medida manual de distância nem fonte pública
+com ela (decisão da equipe em 12/11/2026,
+[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §5.1). A lista abaixo
+fica como roteiro caso uma referência apareça. Não há medida manual de
 distância para nenhum trial. A ferramenta está pronta: `barnes metrics distance-validate
 --manual <csv>` pareia o resultado atual de cada trial (gravado por `metrics
 displacement`) com a referência. O relatório traz r, viés médio e erro relativo médio,

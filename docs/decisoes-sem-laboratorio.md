@@ -197,6 +197,35 @@ própria agora. Estratégia:
 >
 > Decidido em: 12/11/2026 · por: equipe (aprovado por Lucas) · opção: manter como limitação (medir continua possível se sobrar tempo)
 
+### 5.1 Resultado da busca por anotação pública (12/11/2026)
+
+**Nenhuma fonte pública com anotação manual de Barnes maze foi encontrada.** Buscas
+em Zenodo (API, 18 registros com "Barnes maze"), Hugging Face, GitHub, Mendeley
+Data, OSF e na literatura:
+
+| Fonte | O que tem | Por que não serve |
+|---|---|---|
+| Multi-Task Mouse Behaviour (Cobos et al., [Zenodo 23035460](https://zenodo.org/records/23035460), [Hugging Face](https://huggingface.co/datasets/juancobos/MultiTaskMouseBehaviour)) | 1.847 quadros contínuos (~62 s, 30 fps) de um camundongo no Barnes, pose de 27 pontos, CC BY-NC 4.0 | Anotação **gerada por máquina** (SAM 3 + DeepLabCut SuperAnimal), sem correção humana declarada; sem eventos por buraco |
+| BarnesTrack ([alexbastuba](https://github.com/alexbastuba/barnestrack), [DDFsco](https://github.com/DDFsco/BarnesTrack)) | ferramentas de análise com correção manual | vídeos não publicados; correções do autor sobre a saída da ferramenta, sem pontuação humana independente |
+| Illouz et al. 2016/2024; classificação de estratégia por rede neural (2025) | trials rotulados por classificadores humanos | dados só "sob pedido", não publicados |
+| Lee, Jung e Royer (eLife), labirinto automatizado de 24 vestíbulos | trajetórias e código no GitHub | outro aparato; estratégias inferidas por modelo, não pontuadas à mão |
+| Rat_Track (Mendeley Data), Zenodo 3608658 | software; vídeos de campo aberto, labirinto em cruz e nado forçado | sem vídeo ou anotação de Barnes |
+
+**Decisão (instrução do Lucas, 12/11/2026): as partes que dependem de anotação
+manual são puladas.** Não são feitas nem simuladas, e saem do critério de pronto
+dos cards:
+
+- US-12 inteira (calibração dos limiares de descoberta contra anotação);
+- a comparação com anotação manual da US-13 (entrada), da US-15 (sequência), da
+  US-16 (cronometragem), da US-17 (contagem de erros) e da US-18 (r ≥ 0,95);
+- nos sprints seguintes: o kappa da US-21 contra observador e a comparação de
+  hazard ratios com um `trials.csv` manual (US-25, cenário 2).
+
+As ferramentas continuam no software e testadas com dados sintéticos
+(`events calibrate`, `compare_sequence`, `metrics distance-validate`). Se uma
+anotação manual aparecer, a comparação pode ser feita sem mudar código. O relatório
+declara que nenhum limiar foi calibrado contra anotação humana.
+
 ## 6. Tempo limite do trial (B5 — US-16)
 
 **Decisão: 180 s; trial sem entrada no alvo até lá é censurado.**
