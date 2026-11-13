@@ -1,0 +1,113 @@
+video:
+  frame_width: 200
+  frame_height: 150
+  fps: 20.0
+  frame_count: 96
+  pre_release_frames: 10
+
+geometria:
+  center_x_px: 100.0
+  center_y_px: 75.0
+  platform_radius_px: 60.0
+  hole_count: 8
+  start_angle_deg: 0.0
+  target_hole_number: 0
+  hole_radius_px: 6.0
+
+cm_per_px: 0.5
+rotation_deg: 0.0
+
+intervalo:
+  start_s: 0.5
+  end_s: 4.75
+  start_frame: 10
+  end_frame: 95
+
+limiares_teste:
+  encontrar:
+    distancia_cm: 3.0
+    angulo_graus: 30.0
+  entrar:
+    raio_fator: 1.0
+    duracao_minima_s: 0.2
+  erro:
+    criterio: qualquer_buraco_incorreto
+  trial:
+    tempo_limite_s: 10.0
+
+pose:
+  cobertura: 1.0
+
+descobertas:
+  - buraco: 0
+    quadro: 76
+    t_s: 3.3
+    distancia_cm: 2.242640687119289
+    angulo_deg: 0.0
+  - buraco: 2
+    quadro: 27
+    t_s: 0.8500000000000001
+    distancia_cm: 2.5
+    angulo_deg: 0.0
+
+entradas:
+  - buraco: 2
+    quadro: 27
+    t_s: 0.8500000000000001
+    confirmado_em_s: 1.05
+    dwell_s: 0.6499999999999999
+    total_latency: null
+    total_distance_cm: null
+  - buraco: 0
+    quadro: 76
+    t_s: 3.3
+    confirmado_em_s: 3.5
+    dwell_s: 0.9500000000000002
+    total_latency: 3.3
+    total_distance_cm: 68.18376618407355
+
+sequencia:
+  - ordem: 1
+    buraco_platform: 2
+    angulo_deg_room: 90.0
+    inicio_s: 0.8500000000000001
+    alvo: false
+  - ordem: 2
+    buraco_platform: 0
+    angulo_deg_room: 0.0
+    inicio_s: 3.3
+    alvo: true
+
+erros:
+  total_errors: 1
+  primary_errors: 1
+  primary_censurado: false
+
+latencias:
+  primary_latency: 3.3
+  primary_distance: 68.18376618407355
+  primary_event: 1
+  total_latency: 3.3
+  total_distance: 68.18376618407355
+  total_event: 1
+
+trajeto:
+  distance_cm: 72.42640687119285
+  mean_speed_cm_s: 17.0415074991042
+  duration_s: 4.25
+  sample_count: 86
+  samples_outside_interval: 10
+  ideal_distance_cm: 30.0
+  route_efficiency: 0.41421356237309503
+
+# US-18 (metrics displacement): mesma série do contrato US-09, em cm.
+deslocamento:
+  distance_cm: 72.42640687119284
+  mean_speed_cm_s: 17.0415074991042
+  duration_s: 4.25
+  interpolated_fraction: 0.0
+  frames_used: 86
+  ponto: centro_corpo
+  speed_time_base_approx: false
+
+tolerancia_absoluta: 1.0e-6

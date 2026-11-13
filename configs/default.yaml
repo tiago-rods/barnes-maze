@@ -1,19 +1,20 @@
 # Limiares operacionais padrão
 #
-# ATENÇÃO — todos os valores estão em `null` de propósito, exceto
-# `encontrar.distancia_cm`/`angulo_graus` (US-11), marcados PROVISÓRIOS
-# abaixo por falta de resposta do laboratório — ver a nota ali.
+# ATENÇÃO — DECISÕES DA EQUIPE, SEM G3.
 #
-# Estes limiares NÃO são constantes de código e NÃO devem ser escolhidos pela
-# equipe. São parâmetros calibrados contra anotação manual, fixados em G3 e
-# aceitos por escrito pelo cliente (marco M1). Ver seção 1 da definição de escopo:
-# limiares escolhidos por conveniência produzem números coerentes, plausíveis,
-# bem formatados — e sem relação com o que o laboratório chama de latência.
+# O plano era preencher estes limiares só depois de `docs/definicoes-metricas.md`
+# assinado pelo laboratório (G3, marco M1), a partir de anotação manual. O
+# contato com o LNBio não ocorreu. Em 12/11/2026 a equipe aprovou valores
+# próprios, registrados com a justificativa de cada um em
+# `docs/decisoes-sem-laboratorio.md` (opção b da seção 16). Eles NÃO são o
+# acordo do laboratório nem foram calibrados contra anotação: são convenções
+# da equipe, rastreáveis em toda execução por `versao_definicoes` (copiada em
+# `execucao.limiares`). Se o laboratório responder, cada valor é revisto contra
+# a resposta — nunca o contrário.
 #
-# Preencher somente depois de `docs/definicoes-metricas.md` estar assinado.
-# A pergunta de origem está ao lado de cada chave.
+# A pergunta de origem está ao lado de cada chave. `null` aqui é intencional.
 
-versao_definicoes: null       # versão de docs/definicoes-metricas.md que gerou estes valores
+versao_definicoes: decisoes-equipe-2026-11-12-sem-G3   # docs/decisoes-sem-laboratorio.md
 
 # --- Evento: encontrar (US-11, US-12) -----------------------------------------
 # PROVISÓRIO, por falta de resposta do laboratório em G3 (C1) — não é o valor
@@ -29,19 +30,27 @@ encontrar:
   calibrado_contra_anotacao: false   # US-12: vira true após a calibração
 
 # --- Evento: entrar / checar fisicamente (US-13) ------------------------------
+# Decisão da equipe (C2, sem G3): docs/decisoes-sem-laboratorio.md, seção 7.
 entrar:
   focinho_dentro: true        # C2 — critério: focinho dentro do perímetro do buraco
-  duracao_minima_s: null      # C2 — duração mínima para contar como entrada
+  raio_fator: 1.0             # C2 — raio da área = raio físico calibrado * fator; 1.0 = o próprio buraco
+  duracao_minima_s: 0.2       # C2 — 5 quadros a 25 fps: filtra ruído de um quadro isolado
 
 # --- Evento: dwell (US-14) ----------------------------------------------------
+# RN02: o critério de permanência (região e continuidade) é o mesmo já usado
+# para "entrar" acima (entrar.raio_fator/focinho_dentro) — dwell não introduz
+# um novo critério espacial, só mede a duração do segmento de E. O dwell é
+# medido para todo evento de entrada, sem filtro por duração (Cenário 1 do
+# US-14): esta chave não é lida nem usada por barnes.events.entry; nenhum dwell
+# é descartado por ela. Fica null por decisão (decisoes-sem-laboratorio.md §7).
 dwell:
-  duracao_minima_s: null      # C2
+  duracao_minima_s: null      # C2 — null intencional; não consumido pelo cálculo de dwell
 
 # --- Erro (US-17) -------------------------------------------------------------
-# O que conta como erro vem da resposta do laboratório à pergunta C3 (Bloco C,
-# portão G3) — linhas 6-7 de docs/definicoes-metricas.md. Enquanto `criterio`
-# for null, barnes.metrics.errors.load_error_definition RECUSA a configuração
-# (total_errors/primary_errors não são contados); nenhum valor provisório.
+# O que conta como erro (pergunta C3, linhas 6-7 de docs/definicoes-metricas.md)
+# é decisão da equipe, sem G3: docs/decisoes-sem-laboratorio.md, seção 8. Com
+# `criterio` null, barnes.metrics.errors.load_error_definition RECUSA a
+# configuração (total_errors/primary_errors não são contados).
 # O erro é derivado só da sequência de visitação (US-15), nunca da trajetória:
 # trocar estes valores recalcula sem reprocessar vídeo nem trajetória (RN05).
 #   qualquer_buraco_incorreto: toda checagem de buraco que não é o alvo conta;
@@ -49,21 +58,24 @@ dwell:
 #   acima_de_duracao:          só conta checagem incorreta com
 #                              dwell >= duracao_minima_s (inclusivo, US-14).
 erro:
-  criterio: null              # C3 — "qualquer_buraco_incorreto" | "acima_de_duracao"
+  criterio: qualquer_buraco_incorreto   # C3 — "qualquer_buraco_incorreto" | "acima_de_duracao"
   duracao_minima_s: null      # C3 — segundos (> 0); só se criterio == "acima_de_duracao"
 
 # --- Estratégia de busca (US-20) ----------------------------------------------
 # Regra explícita e calibrável, não modelo treinado (seção 4 da definição).
+# Decisão da equipe (C4, sem G3): categorias de Harrison et al. (2006),
+# docs/decisoes-sem-laboratorio.md, seção 10. A semântica exata das chaves é
+# da US-20, ainda não implementada: revisar estes valores junto com ela.
 estrategia:
-  cruzamentos_centro_min: null      # C4 — limiar para "espacial"
-  adjacencia_angular_graus: null    # C4 — o que conta como buraco adjacente (depende de B2)
-  erros_ate_alvo_max: null          # C4
-  entropia_max_espacial: null       # C4
+  cruzamentos_centro_min: 1         # C4 — um cruzamento do centro antes do alvo descaracteriza "espacial"
+  adjacencia_angular_graus: 18      # C4 — um buraco de distância = 360/N; 18 com 20 buracos (revisar se N != 20)
+  erros_ate_alvo_max: 3             # C4 — erros admitidos antes do alvo na busca espacial
+  entropia_max_espacial: null       # C4 — fora da regra de Harrison; null intencional
 
 # --- Trial (US-03, US-16) -----------------------------------------------------
 trial:
-  tempo_limite_s: null        # B5 — define a censura (primary_event/total_event, US-16);
-                              # null = latências recusadas (barnes.metrics.latency)
+  tempo_limite_s: 180         # B5 — decisão da equipe (decisoes-sem-laboratorio.md §6);
+                              # define a censura (primary_event/total_event, US-16)
   recorte_inicio_s: null      # US-03 — null = detecção automática da soltura
   recorte_fim_s: null
 

@@ -48,6 +48,27 @@ def test_is_fps_variable_false_for_bframe_alternating_pattern() -> None:
     assert is_fps_variable(timestamps) is False
 
 
+@pytest.mark.parametrize("extra_short", [1, 35])
+def test_is_fps_variable_false_for_unbalanced_bframe_pattern(extra_short: int) -> None:
+    # Vídeo completo do LNBio (23/06/2020): 4.699 intervalos de ~32ms contra 4.664
+    # de ~48ms. Com um grupo um pouco maior, a mediana cai em 32ms e todos os 48ms
+    # ficavam 50% acima dela — falso positivo. O padrão é o mesmo do teste acima.
+    intervals = [32.0, 48.0] * 200 + [32.0] * extra_short
+    timestamps = [0.0]
+    for interval in intervals:
+        timestamps.append(timestamps[-1] + interval)
+    assert is_fps_variable(timestamps) is False
+
+
+def test_is_fps_variable_true_for_dropped_frame_in_bframe_pattern() -> None:
+    # Um salto real (quadro perdido: ~80ms a mais) continua detectado no meio do padrão.
+    intervals = [32.0, 48.0] * 100 + [120.0] + [32.0, 48.0] * 100
+    timestamps = [0.0]
+    for interval in intervals:
+        timestamps.append(timestamps[-1] + interval)
+    assert is_fps_variable(timestamps) is True
+
+
 def test_load_trial_video_happy_path(make_mp4) -> None:
     video_path = make_mp4(frame_count=15, fps=15.0)
 

@@ -16,7 +16,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - **Definição de Pronto.** Adaptada ao domínio: o projeto é um pipeline Python offline com saída em CSV/Parquet/SQLite, não uma aplicação web. Os itens de DoD do template referentes a frontend e console foram substituídos pelos equivalentes deste contexto.
 - **Vocabulário de eventos.** Herdado do pipeline existente: **S** = soltura, **D** = descoberta (encontrar), **E** = entrada. Fase primária = S→D; fase de decisão = D→E; período total = S→E.
 - **Escala de estimativa.** Fibonacci: **3 (P) · 5 (M) · 8 (G) · 13 (GG)**. Os valores 1 e 2 não aparecem porque nenhum card deste projeto é trivial — todos carregam custo fixo de vídeo, calibração ou configuração. O valor 13 extrapola a escala sugerida no guia e é usado deliberadamente em dois cards, como sinalização de que devem ser fatiados. As estimativas foram **derivadas das tarefas**, não do enunciado da história: cada tarefa recebeu peso P (0,5), M (1) ou G (2) unidades, e a soma foi remapeada para a escala ancorando em US-15 = 3 pontos. O método está detalhado ao final.
-- **Distribuição por sprint.** Os cinco sprints têm **6 cards cada**. Essa alocação difere da que consta em `Apresentacao.md` e `definicao-projeto.md`: quatro cards — **US-05, US-10, US-18 e US-24** — foram antecipados em um sprint. A justificativa de cada movimento está registrada nas regras de negócio do próprio card e resumida ao final deste documento.
+- **Distribuição por sprint.** No planejamento original, os cinco sprints tinham **6 cards cada**. No planejamento do Sprint 3 (novembro de 2026), o **US-17 e o US-18 passaram do S4 para o S3**: o S3 ficou com 8 cards e o S4 com 4 (ver **Distribuição por sprint e esforço**). A alocação original difere da que consta em `Apresentacao.md` e `definicao-projeto.md`: quatro cards — **US-05, US-10, US-18 e US-24** — foram antecipados em um sprint. A justificativa de cada movimento está registrada nas regras de negócio do próprio card e resumida ao final deste documento.
 
 ---
 
@@ -632,6 +632,14 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-12] Calibração dos limiares de descoberta contra a anotação manual
 
+> **Card pulado (12/11/2026).** Ele inteiro depende de anotação manual de eventos, que não existe: nem do laboratório, com quem não houve contato, nem em fonte pública (`docs/decisoes-sem-laboratorio.md` §5.1). A ferramenta (`barnes events calibrate`) está pronta e testada com dados sintéticos; os limiares em uso são decisão da equipe, sem calibração.
+
+> Entrega técnica em 05/11/2026: comparação, histórico auditável, bloqueio D3 e
+> incorporação de evidência implementados. **Calibração real bloqueada:** D3 não
+> foi confirmada e G3 segue pendente. As tarefas de execução/aceite abaixo
+> continuam abertas; [status por ticket](status-us12-us13.md) e
+> [guia dos comandos](eventos-calibracao-entrada.md).
+
 - **Épico / Módulo:** Eventos por buraco (`src/barnes/events/`, `docs/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 3 Pontos · 1,5–2 dias (depende do laboratório, não acelera com IA)
@@ -674,7 +682,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [ ] Levar os limiares acordados ao PI para o aceite por escrito de **G3**
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Comparação com anotação manual executada em trial de referência
+- [ ] Comparação com anotação manual executada em trial de referência *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 - [ ] Tolerância de 0,5 s atingida, ou divergência escalada ao PI com registro
 - [ ] Histórico das rodadas de calibração registrado
 - [ ] `docs/definicoes-metricas.md` atualizado e submetido ao aceite do PI
@@ -682,6 +690,11 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 ---
 
 ### [US-13] Evento de entrada (E) — quando o animal *checa* fisicamente o buraco
+
+> Entrega técnica em 05/11/2026: detector, hesitação, consistência, persistência e
+> exportação implementados e testados com dados sintéticos. Área/duração ainda
+> dependem de C2/G3; a comparação real depende de D3. Não marcar o card aceito
+> antes dessas validações. Ver [status por ticket](status-us12-us13.md).
 
 - **Épico / Módulo:** Eventos por buraco (`src/barnes/events/`)
 - **Prioridade Sugerida:** Alta
@@ -723,20 +736,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 #### Tarefas
 - [ ] Confirmar os critérios de área e de duração mínima saídos de **G3** (pergunta C2)
-- [ ] Declarar os critérios em `barnes.yaml`
-- [ ] Implementar a detecção de focinho dentro da área do buraco
-- [ ] Implementar o critério de duração mínima contínua
-- [ ] Implementar o cálculo da hesitação D→E em tempo e em distância
-- [ ] Implementar a verificação de consistência (entrada sem descoberta prévia)
-- [ ] Comparar com a anotação manual e verificar a tolerância de 0,3 s
-- [ ] Documentar o critério em `docs/definicoes-metricas.md`
+- [x] Declarar os critérios em `barnes.yaml` — em `configs/default.yaml`; valores C2 pendentes permanecem `null`
+- [x] Implementar a detecção de focinho dentro da área do buraco
+- [x] Implementar o critério de duração mínima contínua
+- [x] Implementar o cálculo da hesitação D→E em tempo e em distância
+- [x] Implementar a verificação de consistência (entrada sem descoberta prévia)
+- [ ] Comparar com a anotação manual e verificar a tolerância de 0,3 s *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
+- [x] Documentar o critério em `docs/definicoes-metricas.md` — convenção técnica proposta, ainda sem G3
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Detecção de entrada implementada com área e duração parametrizadas
-- [ ] Hesitação D→E calculada em tempo e distância
-- [ ] Verificação de consistência descoberta→entrada implementada
-- [ ] Comparação com anotação manual executada
-- [ ] Critérios documentados em `docs/definicoes-metricas.md`
+- [x] Detecção de entrada implementada com área e duração parametrizadas
+- [x] Hesitação D→E calculada em tempo e distância
+- [x] Verificação de consistência descoberta→entrada implementada
+- [ ] Comparação com anotação manual executada *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
+- [x] Critérios documentados em `docs/definicoes-metricas.md` — aceite G3 pendente
 
 ---
 
@@ -775,20 +788,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** o evento fica marcado como apoiado em dados interpolados nas saídas.
 
 #### Tarefas
-- [ ] Definir o critério de permanência em `configs/`, coerente com a definição de entrada
-- [ ] Implementar o cálculo de dwell por evento, em segundos
-- [ ] Implementar a marcação de dwell apoiado em quadros interpolados
-- [ ] Implementar a verificação do invariante soma(dwell) ≤ duração do intervalo útil
-- [ ] Escrever o teste automatizado do invariante
-- [ ] Conferir os valores manualmente em um trial de referência
-- [ ] Documentar a coluna no dicionário de dados
+- [x] Definir o critério de permanência em `configs/`, coerente com a definição de entrada
+- [x] Implementar o cálculo de dwell por evento, em segundos
+- [x] Implementar a marcação de dwell apoiado em quadros interpolados
+- [x] Implementar a verificação do invariante soma(dwell) ≤ duração do intervalo útil
+- [x] Escrever o teste automatizado do invariante
+- [x] Conferir os valores manualmente em um trial de referência
+- [x] Documentar a coluna no dicionário de dados
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Cálculo de dwell por evento implementado
-- [ ] Teste automatizado do invariante soma(dwell) ≤ duração do trial
-- [ ] Marcação de dwell sobre trecho interpolado
-- [ ] Coluna documentada no dicionário de dados
-- [ ] Valores conferidos manualmente em um trial de referência
+- [x] Cálculo de dwell por evento implementado
+- [x] Teste automatizado do invariante soma(dwell) ≤ duração do trial
+- [x] Marcação de dwell sobre trecho interpolado
+- [x] Coluna documentada no dicionário de dados
+- [x] Valores conferidos manualmente em um trial de referência (trial sintético local, id=7 na dev DB; `details.dwell_s`/`dwell_interpolado` confirmados por conta em `evento_buraco` e em `entries.csv` via `barnes events enter` real — ver `docs/eventos-calibracao-entrada.md`)
 
 ---
 
@@ -828,20 +841,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** ambas derivam exclusivamente da sequência persistida, sem novo acesso ao Parquet de trajetória.
 
 #### Tarefas
-- [ ] Fixar o esquema da sequência como contrato de dados dos Épicos E e F
-- [ ] Comunicar o contrato aos responsáveis por métricas e por estratégia
-- [ ] Implementar a montagem da sequência ordenada por tempo
-- [ ] Incluir a posição no referencial da sala em cada item da sequência
-- [ ] Implementar a exportação tabular da sequência
-- [ ] Escrever teste de ordenação temporal estrita
-- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95
+- [x] Fixar o esquema da sequência como contrato de dados dos Épicos E e F
+- [ ] Comunicar o contrato aos responsáveis por métricas e por estratégia (ação de equipe — `docs/contrato-sequencia.md` está pronto para esse aviso, mas a comunicação em si não foi feita aqui)
+- [x] Implementar a montagem da sequência ordenada por tempo
+- [x] Incluir a posição no referencial da sala em cada item da sequência
+- [x] Implementar a exportação tabular da sequência
+- [x] Escrever teste de ordenação temporal estrita
+- [ ] Comparar com a sequência anotada manualmente e verificar a concordância ≥ 0,95 *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)* (ferramenta pronta: `compare_sequence`)
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Sequência de visitação persistida e exportável
-- [ ] Posição no referencial da sala incluída em cada item
-- [ ] Comparação com anotação manual executada em trial de referência
-- [ ] Contrato de dados documentado para os Épicos E e F
-- [ ] Testes garantindo ordenação temporal estrita
+- [x] Sequência de visitação persistida e exportável (`barnes events sequence`, conferido contra o Postgres de dev com um trial sintético de referência — essa conferência pegou e corrigiu uma colisão real de `inicio_s` em reentradas que compartilham a mesma descoberta)
+- [x] Posição no referencial da sala incluída em cada item
+- [ ] Comparação com anotação manual executada em trial de referência *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
+- [x] Contrato de dados documentado para os Épicos E e F (`docs/contrato-sequencia.md`)
+- [x] Testes garantindo ordenação temporal estrita
 
 ---
 
@@ -889,21 +902,21 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a diferença é **≤ 1 s**.
 
 #### Tarefas
-- [ ] Confirmar com o laboratório o tempo limite do trial e o tratamento do insucesso (pergunta B5)
-- [ ] Declarar o tempo limite em `configs/`
-- [ ] Implementar `primary_latency` e `total_latency` a partir dos eventos D e E
-- [ ] Implementar as versões em distância, `primary_distance` e `total_distance`
-- [ ] Implementar a marcação de censura em `primary_event` e `total_event`
-- [ ] Implementar o ancoramento do tempo zero no evento S
-- [ ] Escrever teste garantindo que nenhum trial censurado é descartado
-- [ ] Comparar com a cronometragem manual e verificar a tolerância de 1 s
+- [x] Confirmar com o laboratório o tempo limite do trial e o tratamento do insucesso (pergunta B5) *(sem contato com o LNBio: decisão da equipe, 180 s com censura — `docs/decisoes-sem-laboratorio.md` §6)*
+- [x] Declarar o tempo limite em `configs/` *(`trial.tempo_limite_s: 180`, decisão da equipe)*
+- [x] Implementar `primary_latency` e `total_latency` a partir dos eventos D e E *(`metrics.latency.compute_target_latencies`)*
+- [x] Implementar as versões em distância, `primary_distance` e `total_distance` *(`travelled_distance_cm`, pelo centro do corpo)*
+- [x] Implementar a marcação de censura em `primary_event` e `total_event`
+- [x] Implementar o ancoramento do tempo zero no evento S
+- [x] Escrever teste garantindo que nenhum trial censurado é descartado *(`tests/metrics/test_latency.py::test_no_censored_trial_is_discarded`)*
+- [ ] Comparar com a cronometragem manual e verificar a tolerância de 1 s *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Latências de descoberta e total calculadas em tempo e em distância
-- [ ] Colunas de censura preenchidas conforme convenção do pipeline existente (1 = evento, 0 = censurado)
-- [ ] Teste automatizado garantindo que nenhum trial censurado é descartado
-- [ ] Comparação com cronometragem manual executada
-- [ ] Tempo limite parametrizado a partir da resposta de B5
+- [x] Latências de descoberta e total calculadas em tempo e em distância
+- [x] Colunas de censura preenchidas conforme convenção do pipeline existente (1 = evento, 0 = censurado)
+- [x] Teste automatizado garantindo que nenhum trial censurado é descartado
+- [ ] Comparação com cronometragem manual executada *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
+- [x] Tempo limite parametrizado a partir da resposta de B5 *(`trial.tempo_limite_s: 180`, decisão da equipe sem G3)*
 
 ---
 
@@ -912,7 +925,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - **Épico / Módulo:** Métricas por trial (`src/barnes/metrics/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 3 Pontos · 1,5–2 dias
-- **Sprint:** S4
+- **Sprint:** S3 (puxado do S4 no planejamento do Sprint 3)
 
 #### Narrativa de Usuário
 - **Como** pesquisador,
@@ -943,77 +956,81 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a diferença absoluta é **≤ 1**.
 
 #### Tarefas
-- [ ] Confirmar a definição de erro usada pelo laboratório (pergunta C3)
-- [ ] Declarar a definição como parâmetro em `configs/`
-- [ ] Implementar a contagem de erros a partir da sequência de [US-15]
-- [ ] Implementar a sequência ordenada dos buracos incorretos checados
-- [ ] Implementar o recorte "erros até a descoberta do alvo", usado pela classificação de estratégia
-- [ ] Escrever teste de recálculo sob nova definição, sem acesso ao vídeo
-- [ ] Comparar com a contagem manual e verificar a tolerância de 1 erro
-- [ ] Registrar a definição adotada em `docs/definicoes-metricas.md`
+- [x] Confirmar a definição de erro usada pelo laboratório (pergunta C3) *(sem contato com o LNBio: decisão da equipe, `qualquer_buraco_incorreto` — `docs/decisoes-sem-laboratorio.md` §8)*
+- [x] Declarar a definição como parâmetro em `configs/` *(`erro.criterio: qualquer_buraco_incorreto`, decisão da equipe)*
+- [x] Implementar a contagem de erros a partir da sequência de [US-15] *(`metrics.errors.compute_errors`, sobre `events.sequence.to_visit_sequence`)*
+- [x] Implementar a sequência ordenada dos buracos incorretos checados
+- [x] Implementar o recorte "erros até a descoberta do alvo", usado pela classificação de estratégia
+- [x] Escrever teste de recálculo sob nova definição, sem acesso ao vídeo *(`test_recalculation_under_new_definition_never_touches_video_or_trajectory`)*
+- [ ] Comparar com a contagem manual e verificar a tolerância de 1 erro *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
+- [x] Registrar a definição adotada em `docs/definicoes-metricas.md` *(nota da US-17 e decisão C3 em `definicoes-metricas.md`)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Definição de erro parametrizada em `configs/`
-- [ ] Contagem, sequência e erros-até-o-alvo implementados
-- [ ] Recálculo sem acesso a vídeo verificado por teste
-- [ ] Comparação com contagem manual executada
-- [ ] Definição adotada registrada em `docs/definicoes-metricas.md`
+- [x] Definição de erro parametrizada em `configs/`
+- [x] Contagem, sequência e erros-até-o-alvo implementados
+- [x] Recálculo sem acesso a vídeo verificado por teste
+- [ ] Comparação com contagem manual executada *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)*
+- [x] Definição adotada registrada em `docs/definicoes-metricas.md`
 
 ---
 
-### [US-18] Distância, velocidade média e velocidade por fase
+### [US-18] Distância total e velocidade média
 
 - **Épico / Módulo:** Métricas por trial (`src/barnes/metrics/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 5 Pontos · 2,5–4 dias
-- **Sprint:** S4
+- **Sprint:** S3
+
+> **Versão estreitada (novembro de 2026).** A versão anterior pedia velocidades por fase
+> (`primary_speed`, `decision_speed`, `total_speed`), série de velocidade instantânea e
+> `decision_speed` ausente. Isso saiu do escopo porque o `barnes_maze.py` deriva as
+> velocidades por fase do próprio `trials.csv`. Decisões em `docs/revisao-cards.md`.
 
 #### Narrativa de Usuário
 - **Como** pesquisador,
-- **Quero** distância total, velocidade média e velocidade instantânea discriminadas por fase,
-- **Para que** eu avalie a busca independentemente do tempo total e compare grupos como o pipeline atual já faz.
+- **Quero** a distância total percorrida e a velocidade média do animal em cada trial,
+- **Para que** eu avalie a busca independentemente do tempo total.
 
 #### Regras de Negócio & Escopo
-- [RN01] Distância em **cm** e velocidades em **cm/s**, sempre a partir da série calibrada de [US-09].
-- [RN02] As velocidades são reportadas por fase, na convenção do pipeline existente: **primária** (S→D), **de decisão** (D→E) e **total** (S→E) — correspondendo a `primary_speed`, `decision_speed` e `total_speed`.
-- [RN03] A série de velocidade instantânea é exportável quadro a quadro.
-- [RN04] Trechos interpolados por [US-10] entram no cálculo mas a fração interpolada é reportada junto da métrica.
-- [RN05] Critério de aceite do projeto: correlação com a medida manual de referência **r ≥ 0,95**.
-- [RN06] Quando a fase de decisão não existe (animal descobriu mas não entrou), `decision_speed` é ausente — nunca zero.
-- [RN07] O pipeline do laboratório modela tempo e distância simetricamente. Este card produz a metade em distância do par que [US-16] produz em tempo, e ambos alimentam as colunas de `trials.csv` em [US-25].
+- [RN01] Distância em **cm** e velocidade em **cm/s**, sempre a partir da série calibrada de [US-09].
+- [RN02] Uma única velocidade por trial: a média sobre o intervalo útil inteiro. Não há segmentação da trajetória por fase.
+- [RN03] As velocidades por fase que o pipeline do laboratório usa não são calculadas aqui — a confirmar com o laboratório. *(Sem contato com o LNBio: o `barnes_maze.py` as deriva de distância e latência; decisão da equipe em `docs/decisoes-sem-laboratorio.md` §3.)*
+- [RN04] As distâncias por fase exigidas por `trials.csv` vêm de outros cards; este card não participa delas.
+- [RN05] Trechos interpolados por [US-10] entram no cálculo, com a fração interpolada reportada junto da métrica.
+- [RN06] Critério de aceite: correlação da distância com a medida manual **r ≥ 0,95**.
+- [RN07] A velocidade média herda a base temporal; a distância não. Em trials com fps variável, a velocidade sai com ressalva.
 
 #### Critérios de Aceite (Cenários Executáveis / BDD)
-- **Cenário 1: Fluxo principal — métricas por fase**
-  - **Dado que** um trial tem eventos S, D e E registrados,
+- **Cenário 1: Fluxo principal — distância e velocidade média**
+  - **Dado que** um trial tem intervalo útil definido e trajetória calibrada,
   - **Quando** as métricas de deslocamento são calculadas,
-  - **Então** o sistema reporta distância total em cm e as três velocidades (primária, decisão, total) em cm/s.
+  - **Então** o sistema reporta a distância total em cm e a velocidade média em cm/s — uma de cada por trial.
 
 - **Cenário 2: Correlação com a referência manual**
   - **Dado que** um conjunto de trials teve a distância medida manualmente,
   - **Quando** os valores automáticos são correlacionados com os manuais,
   - **Então** **r ≥ 0,95**.
 
-- **Cenário 3: Fluxo alternativo — trial sem fase de decisão**
-  - **Dado que** o animal descobriu o alvo mas não entrou,
+- **Cenário 3: Trial com fps variável**
+  - **Dado que** o vídeo do trial recebeu aviso de fps variável em [US-01],
   - **Quando** as métricas são calculadas,
-  - **Então** `decision_speed` sai como ausente, e não como 0, para não enviesar as comparações entre grupos.
+  - **Então** a distância é reportada normalmente e a velocidade média sai marcada com a ressalva de base temporal aproximada.
 
 #### Tarefas
-- [ ] Implementar a integração da distância percorrida a partir da série calibrada
-- [ ] Implementar a segmentação da trajetória pelas fases S→D, D→E e S→E
-- [ ] Implementar as velocidades médias por fase (`primary_speed`, `decision_speed`, `total_speed`)
-- [ ] Implementar a série de velocidade instantânea e sua exportação
-- [ ] Implementar o valor ausente quando a fase de decisão não existe
-- [ ] Implementar o relato da fração interpolada junto da métrica
-- [ ] Alinhar os nomes de coluna com o esquema de [US-25]
-- [ ] Medir a correlação com a referência manual e verificar r ≥ 0,95
+- [x] SCRUM-219 — Implementar a integração da distância percorrida a partir da série calibrada
+- [x] SCRUM-220 — Implementar a velocidade média sobre o intervalo útil (distância ÷ duração)
+- [x] SCRUM-221 — Implementar o relato da fração interpolada junto da métrica
+- [x] SCRUM-222 — Marcar a velocidade média com a ressalva de base temporal nos trials com fps variável
+- [x] SCRUM-223 — Confirmar com o laboratório se as velocidades por fase do `barnes_maze.py` são derivadas ou lidas do CSV *(sem contato com o LNBio: derivadas, pela evidência no código; registrado como decisão da equipe em `docs/decisoes-sem-laboratorio.md` §3)*
+- [x] SCRUM-224 — Alinhar os nomes de coluna com o esquema de [US-25]
+- [ ] SCRUM-225 — Medir a correlação com a referência manual e verificar r ≥ 0,95 *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)* (ferramenta pronta: `barnes metrics distance-validate`)
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Distância e velocidades por fase implementadas
-- [ ] Série de velocidade instantânea exportável
-- [ ] Correlação com referência manual calculada e ≥ 0,95
-- [ ] Ausência (não zero) tratada e coberta por teste
-- [ ] Colunas alinhadas com o esquema de [US-25]
+- [x] Distância total e velocidade média implementadas, uma de cada por trial
+- [ ] Correlação com referência manual calculada e ≥ 0,95 *(**pulado**: não há anotação manual do laboratório nem pública — `docs/decisoes-sem-laboratorio.md` §5.1)* (ferramenta pronta: `barnes metrics distance-validate`)
+- [x] Ressalva de fps variável aplicada à velocidade média
+- [x] Resposta do laboratório sobre as velocidades por fase registrada *(substituída por decisão da equipe: não houve contato com o LNBio)*
+- [x] Colunas alinhadas com o esquema de [US-25]
 
 ---
 
@@ -1141,6 +1158,8 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 ---
 
 ### [US-21] Concordância da classificação automática com o observador (kappa)
+
+> **A medição do kappa está pulada (decisão de 12/11/2026).** Não há rótulos de estratégia de um observador humano, nem do laboratório nem em fonte pública (`docs/decisoes-sem-laboratorio.md` §5.1). O cálculo do kappa pode ser implementado e testado com rótulos sintéticos, sem valor de aceite.
 
 - **Épico / Módulo:** Estratégia — validação (`src/barnes/strategy/`)
 - **Prioridade Sugerida:** Alta
@@ -1378,6 +1397,7 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 #### Regras de Negócio & Escopo
 - [RN01] O esquema de saída reproduz o do laboratório: `animal`, `group`, `day`, `trial`, `primary_latency`, `primary_distance`, `primary_event`, `delta_latency`, `delta_distance`, `total_latency`, `total_distance`, `total_event`.
 - [RN02] Nomes de coluna, ordem, unidades e codificação de censura (1 = evento observado, 0 = censurado) seguem o padrão existente, sem adaptação do lado do laboratório.
+  - *Decisão da equipe (12/11/2026, sem o LNBio): o padrão existente é o que o `barnes_maze.py` lê — latências em s, **distâncias em metros** (o software calcula em cm e converte na exportação), colunas de `trials.csv` e `probes.csv` conforme `docs/decisoes-sem-laboratorio.md` §4.*
 - [RN03] O `barnes_maze.py` atual deve **carregar e processar o CSV gerado sem edição de código** — este é o teste de aceitação do card.
 - [RN04] Colunas adicionais produzidas por este projeto (estratégia, entropia, eficiência de rota, cobertura de pose, identificação da execução) vão em **arquivo complementar** ou em colunas ao final, sem quebrar a leitura do arquivo pelo pipeline existente.
 - [RN05] Cada linha exportada carrega a identificação da execução ([US-27]), para que se saiba qual modelo e quais limiares produziram aquele número.
@@ -1573,20 +1593,33 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** o commit traz a justificativa e a referência à decisão que motivou a mudança.
 
 #### Tarefas
-- [ ] Selecionar e recortar um trecho curto de trial para servir de fixture
-- [ ] Versionar o vídeo e seus metadados em `tests/fixtures/`
-- [ ] Registrar os valores esperados de todas as métricas, com as tolerâncias da seção 10
-- [ ] Implementar o teste de regressão comparando a saída do pipeline ao esperado
-- [ ] Garantir tempo de execução aceitável para rodar a cada mudança
-- [ ] Incorporar o teste ao fluxo obrigatório antes de merge na branch principal
-- [ ] Documentar no README a política de atualização dos valores esperados
+- [x] Selecionar e recortar um trecho curto de trial para servir de fixture *(vídeo **sintético** de 96 quadros, 200×150 px, 20 fps — não um trecho de trial real; a trajetória é injetada como pose sintética, porque não há modelo treinado no repositório)*
+- [x] Versionar o vídeo e seus metadados em `tests/fixtures/` *(`trial_referencia.mp4`, 33 KB, e `trial_referencia_esperado.yaml`)*
+- [x] Registrar os valores esperados de todas as métricas, com as tolerâncias da seção 10 *(tolerância única, absoluta, de 1e-6: o fixture é determinístico. Inclui a US-18, acrescentada na integração de 12/11/2026)*
+- [x] Implementar o teste de regressão comparando a saída do pipeline ao esperado *(`tests/test_us28_trial_referencia.py`; cada falha diz a métrica, o esperado e o obtido)*
+- [x] Garantir tempo de execução aceitável para rodar a cada mudança *(~1,5 s)*
+- [ ] Incorporar o teste ao fluxo obrigatório antes de merge na branch principal *(hoje é regra de processo, na revisão do PR; não há CI no repositório)*
+- [x] Documentar no README a política de atualização dos valores esperados
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Vídeo curto de referência versionado em `tests/fixtures/`
-- [ ] Valores esperados de todas as métricas registrados com tolerância
-- [ ] Teste automatizado implementado e executando em tempo aceitável
-- [ ] Teste incorporado ao fluxo obrigatório antes de merge
-- [ ] Política de atualização do esperado documentada no README
+- [x] Vídeo curto de referência versionado em `tests/fixtures/`
+- [x] Valores esperados de todas as métricas registrados com tolerância *(as implementadas até o Sprint 3, US-18 incluída; estratégia, kappa e análises longitudinais entram quando existirem)*
+- [x] Teste automatizado implementado e executando em tempo aceitável
+- [ ] Teste incorporado ao fluxo obrigatório antes de merge *(só regra de processo; ver ressalvas)*
+- [x] Política de atualização do esperado documentada no README
+
+> **Ressalvas da integração (12/11/2026).**
+> - O fixture não exercita lacunas de pose (fração interpolada = 0), trial
+>   censurado nem fps variável. Esses casos ficam nos testes unitários de cada
+>   módulo. Um segundo fixture com lacuna e censura mudaria todos os esperados,
+>   então fica para quando houver motivo.
+> - Os limiares ficam no YAML do fixture, desacoplados de `configs/default.yaml`.
+>   Hoje coincidem com as decisões da equipe, exceto o tempo limite (10 s, porque
+>   o vídeo tem menos de 5 s).
+> - **Ao implementar US-19 a US-22 (Sprint 4), acrescentar as métricas novas ao
+>   esperado**, com justificativa no commit (RN04), como foi feito com a US-18.
+> - O "fluxo obrigatório antes de merge" depende de CI, que o repositório não
+>   tem. Até lá, o revisor do PR roda `uv run pytest tests/test_us28_trial_referencia.py`.
 
 ---
 
@@ -1705,10 +1738,20 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 |---|---|---|---|---|
 | **S1** | 1–2 | US-01, US-02, US-03, US-04, US-05, US-06 | 31 · **19,75 p-d** | **M1** — escopo congelado, definições assinadas |
 | **S2** | 3–4 | US-07, US-08, US-09, US-10, US-11, US-27 | 31 · **19,75 p-d** | **M2** — trajetória com orientação e primeiro evento de buraco |
-| **S3** | 5–6 | US-12, US-13, US-14, US-15, US-16, US-28 | 23 · **14,25 p-d** | **M3** — eventos calibrados e travados por teste de regressão |
-| **S4** | 7–8 | US-17, US-18, US-19, US-20, US-21, US-22 | 32 · **20,00 p-d** | **M4** — métricas, estratégia e Incremento 1 entregues |
+| **S3** | 5–6 | US-12, US-13, US-14, US-15, US-16, **US-17**, **US-18**, US-28 | 31 · **19,25 p-d** | **M3** — eventos calibrados e travados por teste de regressão |
+| **S4** | 7–8 | US-19, US-20, US-21, US-22 | 24 · **15,00 p-d** | **M4** — métricas, estratégia e Incremento 1 entregues |
 | **S5** | 9–10 | US-23, US-24, US-25, US-26, US-29, US-30 | 36 · **22,50 p-d** | **M5** — validação · **M6** — entrega |
-| | | **6 cards por sprint · 30** | **153 pontos · 96,25 pessoa-dias** | |
+| | | **30 cards** | **153 pontos · 96,25 pessoa-dias** | |
+
+> **Replanejamento do Sprint 3 (novembro de 2026).** Dois cards foram puxados do S4
+> para o S3; o total do backlog não muda.
+>
+> - **US-17** (3 pontos · 1,75 p-d), contagem e sequência de erros. Depende da sequência
+>   de visitação da US-15, que está no mesmo sprint.
+> - **US-18** (5 pontos · 3,25 p-d), numa versão estreitada: uma distância e uma
+>   velocidade média por trial, sem velocidades por fase (ver o card e
+>   `docs/revisao-cards.md`). Com isso, o card deixou de depender do evento E (US-13) e
+>   passou a depender só da série de pose (US-09/US-10), já entregue no S2.
 
 > **p-d = pessoa-dias.** Conversão pela régua, usando o ponto médio de cada faixa: 3 → 1,75 dias · 5 → 3,25 dias · 8 → 5 dias · 13 → 10 dias.
 
@@ -1781,6 +1824,11 @@ Com a régua absoluta, o backlog deixa de ser uma lista de tamanhos relativos e 
 
 A carga entre sprints ficou plana: **de 14,25 (S3) a 22,5 (S5) pessoa-dias**, amplitude de 8,25. O S3 é deliberadamente mais leve — é o sprint seguinte ao aperto de pose e serve de colchão para o que escorregar do S2. Vale manter assim: se trabalho for puxado para dentro dele, o colchão desaparece.
 
+> **Atualização (novembro de 2026):** com o US-17 e o US-18 puxados para o S3, a carga
+> passou a ir **de 15,00 (S4) a 22,5 (S5) pessoa-dias**, amplitude de 7,5, e o S3 subiu
+> para 19,25. O colchão do S3 foi consumido por esses dois cards; o S4 virou o sprint
+> mais leve.
+
 **Nenhum card permanece em 13 pontos.** As três quebras ([US-07], [US-10], [US-30]) resolveram os casos que a régua marcava como obrigatórios, e o maior card do backlog agora é de 8 pontos.
 
 Alavancas restantes, caso a dedicação acordada fique abaixo de 2 dias por semana:
@@ -1846,8 +1894,8 @@ Os cards ficaram contíguos por sprint, o que mantém o quadro legível: S1 = US
 | US-12 | US-11 (S2) + **D3** (anotação manual) | Externa, bloqueante |
 | US-13 | US-11 (S2), US-09, US-10 | Técnica |
 | US-15 | US-11, US-13 | Técnica — contrato de dados |
-| US-17, US-20 | US-15 (S3) | Técnica — fonte única |
-| US-18 | US-09 (S2), US-11 (S2), US-13 (S3) | Técnica — velocidade por fase exige o evento E |
+| US-17, US-20 | US-15 (S3; **mesmo sprint** para US-17) | Técnica — fonte única |
+| US-18 | US-09 (S2), US-10 (S2) | Técnica — série calibrada com a marca de interpolação (versão estreitada: sem fases, não depende mais de US-11/US-13) |
 | US-21 | US-20 (**mesmo sprint**) + **D3** | Externa, bloqueante |
 | US-24, US-26 | US-05 (S1 — referencial da sala) | Técnica — sem isso, resultado sem significado |
 | US-25 | US-16 (S3), US-18 (S4) | Técnica — é a única ponte para a análise do laboratório |

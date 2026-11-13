@@ -13,6 +13,15 @@ duas coisas é a exportação compatível com `trials.csv` e `probes.csv` (US-25
 A definição de escopo completa — cards, riscos, cronograma e critérios de aceite
 — está em `definicao-projeto.md`, no diretório acima deste repositório.
 
+> **Aviso para quem continuar a implementação (atualizado em 12/11/2026):**
+> o laboratório nunca foi contatado, então G3 não fecha. Os limiares de
+> `configs/default.yaml` são **decisões da equipe**, cada uma justificada em
+> [`docs/decisoes-sem-laboratorio.md`](docs/decisoes-sem-laboratorio.md)
+> (`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`); `encontrar` (3 cm/30°)
+> continua provisório. Não há anotação manual, nem do laboratório nem pública:
+> as comparações com anotação manual foram puladas (§5.1 do mesmo documento).
+> Testes sintéticos não são aceite do laboratório.
+
 ## O que este projeto entrega
 
 O que só ele pode entregar, e que a anotação manual não consegue produzir:
@@ -27,7 +36,7 @@ O que só ele pode entregar, e que a anotação manual não consegue produzir:
 ```
 barnes-maze/
 ├── configs/
-│   ├── default.yaml              # limiares operacionais — valores vêm de G3
+│   ├── default.yaml              # limiares operacionais — decisões da equipe (sem G3)
 │   ├── pose/single_animal.yaml   # perfil inicial de treino SLEAP-NN
 │   └── montagens/README.md       # geometria persistida no PostgreSQL
 ├── src/barnes/
@@ -274,16 +283,91 @@ ficam registradas numa execução:
 uv run barnes pose review --trial 1
 ```
 
+## Calibração de eventos e entrada física (US-12/US-13)
+
+Para detecção de entrada (E), hesitação D→E e calibração contra anotação manual
+(US-12/US-13), use os novos comandos:
+
+```powershell
+uv run barnes db migrate
+uv run barnes events enter --trial 1 --config configs/default.yaml
+uv run barnes events calibrate --trial 1 --kind descoberta --annotations data/annotations/d3.json
+uv run barnes events calibrate --trial 1 --kind entrada --annotations data/annotations/d3.json
+uv run barnes events calibration-evidence data/calibration/events/<uuid>.json
+```
+
+Substitua os IDs/caminhos pelos dados reais. A área e a duração de entrada são
+decisões da equipe (raio ×1,0 e 0,2 s); sem anotação manual (D3), a calibração
+registra bloqueio.
+Veja o [guia de operação](docs/eventos-calibracao-entrada.md) e o
+[status por subtask](docs/status-us12-us13.md). A validação experimental e o
+aceite do laboratório continuam pendentes.
+
+## Trial de referência e teste de regressão (US-28)
+
+`tests/fixtures/trial_referencia.mp4` é um vídeo curto e sintético (96
+quadros, 200x150px, 20fps), versionado em Git, que exercita o carregamento
+de vídeo e o recorte do intervalo útil (US-01/US-03) de ponta a ponta.
+`tests/fixtures/trial_referencia_esperado.yaml` registra a geometria, os
+limiares e os valores esperados de todas as métricas do pipeline para esse
+vídeo. `tests/test_us28_trial_referencia.py` roda o pipeline sobre o fixture
+e falha se qualquer métrica sair da tolerância declarada, identificando qual
+métrica e por quanto:
+
+```powershell
+uv run pytest tests/test_us28_trial_referencia.py -v
+```
+
+Sem modelo de pose treinado no repositório (`models/` é gitignorado), a
+trajetória não vem de inferência real: é injetada diretamente como
+`PoseFrames` sintético, com a mesma função de trajeto usada para desenhar o
+vídeo (`_scenario_path`), e passada por `barnes.pose.series.build_series`
+para entrar no contrato oficial da trajetória. O vídeo exercita US-01/US-03
+de verdade; os estágios de pose em diante usam essa trajetória conhecida de
+antemão, não o conteúdo de pixel do vídeo.
+
+Os limiares usados (`encontrar`, `entrar`, `erro`, `trial`) são fixados no
+próprio YAML do fixture, não lidos de `configs/default.yaml`, para que o teste
+proteja o **cálculo** e não a configuração. Hoje eles coincidem com as decisões
+da equipe (`docs/decisoes-sem-laboratorio.md`), exceto o tempo limite: 10 s,
+porque o vídeo do fixture tem menos de 5 s (produção usa 180 s).
+
+**Atualizar os valores esperados exige justificativa no commit.** Ajustar o
+esperado só para fazer o teste passar depois de uma mudança é exatamente o
+que este teste existe para impedir. Uma atualização legítima (ex.: mudança
+de definição acordada em G3, correção de um bug no cálculo anterior) precisa
+dizer, na mensagem do commit, qual métrica mudou, por quê, e qual decisão ou
+issue motivou a mudança.
+
+Este teste **passa antes de qualquer merge na branch principal** — é a
+defesa do projeto contra regressão silenciosa com cinco pessoas mexendo em
+módulos interdependentes. Hoje isso é uma regra de processo (revisão de PR),
+não uma verificação automática de CI; não há `.github/workflows` configurado
+neste repositório ainda.
+
+Cobertura atual: pose, descoberta (D), entrada (E) e dwell, sequência de
+visitação, erros, latência/distância com censura (S→D e S→E), distância
+percorrida, velocidade média e eficiência de rota pela rota da US-02 (CSV em
+px), e distância/velocidade média/fração interpolada pela rota da US-18 (série
+do contrato, `compute_displacement`), conferindo que as duas rotas concordam.
+**Não coberto** (ainda não implementado no pipeline): classificação de
+estratégia/entropia (US-20), kappa contra observador (US-21), DTW/Fréchet e
+demais análises longitudinais. **Não exercitado pelo fixture**: lacunas de pose
+(a fração interpolada é 0), trial censurado (o animal entra no alvo antes do
+tempo limite) e fps variável — esses casos ficam nos testes unitários de cada
+módulo.
+
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:
 
-**Não preencha os limiares de `configs/default.yaml` por conta própria.** Eles
-estão em `null` de propósito. Distância e ângulo de "encontrar", dwell, critério
-de erro, limiares de estratégia — todos vêm do laboratório via portão G3 e são
-calibrados contra anotação manual. Valores escolhidos por conveniência produzem
-números plausíveis e bem formatados, sem relação com o que o laboratório chama
-de latência. Ver `docs/definicoes-metricas.md`.
+**Não mude os limiares de `configs/default.yaml` por conta própria.** Sem
+contato com o laboratório, cada valor é uma decisão da equipe registrada em
+`docs/decisoes-sem-laboratorio.md`; o `dwell` continua `null` de propósito.
+Mudar um limiar exige atualizar esse documento junto com o YAML. Valores
+escolhidos por conveniência produzem números plausíveis e bem formatados, sem
+relação com o que o laboratório chama de latência. Ver
+`docs/definicoes-metricas.md`.
 
 **Confira a licença de todo pacote antes de adotar.** US-30 exige nenhuma
 dependência GPL/AGPL na distribuição. Por isso `scipy` + `scikit-learn` em vez

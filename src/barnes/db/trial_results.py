@@ -16,6 +16,10 @@ aplicação, não pelo banco.
 Cada resultado leva junto a cobertura de pose atual do trial e a marcação de
 qualidade (US-10 RN06), lidas da VIEW `qualidade_pose` (migração 0008): um trial
 de qualidade insuficiente nunca aparece nas saídas sem a marcação.
+
+US-18 (migração 0010): `interpolated_fraction` é gravada junto da distância (RN05).
+A ressalva de base temporal da velocidade (RN07) é derivada na leitura de
+`trials.fps_is_variable` (`speed_time_base_approx`), nunca gravada como flag.
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ class StoredTrialResult:
     execucao_id: int
     cobertura_pose: float | None = None
     qualidade_pose: PoseQuality | None = None
+    interpolated_fraction: float | None = None
+    speed_time_base_approx: bool = False
 
 
 def insert_trial_result(
@@ -47,11 +53,12 @@ def insert_trial_result(
     trial_id: int,
     *,
     execucao_id: int,
-    distance_cm: float,
-    speed_mean_cm: float,
+    distance_cm: float | None,
+    speed_mean_cm: float | None,
     route_efficiency: float | None,
     px_per_10cm_used: float,
     calculated_at: datetime,
+    interpolated_fraction: float | None = None,
 ) -> int:
     """Grava as métricas de um processamento de trial (US-02 RN03, US-27 RN02).
 
@@ -62,13 +69,16 @@ def insert_trial_result(
         conn: Conexão psycopg aberta.
         trial_id: Id do trial processado.
         execucao_id: Execução que produziu estas métricas — obrigatória.
-        distance_cm: Distância percorrida, em cm.
-        speed_mean_cm: Velocidade média, em cm/s.
+        distance_cm: Distância percorrida, em cm; `None` se não calculável (US-18:
+            sem pose válida — ausência não é zero).
+        speed_mean_cm: Velocidade média, em cm/s; `None` se não calculável.
         route_efficiency: Razão caminho-ideal/caminho-percorrido, ou `None`
             se nenhuma distância ideal foi informada.
         px_per_10cm_used: Escala da montagem no momento do cálculo —
             congelada aqui para auditoria (US-02 RN05).
         calculated_at: Quando este cálculo foi feito.
+        interpolated_fraction: Fração interpolada das amostras usadas (US-18
+            RN05), ou `None` quando a origem não marca interpolação.
 
     Returns:
         O id da nova linha em `trial_results`.
@@ -83,9 +93,9 @@ def insert_trial_result(
             """
             INSERT INTO trial_results (
                 trial_id, execucao_id, distance_cm, speed_mean_cm, route_efficiency,
-                px_per_10cm_used, calculated_at
+                px_per_10cm_used, calculated_at, interpolated_fraction
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -96,6 +106,7 @@ def insert_trial_result(
                 route_efficiency,
                 px_per_10cm_used,
                 calculated_at,
+                interpolated_fraction,
             ),
         )
         return cur.fetchone()[0]
@@ -109,7 +120,9 @@ _SELECT_WITH_STALENESS = """
                OR tr.px_per_10cm_used IS DISTINCT FROM mc.px_per_10cm) AS is_stale,
            tr.execucao_id,
            qp.cobertura_pose,
-           qp.qualidade AS qualidade_pose
+           qp.qualidade AS qualidade_pose,
+           tr.interpolated_fraction,
+           t.fps_is_variable AS speed_time_base_approx
     FROM trial_results tr
     JOIN trials t ON t.id = tr.trial_id
     JOIN maze_configs mc ON mc.id = t.maze_config_id
@@ -121,8 +134,13 @@ _LATEST_FIRST = " ORDER BY tr.trial_id, tr.calculated_at DESC NULLS LAST, tr.id 
 
 
 def _row_to_result(row: tuple) -> StoredTrialResult:
-    *fields, quality = row
-    return StoredTrialResult(*fields, None if quality is None else PoseQuality(quality))
+    *fields, quality, interpolated_fraction, speed_time_base_approx = row
+    return StoredTrialResult(
+        *fields,
+        qualidade_pose=None if quality is None else PoseQuality(quality),
+        interpolated_fraction=interpolated_fraction,
+        speed_time_base_approx=bool(speed_time_base_approx),
+    )
 
 
 def get_trial_result(conn: psycopg.Connection, trial_id: int) -> StoredTrialResult | None:
