@@ -6,6 +6,10 @@ entregues até agora (US-13, US-14, US-15 e US-18; US-12, US-16 e US-17 pelos
 testes)**. Cada passo indica o cenário de aceite do card (`docs/CARDS.md`, com os
 ajustes de `docs/revisao-cards.md`) que ele demonstra.
 
+Versão explicada, com o fluxo do pipeline e o que faz cada comando:
+[`roteiro-demonstracao.html`](roteiro-demonstracao.html) (abrir no navegador). Ela é
+gerada a partir deste arquivo; se o roteiro mudar, regenere o HTML.
+
 **Sem contato com o laboratório:** os limiares de entrada, tempo limite e erro usados
 a partir da B.16 são decisões da equipe, não do LNBio
 (`docs/decisoes-sem-laboratorio.md`). Diga isso ao cliente antes de mostrar números.
@@ -111,7 +115,7 @@ $env:BARNES_DATABASE_URL = "postgresql://barnes:barnes@localhost:5432/barnes_dem
 uv run barnes db migrate
 ```
 
-Esperado: a lista das migrações aplicadas, da `0001` até a `0008_us10_correcao_pose.sql`.
+Esperado: a lista das migrações aplicadas, da `0001` até a `0010_us18_deslocamento.sql`.
 
 O banco de **testes** (`barnes_test`, criado pelo Docker na primeira subida) também
 precisa das migrações, para que os testes de banco rodem na B.1 em vez de serem
@@ -1459,8 +1463,8 @@ de `configs/default.yaml`, nunca do código (RN02). O cálculo lê só a
 trajetória já tratada da B.12/B.13 (`$serie`), nunca o vídeo: mudar um limiar
 e rodar de novo não reprocessa nada (RN04).
 
-**Os limiares são PROVISÓRIOS — diga isso ao cliente.** O laboratório ainda
-não respondeu C1 em G3; os valores abaixo são uma faixa comum de rastreamento
+**Os limiares são PROVISÓRIOS — diga isso ao cliente.** Sem contato com o
+laboratório, C1 (G3) não fecha; os valores abaixo são uma faixa comum de rastreamento
 comportamental de roedores, sem citação verificada
 (`docs/definicoes-metricas.md`, seção 1):
 
@@ -1544,8 +1548,8 @@ uv run pytest tests/events/test_discovery.py tests/db/test_maze_configs.py -v
 ```
 
 O que mostrar no documento: a nota da US-11 em `docs/definicoes-metricas.md`
-(seção 1, linhas 1-2) — os limiares são provisórios até o laboratório
-responder C1.
+(seção 1, linhas 1-2) — os limiares continuam provisórios: sem contato com o
+laboratório, C1 não é calibrado.
 
 ---
 
@@ -1656,8 +1660,8 @@ código; falta o comando que os gera a partir de um trial gravado, e a exportaç
 O que dizer antes: uma distância em cm e uma velocidade média em cm/s **por trial**,
 calculadas a partir da série tratada da B.12/B.13 (`$serie`), nunca do vídeo. As
 velocidades por fase (`primary_speed` etc.) não são calculadas aqui, porque o
-`barnes_maze.py` do laboratório as deriva do próprio `trials.csv`. Peça a confirmação
-ao LNBio (pergunta em `docs/definicoes-metricas.md`, US-18 / SCRUM-223).
+`barnes_maze.py` do laboratório as deriva do próprio `trials.csv` (decisão da equipe,
+`docs/decisoes-sem-laboratorio.md` §3).
 
 A migração `0010` precisa estar aplicada no banco da demonstração:
 
