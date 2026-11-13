@@ -7,8 +7,27 @@ testes)**. Cada passo indica o cenário de aceite do card (`docs/CARDS.md`, com 
 ajustes de `docs/revisao-cards.md`) que ele demonstra.
 
 Versão explicada, com o fluxo do pipeline e o que faz cada comando:
-[`roteiro-demonstracao.html`](roteiro-demonstracao.html) (abrir no navegador). Ela é
-gerada a partir deste arquivo; se o roteiro mudar, regenere o HTML.
+[`roteiro-demonstracao.html`](roteiro-demonstracao.html) (abrir no navegador).
+
+**Rodar tudo de uma vez:** [`scripts/roteiro-demonstracao.ps1`](../scripts/roteiro-demonstracao.ps1)
+executa todos os blocos deste roteiro, em ordem, no mesmo processo (as variáveis passam
+de um passo para o outro). Ele mostra cada comando antes de rodar, pausa antes de cada
+passo que abre janela e não para nas recusas esperadas. Faça a Parte A.1 (commit,
+Docker, `uv sync`) antes:
+
+```text
+powershell -ExecutionPolicy Bypass -File scripts\roteiro-demonstracao.ps1
+powershell -ExecutionPolicy Bypass -File scripts\roteiro-demonstracao.ps1 -PausarEntrePassos
+```
+
+O HTML e o `.ps1` são **gerados a partir deste arquivo**. Depois de mudar o roteiro,
+gere os dois de novo (o gerador do HTML falha se algum bloco novo não tiver
+explicação em `scripts/gerar_roteiro_html.py`):
+
+```text
+uv run python scripts/gerar_roteiro_html.py
+uv run python scripts/gerar_roteiro_ps1.py
+```
 
 **Sem contato com o laboratório:** os limiares de entrada, tempo limite e erro usados
 a partir da B.16 são decisões da equipe, não do LNBio

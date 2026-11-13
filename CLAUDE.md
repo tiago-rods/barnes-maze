@@ -21,7 +21,13 @@ from — update it whenever `database/migrations/` changes.
 client demo (US-01..US-06, on a separate `barnes_demo` database); the team
 also uses it as the manual acceptance run. Whenever a `barnes` command's
 options, messages or behavior change, update the matching step there too —
-it breaks silently otherwise.
+it breaks silently otherwise. Two files are **generated** from it and must be
+regenerated after any change: `docs/roteiro-demonstracao.html` (explained guide,
+`uv run python scripts/gerar_roteiro_html.py` — fails if a new command block has
+no explanation in its `SECOES` table) and `scripts/roteiro-demonstracao.ps1`
+(runs every block in order, pausing before OpenCV windows;
+`uv run python scripts/gerar_roteiro_ps1.py`). The `.ps1` starts with A.2, which
+**drops and recreates `barnes_demo`** — never run it while a demo database is in use.
 
 ## Commands
 

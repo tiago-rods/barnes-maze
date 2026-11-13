@@ -1,0 +1,303 @@
+<title>Roteiro da Demonstração Barnes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: caderno de laboratório — trilho do pipeline no topo, índice fixo à esquerda, passos numerados em coluna de leitura. */
+:root {
+  --bg: #f4f6f3;
+  --surface: #ffffff;
+  --ink: #17211f;
+  --muted: #56635f;
+  --line: #d6ddd8;
+  --code-bg: #eef2ee;
+  --accent: #0d6b5f;
+  --accent-soft: #dcefe9;
+  --warm: #a3501a;
+  --warm-soft: #f7e7da;
+  --k-barnes: #0d6b5f;
+  --k-sql: #345aa8;
+  --k-teste: #5b7518;
+  --k-python: #7b4a9e;
+  --k-shell: #5f6b67;
+  --s1: #0d6b5f;
+  --s2: #345aa8;
+  --s3: #a3501a;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111715; --surface: #18201e; --ink: #e3eae7; --muted: #9caaa5; --line: #2b3633;
+    --code-bg: #0c1110; --accent: #4fbfac; --accent-soft: #173832; --warm: #e39a5f; --warm-soft: #3a2618;
+    --k-barnes: #4fbfac; --k-sql: #8fa9eb; --k-teste: #a9c46a; --k-python: #c39be0; --k-shell: #a3b0ab;
+    --s1: #4fbfac; --s2: #8fa9eb; --s3: #e39a5f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111715; --surface: #18201e; --ink: #e3eae7; --muted: #9caaa5; --line: #2b3633;
+  --code-bg: #0c1110; --accent: #4fbfac; --accent-soft: #173832; --warm: #e39a5f; --warm-soft: #3a2618;
+  --k-barnes: #4fbfac; --k-sql: #8fa9eb; --k-teste: #a9c46a; --k-python: #c39be0; --k-shell: #a3b0ab;
+  --s1: #4fbfac; --s2: #8fa9eb; --s3: #e39a5f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+
+.wrap { max-width: 1180px; margin: 0 auto; }
+
+/* Cabeçalho */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 32px; align-items: center; padding-block: 40px 28px; border-bottom: 1px solid var(--line); }
+.eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+.hero h1 { font-size: clamp(30px, 4.4vw, 44px); font-weight: 700; letter-spacing: -0.01em; }
+.lead { max-width: 64ch; margin: 14px 0 0; font-size: 16.5px; color: var(--ink); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 18px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13.5px; }
+.facts strong { color: var(--ink); font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.maze { width: 100%; max-width: 190px; height: auto; }
+.maze .platform { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.maze .hole { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; }
+.maze .hole.target { fill: var(--warm); stroke: var(--warm); }
+.maze .track { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 3 4; }
+.maze .release { fill: var(--accent); }
+
+/* Blocos de introdução */
+.intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; padding-block: 28px; border-bottom: 1px solid var(--line); }
+.intro h2 { font-size: 19px; margin-bottom: 10px; }
+.intro p, .intro li { font-size: 14.5px; }
+.intro ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.legend { display: grid; gap: 8px; margin: 0; }
+.legend div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 14px; }
+.legend dt { margin: 0; }
+.legend dd { margin: 0; color: var(--muted); }
+
+/* Trilho do pipeline */
+.flow { padding-block: 28px; border-bottom: 1px solid var(--line); }
+.flow-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 20px; margin-bottom: 14px; }
+.flow h2 { font-size: 19px; }
+.sprints { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.sprints span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.sprints .l1::before { background: var(--s1); } .sprints .l2::before { background: var(--s2); } .sprints .l3::before { background: var(--s3); }
+.stages { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; counter-reset: st; }
+.stage a { display: grid; gap: 2px; height: 100%; padding: 10px 12px 11px; background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--s1); border-radius: 6px; text-decoration: none; color: var(--ink); position: relative; }
+.stage.s2 a { border-top-color: var(--s2); } .stage.s3 a { border-top-color: var(--s3); }
+.stage a:hover { border-color: var(--accent); }
+.stage-n { font: 500 11px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.stage-name { font: 600 15px/1.3 var(--font-display); margin-top: 4px; }
+.stage-card { font: 12px/1.4 var(--font-mono); color: var(--muted); }
+.stage-out { font-size: 12.5px; color: var(--muted); margin-top: 4px; border-top: 1px dashed var(--line); padding-top: 5px; }
+.flow-foot { margin: 14px 0 0; font-size: 13.5px; color: var(--muted); max-width: 90ch; }
+
+/* Corpo: índice + passos */
+.body { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 40px; padding-top: 28px; }
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; font-size: 13.5px; padding-right: 6px; }
+.toc ol { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 1px; }
+.toc a { display: flex; gap: 8px; padding: 4px 6px; border-radius: 4px; text-decoration: none; color: var(--ink); line-height: 1.35; }
+.toc a:hover { background: var(--accent-soft); }
+.toc a.active { background: var(--accent-soft); color: var(--accent); }
+.toc-id { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-width: 34px; padding-top: 1px; }
+.toc-part { margin: 0 0 4px; font: 600 12px/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.toc-part a { padding-left: 6px; color: var(--muted); }
+.toc-mobile { display: none; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+.chip { font: 500 12.5px/1 var(--font-mono); padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--kc); }
+.chip[aria-pressed="false"] { opacity: 0.45; text-decoration: line-through; }
+.chip .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.k-barnes { --kc: var(--k-barnes); } .k-sql { --kc: var(--k-sql); } .k-teste { --kc: var(--k-teste); }
+.k-python { --kc: var(--k-python); } .k-shell { --kc: var(--k-shell); } .k-janela { --kc: var(--warm); }
+
+.part { font-size: 24px; margin: 36px 0 4px; padding-top: 8px; scroll-margin-top: 16px; }
+.part:first-of-type { margin-top: 14px; }
+.step { padding-block: 22px 8px; border-bottom: 1px solid var(--line); scroll-margin-top: 12px; }
+.step-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
+.sid { font: 600 15px/1 var(--font-mono); color: var(--accent); background: var(--accent-soft); padding: 7px 8px; border-radius: 5px; min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.step h3 { font-size: 21px; font-weight: 600; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.card-tag { font: 12px/1 var(--font-mono); padding: 4px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); }
+.sprint { font: 600 11px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; padding: 5px 7px; border-radius: 4px; color: var(--surface); background: var(--s1); }
+.sprint.s2 { background: var(--s2); } .sprint.s3 { background: var(--s3); }
+.about { max-width: 70ch; margin: 12px 0 14px; font-size: 15px; }
+
+.cmds { list-style: none; margin: 0; padding: 0; counter-reset: c; display: grid; gap: 12px; }
+.cmd { counter-increment: c; position: relative; padding: 12px 14px 12px 46px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.cmd::before { content: counter(c); position: absolute; left: 12px; top: 13px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); font: 500 11.5px/20px var(--font-mono); text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cmd[hidden] { display: none !important; }
+.cmd-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.kind { font: 500 11.5px/1 var(--font-mono); padding: 4px 7px; border-radius: 4px; color: var(--kc); border: 1px solid var(--kc); }
+.k-janela.kind { background: var(--warm-soft); }
+.copy { margin-left: auto; font: 500 12px/1 var(--font-body); padding: 5px 9px; border-radius: 4px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--ink); border-color: var(--muted); }
+.copy.done { color: var(--accent); border-color: var(--accent); }
+.why { margin: 8px 0 8px; max-width: 72ch; }
+.code { min-width: 0; }
+.code pre { margin: 0; background: var(--code-bg); border-radius: 5px; padding: 10px 12px; overflow-x: auto; font: 13px/1.5 var(--font-mono); white-space: pre; }
+.code pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.script summary { cursor: pointer; font-size: 13.5px; color: var(--accent); margin-bottom: 6px; }
+.expect { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.expect span { font: 600 11px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); margin-right: 6px; }
+
+.after { padding-block: 32px 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.after h2 { font-size: 19px; margin-bottom: 12px; }
+.gloss { margin: 0; display: grid; gap: 10px; }
+.gloss div { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.gloss dt { font-weight: 600; }
+.gloss dd { margin: 0; color: var(--muted); }
+.pend { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 14px; }
+.foot { margin-top: 32px; font-size: 13px; color: var(--muted); }
+
+@media (max-width: 920px) {
+  .body { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .toc { display: none; }
+  .toc-mobile { display: block; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 10px 12px; font-size: 14px; }
+  .toc-mobile summary { cursor: pointer; font-weight: 600; }
+  .toc-mobile ol { list-style: none; padding: 0; margin: 6px 0 10px; }
+  .toc-mobile a { display: flex; gap: 8px; padding: 4px 0; text-decoration: none; color: var(--ink); }
+  .intro, .after { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding-block: 28px 22px; }
+  .maze { max-width: 128px; order: -1; }
+  .legend div, .gloss div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .cmd { padding: 12px 12px 12px 40px; }
+  .cmd::before { left: 9px; }
+  .step-head { gap: 10px; }
+}
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div>
+      <p class="eyebrow">barnes-maze · roteiro de demonstração · Sprints 1 a 3</p>
+      <h1>Roteiro da Demonstração Barnes</h1>
+      <p class="lead">O projeto transforma o vídeo de um camundongo no labirinto de Barnes em dados: trajetória, eventos por buraco (encontrar e entrar), sequência de visitação e métricas. A estatística continua no <code>barnes_maze.py</code> do laboratório. Este guia percorre o roteiro de demonstração na ordem em que ele roda e explica cada etapa e cada comando.</p>
+      <ul class="facts">
+        <li><strong>%%TOTAL%%</strong> blocos de comando</li>
+        <li><strong>18</strong> passos de demonstração</li>
+        <li>banco <strong>barnes_demo</strong>, separado do de desenvolvimento</li>
+        <li>terminal <strong>PowerShell</strong>, o mesmo do início ao fim</li>
+      </ul>
+    </div>
+    %%MAZE%%
+  </header>
+
+  <section class="flow" aria-labelledby="flow-title">
+    <div class="flow-head">
+      <h2 id="flow-title">O pipeline, etapa por etapa</h2>
+      <div class="sprints"><span class="l1">Sprint 1</span><span class="l2">Sprint 2</span><span class="l3">Sprint 3</span></div>
+    </div>
+    <ol class="stages">%%FLUXO%%</ol>
+    <p class="flow-foot">Cada etapa consome o que a anterior gravou. A partir da série de pose (08), nada mais abre o vídeo: eventos e métricas leem só o Parquet. Duas peças atravessam tudo: a <a href="#s-b-14">proveniência</a> (US-27), que registra cada execução, e o <a href="#s-b-18">teste de regressão</a> (US-28), que trava os números. A próxima etapa, a exportação <code>trials.csv</code>/<code>probes.csv</code> para o <code>barnes_maze.py</code> (US-25), ainda não foi feita.</p>
+  </section>
+
+  <section class="intro">
+    <div>
+      <h2>Antes de começar</h2>
+      <ul>
+        <li>Rode tudo na pasta <code>barnes-maze</code>, <strong>no mesmo terminal</strong>: variáveis como <code>$v1</code>, <code>$exp</code>, <code>$maze</code> e <code>$t1</code> só existem nele.</li>
+        <li>Os ids são lidos do banco automaticamente; não há nada para copiar entre os passos.</li>
+        <li>Dois tipos de vídeo real: os de amostra (<code>$v1</code>, <code>$v2</code>, 15–20 s) servem ao Sprint 1, que precisa de dois trials da mesma câmera; o <strong>vídeo completo</strong> (<code>$vc</code>, 6 min, com caixa de partida e entrada no buraco de fuga) é o trial usado da B.9 em diante.</li>
+        <li>Não há modelo de pose treinado. A pose usada a partir da B.12 é <strong>simulada</strong> a partir do vídeo real, e isso precisa ser dito ao cliente.</li>
+        <li>Os limiares de eventos são <strong>decisões da equipe</strong>, sem contato com o laboratório (<code>docs/decisoes-sem-laboratorio.md</code>).</li>
+        <li>Faça commit de tudo antes; com o repositório sujo, toda execução sai como não reproduzível.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Como ler cada comando</h2>
+      <dl class="legend">
+        <div><dt><span class="kind k-barnes">barnes</span></dt><dd>O programa do projeto (<code>uv run barnes …</code>). É o que o laboratório vai usar.</dd></div>
+        <div><dt><span class="kind k-sql">SQL</span></dt><dd>Consulta direta ao Postgres pelo <code>psql</code> do contêiner: auditoria, ou atalhos que ainda não têm comando.</dd></div>
+        <div><dt><span class="kind k-teste">teste</span></dt><dd>Testes automáticos (<code>pytest</code>) e lint. Cobrem o que não dá para reproduzir ao vivo.</dd></div>
+        <div><dt><span class="kind k-python">Python</span></dt><dd>Script curto rodado na hora; só simula dados da demonstração.</dd></div>
+        <div><dt><span class="kind k-shell">PowerShell</span></dt><dd>Variáveis, arquivos e pastas.</dd></div>
+        <div><dt><span class="kind k-janela">abre janela</span></dt><dd>Precisa de mouse ou teclado numa janela OpenCV.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <div class="body">
+    <nav class="toc" aria-label="Passos do roteiro">%%TOC%%</nav>
+    <main>
+      <details class="toc-mobile"><summary>Ir para um passo</summary>%%TOC%%</details>
+      <div class="filters" role="group" aria-label="Filtrar comandos por tipo">Mostrar: %%FILTROS%%</div>
+      <h2 class="part" id="parte-a">Parte A · Preparação, antes da reunião</h2>
+      %%SECOES%%
+      <section class="after">
+        <div>
+          <h2>Glossário</h2>
+          <dl class="gloss">%%GLOSS%%</dl>
+        </div>
+        <div>
+          <h2>O que dizer sobre as pendências</h2>
+          <ul class="pend">%%PEND%%</ul>
+          <p class="foot">Gerado a partir de <code>docs/ROTEIRO-DEMONSTRACAO.md</code> em 12/11/2026. A tabela completa de pendências e a lista “Se algo der errado” estão no fim do roteiro.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  document.querySelectorAll(".copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var pre = btn.closest(".cmd").querySelector("pre code");
+      var text = pre.textContent;
+      function ok() { btn.textContent = "Copiado"; btn.classList.add("done"); setTimeout(function () { btn.textContent = "Copiar"; btn.classList.remove("done"); }, 1400); }
+      function fallback() {
+        var d = btn.closest(".cmd").querySelector("details");
+        if (d) d.open = true;
+        var r = document.createRange(); r.selectNodeContents(pre);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        btn.textContent = "Selecionado: Ctrl+C";
+      }
+      try {
+        navigator.clipboard.writeText(text).then(ok, fallback);
+      } catch (e) { fallback(); }
+    });
+  });
+
+  var chips = document.querySelectorAll(".chip");
+  function apply() {
+    var on = {};
+    chips.forEach(function (c) { on[c.dataset.kind] = c.getAttribute("aria-pressed") === "true"; });
+    document.querySelectorAll(".cmd").forEach(function (li) { li.hidden = !on[li.dataset.kind]; });
+  }
+  chips.forEach(function (c) {
+    c.addEventListener("click", function () {
+      c.setAttribute("aria-pressed", c.getAttribute("aria-pressed") === "true" ? "false" : "true");
+      apply();
+    });
+  });
+
+  var links = {};
+  document.querySelectorAll(".toc a[href^='#s-']").forEach(function (a) { links[a.getAttribute("href").slice(1)] = a; });
+  if ("IntersectionObserver" in window) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting && links[e.target.id]) {
+          Object.keys(links).forEach(function (k) { links[k].classList.remove("active"); });
+          links[e.target.id].classList.add("active");
+        }
+      });
+    }, { rootMargin: "-10% 0px -80% 0px" });
+    document.querySelectorAll(".step").forEach(function (s) { obs.observe(s); });
+  }
+})();
+</script>
