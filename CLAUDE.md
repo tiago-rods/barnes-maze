@@ -103,7 +103,13 @@ uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_
 Port 5433, not 5432, so it never collides with a native PostgreSQL on the
 dev machine. `database/docker-init/` creates the extra `barnes_test` DB on
 first volume creation. `get_connection()` loads `.env` via python-dotenv
-without overriding variables already set in the shell.
+without overriding variables already set in the shell. It adds
+`connect_timeout=10` unless the DSN sets its own (without it, a port with
+nothing listening hangs the command forever on Windows) and turns a failed
+connect into `DatabaseUnavailableError` — host/port/dbname only, never the
+password; it subclasses both `DatabaseConfigError` (clean CLI message) and
+`psycopg.OperationalError` (callers that already handle "database down" keep
+working).
 
 Tests never use the dev DB: `tests/conftest.py` overwrites
 `BARNES_DATABASE_URL` with `BARNES_TEST_DATABASE_URL` (or with an empty string
@@ -202,16 +208,20 @@ montagem's current values), never stored as a boolean — same philosophy as
 
 ### Video metadata quirk (US-01)
 
-`is_fps_variable()` compares each inter-frame interval to the **median**
-(not mean) with a **25%** tolerance — not 1%. Real LNBio footage showed
-B-frame reordering producing a legitimate, structural ~32ms/~48ms
-alternating pattern (still averaging to a constant 25fps); the original
-1%-of-mean check flagged essentially every real video as "variable fps",
-which defeats the point of the warning. Don't tighten this without
-re-testing against real (not synthetic) footage — synthetic test videos
-written via `cv2.VideoWriter` don't reproduce this jitter, which is why
-`tests/io/test_video.py` has a dedicated regression test for the alternating
-pattern alongside the synthetic-video tests.
+`is_fps_variable()` compares each inter-frame interval to the **mean**
+interval (`1 / fps_real`) with a **25%** tolerance — not 1%. Real LNBio
+footage showed B-frame reordering producing a legitimate, structural
+~32ms/~48ms alternating pattern (still averaging to a constant 25fps); the
+original 1%-of-mean check flagged essentially every real video as "variable
+fps", which defeats the point of the warning. A later **median** reference
+was also wrong: with almost half of each value, the median lands on 32 or
+48 ms depending on which group is a few intervals larger, and the whole other
+group exceeds 25% (false positive on the full 6-min LNBio video of
+23/06/2020). Against the mean, the pattern deviates ~20% whatever the balance.
+Don't change this without re-testing against real (not synthetic) footage —
+synthetic test videos written via `cv2.VideoWriter` don't reproduce this
+jitter, which is why `tests/io/test_video.py` has dedicated regression tests
+for the balanced and unbalanced alternating pattern.
 
 ### Configuration is data, not code
 

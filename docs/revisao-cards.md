@@ -5,6 +5,15 @@ vamos usar postgresql ao invés de SQLite
 - Podemos começar com suporte somente para mp4
 
 - Desconsiderar cenário 2 ou mudar a forma que está descrito
+- **Correção de 12/11/2026 (vídeo completo do LNBio, 23/06/2020, 6 min):** o vídeo
+  era marcado como fps variável por engano. Ele tem o padrão de B-frames
+  (~32/48 ms, média exata de 25 fps), mas com 4.699 intervalos curtos contra 4.664
+  longos a mediana caía em 32 ms e todos os de 48 ms passavam de 25%. A referência
+  passou a ser o intervalo **médio** (`1 / fps_real`); um quadro perdido continua
+  detectado. Trials gravados antes da correção mantêm o `fps_is_variable` antigo.
+- **US-03, mesmo vídeo:** a detecção automática da soltura dispara com a mão do
+  experimentador (4,4 s), 77 s antes da soltura real (caixa de partida levantada aos
+  81,5 s). Em vídeos com caixa de partida, o recorte é manual.
 
 #### tarefas
 - [ ] Implementar o leitor de vídeo em `src/barnes/io/` com OpenCV/FFmpeg

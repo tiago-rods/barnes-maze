@@ -14,9 +14,13 @@ import numpy as np
 
 SUPPORTED_EXTENSIONS = {".mp4"}
 # 25%: vídeo real com B-frames mostrou um padrão normal e legítimo de
-# intervalos alternando ~32ms/~48ms (desvio de ~20% em torno da mediana),
-# sem que o fps seja de fato variável — a tolerância cobre esse jitter
-# estrutural do codec sem deixar de pegar quebras reais maiores.
+# intervalos alternando ~32ms/~48ms (desvio de ~20% em torno do intervalo
+# médio de 40ms), sem que o fps seja de fato variável — a tolerância cobre
+# esse jitter estrutural do codec sem deixar de pegar quebras reais maiores.
+# A referência é o intervalo MÉDIO, não a mediana: com quase metade de cada
+# valor, a mediana cai em 32ms ou em 48ms conforme o desempate, e todos os
+# intervalos do outro grupo passam de 25% (falso positivo no vídeo completo
+# do LNBio de 23/06/2020: 4.699 intervalos de ~32ms contra 4.664 de ~48ms).
 FPS_VARIABILITY_TOLERANCE = 0.25
 
 
@@ -101,20 +105,20 @@ def is_fps_variable(
 
     Args:
         timestamps_ms: Carimbo de tempo (ms) de cada quadro, em ordem.
-        tolerance: Desvio relativo máximo aceito entre um intervalo e a
-            mediana dos intervalos (ex.: 0.25 = 25%).
+        tolerance: Desvio relativo máximo aceito entre um intervalo e o
+            intervalo médio do vídeo, ``1 / fps_real`` (ex.: 0.25 = 25%).
 
     Returns:
-        True se algum intervalo entre quadros fugir da mediana além da
-        tolerância informada.
+        True se algum intervalo entre quadros fugir do intervalo médio além
+        da tolerância informada.
     """
     if len(timestamps_ms) < 3:
         return False
     intervals = np.diff(np.asarray(timestamps_ms, dtype=float))
-    median_interval = np.median(intervals)
-    if median_interval <= 0:
+    mean_interval = intervals.mean()
+    if mean_interval <= 0:
         return False
-    relative_deviation = np.abs(intervals - median_interval) / median_interval
+    relative_deviation = np.abs(intervals - mean_interval) / mean_interval
     return bool((relative_deviation > tolerance).any())
 
 
