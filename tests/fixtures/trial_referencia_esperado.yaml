@@ -100,4 +100,14 @@ trajeto:
   ideal_distance_cm: 30.0
   route_efficiency: 0.41421356237309503
 
+# US-18 (metrics displacement): mesma série do contrato US-09, em cm.
+deslocamento:
+  distance_cm: 72.42640687119284
+  mean_speed_cm_s: 17.0415074991042
+  duration_s: 4.25
+  interpolated_fraction: 0.0
+  frames_used: 86
+  ponto: centro_corpo
+  speed_time_base_approx: false
+
 tolerancia_absoluta: 1.0e-6
