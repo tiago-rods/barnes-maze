@@ -62,10 +62,11 @@ def _config(tmp_path, body):
 # --- Definição em configs/ (RN01, SCRUM-211) ----------------------------------------------
 
 
-def test_production_config_keeps_c3_null_and_is_refused():
-    # Até o laboratório responder C3, a definição de produção fica null e é recusada.
-    with pytest.raises(ErrorConfigError, match=r"erro\.criterio.*C3"):
-        load_error_definition(REPO_ROOT / "configs" / "default.yaml")
+def test_production_config_uses_the_team_decision_for_c3():
+    # Sem contato com o laboratório, C3 é decisão da equipe (sem G3):
+    # docs/decisoes-sem-laboratorio.md, seção 8.
+    definicao = load_error_definition(REPO_ROOT / "configs" / "default.yaml")
+    assert definicao == QUALQUER
 
 
 def test_null_criterion_is_refused_naming_the_key_and_c3(tmp_path):

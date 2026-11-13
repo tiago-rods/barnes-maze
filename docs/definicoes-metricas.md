@@ -21,23 +21,36 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 > aceitos por escrito por quem decide (C6). Esta é a única defesa do grupo se,
 > na semana 9, alguém disser que a latência está errada.
 
+> **Atualização de 12/11/2026 — sem contato com o laboratório.** O contato com o
+> LNBio não ocorreu, e este documento não será assinado (G3 não fecha). Para o
+> software produzir resultados, a equipe aprovou valores próprios para os
+> limiares abaixo, com a justificativa de cada um em
+> [`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md). Eles estão em
+> `configs/default.yaml` marcados como decisão da equipe
+> (`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`), não foram calibrados
+> contra anotação manual e entram no relatório como limitação. A defesa do
+> parágrafo acima continua valendo: são convenções da equipe, não o que o
+> laboratório chama de latência.
+
 ## 1. Limiares a acordar
 
-| # | Parâmetro | Chave em `default.yaml` | Valor acordado | Origem | Status |
+| # | Parâmetro | Chave em `default.yaml` | Valor em uso | Origem | Status |
 |---|---|---|---|---|---|
 | 1 | Distância para "encontrar" | `encontrar.distancia_cm` | 3 cm (provisório) | C1 | provisório (sem G3) |
 | 2 | Ângulo de orientação da cabeça | `encontrar.angulo_graus` | 30° (provisório) | C1 | provisório (sem G3) |
-| 3 | Critério de "entrar" | `entrar.focinho_dentro` | — | C2 | pendente |
-| 3a | Área de entrada, como fator do raio físico calibrado | `entrar.raio_fator` | — | C2 | pendente (`null`) |
-| 4 | Duração mínima de entrada | `entrar.duracao_minima_s` | — | C2 | pendente |
-| 5 | Duração mínima de dwell | `dwell.duracao_minima_s` | — | C2 | pendente |
-| 6 | O que conta como erro | `erro.criterio` | — | C3 | pendente |
-| 7 | Duração mínima do erro | `erro.duracao_minima_s` | — | C3 | pendente |
-| 8 | Estratégia — cruzamentos do centro | `estrategia.cruzamentos_centro_min` | — | C4 | pendente |
-| 9 | Estratégia — adjacência angular | `estrategia.adjacencia_angular_graus` | — | C4 · B2 | pendente |
-| 10 | Estratégia — erros até o alvo | `estrategia.erros_ate_alvo_max` | — | C4 | pendente |
-| 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | pendente |
-| 12 | Tempo limite do trial | `trial.tempo_limite_s` | — | B5 | pendente |
+| 3 | Critério de "entrar" | `entrar.focinho_dentro` | focinho dentro | C2 | decisão da equipe (sem G3), §7 |
+| 3a | Área de entrada, como fator do raio físico calibrado | `entrar.raio_fator` | 1,0 | C2 | decisão da equipe (sem G3), §7 |
+| 4 | Duração mínima de entrada | `entrar.duracao_minima_s` | 0,2 s | C2 | decisão da equipe (sem G3), §7 |
+| 5 | Duração mínima de dwell | `dwell.duracao_minima_s` | — (não é lida) | C2 | decisão da equipe: `null`, §7 |
+| 6 | O que conta como erro | `erro.criterio` | qualquer buraco incorreto | C3 | decisão da equipe (sem G3), §8 |
+| 7 | Duração mínima do erro | `erro.duracao_minima_s` | — (não se aplica) | C3 | decisão da equipe: `null`, §8 |
+| 8 | Estratégia — cruzamentos do centro | `estrategia.cruzamentos_centro_min` | 1 | C4 | decisão da equipe (sem G3), §10 |
+| 9 | Estratégia — adjacência angular | `estrategia.adjacencia_angular_graus` | 18° (20 buracos) | C4 · B2 | decisão da equipe (sem G3), §10 |
+| 10 | Estratégia — erros até o alvo | `estrategia.erros_ate_alvo_max` | 3 | C4 | decisão da equipe (sem G3), §10 |
+| 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | decisão da equipe: `null`, §10 |
+| 12 | Tempo limite do trial | `trial.tempo_limite_s` | 180 s | B5 | decisão da equipe (sem G3), §6 |
+
+As seções (§) da coluna Status são de `decisoes-sem-laboratorio.md`.
 
 > **US-11 (linhas 1-2) — valor PROVISÓRIO, não é o aceite de G3.** O cálculo de
 > distância focinho→buraco e do ângulo de orientação da cabeça, o carregamento
@@ -95,13 +108,18 @@ _A definir em G3._
 > - Sob `acima_de_duracao`, uma checagem incorreta sem dwell medido (US-14)
 >   impede o cálculo, com aviso: contá-la ou descartá-la seria inventar a duração.
 >
-> **Confirmar com o laboratório (C3):** se revisitas contam como novos erros, se
-> o limite de duração é inclusivo (≥) e se erros depois de achar o alvo entram
-> no total.
+> **C3 — decisão da equipe, sem o laboratório (12/11/2026,
+> [`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §8):** critério
+> `qualquer_buraco_incorreto`; revisitas contam como novos erros; o limite
+> inclusivo não se aplica a esse critério; erros depois de achar o alvo entram em
+> `total_errors`.
 
 ### Estratégias: aleatória, serial, espacial
-_A definir em G3 — é a regra que o classificador precisa reproduzir (US-20) e
-contra a qual o kappa é medido (US-21). Sem ela, não há como validar._
+_Não definido pelo laboratório (G3 não fecha). Decisão da equipe em 12/11/2026:
+categorias de Harrison et al. (2006) — espacial, serial e aleatória —, com os
+parâmetros da tabela da seção 1 (linhas 8-11); ver
+[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §10. Sem anotação
+manual, o kappa da US-21 não tem contra o que ser medido._
 
 ### Censura
 Trial em que o animal não encontrou o alvo dentro do tempo limite. Marcado,
@@ -116,17 +134,60 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 > Evento observado até o tempo limite → `*_event = 1` e latência = tempo do evento;
 > sem evento até o limite (ou evento depois dele) → `*_event = 0`, latência = tempo
 > limite e distância = percorrida até o limite. Tempo zero = S (início do intervalo
-> útil). Enquanto `trial.tempo_limite_s` (linha 12, B5) estiver `null`, o cálculo é
-> recusado com erro: nenhum valor provisório foi posto no lugar. "Detector não
+> útil). Se `trial.tempo_limite_s` (linha 12, B5) estiver `null`, o cálculo é
+> recusado com erro; desde 12/11/2026 ele vale 180 s por decisão da equipe
+> ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §6). "Detector não
 > executado" (hoje o de entrada, US-13) **não** é censura: `total_*` sai vazio, com
 > aviso. Distância percorrida pelo `centro_corpo`, atravessando lacunas de pose em
-> linha reta — **confirmar com o laboratório** qual ponto o `trials.csv` usa.
+> linha reta — ponto escolhido pela equipe, sem resposta do laboratório (§9).
+
+### Distância total e velocidade média
+
+> **US-18 — nota de implementação, não é a definição do laboratório
+> (`barnes.metrics.displacement`, `tests/metrics/test_displacement.py`,
+> `barnes metrics displacement`).**
+>
+> - **Uma** distância e **uma** velocidade média por trial, sobre o intervalo útil, a
+>   partir da série da US-09. Não há velocidade por fase (ver SCRUM-223 abaixo).
+> - Distância: soma dos segmentos do `centro_corpo` entre amostras válidas, com
+>   lacunas atravessadas em linha reta. É a mesma regra e o mesmo ponto da US-16.
+> - Velocidade média = distância ÷ tempo do **primeiro ao último ponto válido**
+>   (decisão da equipe). Dividir pelo intervalo inteiro subestimaria a velocidade
+>   sempre que falta pose numa borda. A duração do intervalo e o tempo sem pose nas
+>   bordas saem junto.
+> - Trechos interpolados pela US-10 entram, e a fração interpolada das amostras usadas
+>   sai junto. A marca é por linha, então a fração é conservadora.
+> - fps variável: a distância sai normal; a velocidade sai com a ressalva de base
+>   temporal aproximada.
+> - Sem amostra válida, distância e velocidade ficam vazias, nunca zero.
+>
+> **SCRUM-223 — velocidades por fase: derivadas pelo laboratório, não lidas do CSV
+> (evidência no código; decisão da equipe, sem confirmação do laboratório).** O
+> `barnes_maze.py` entregue
+> pelo laboratório calcula as três velocidades a partir das colunas de distância e
+> latência:
+>
+> - em `trials.csv`: `primary_speed = primary_distance / primary_latency` quando
+>   `primary_event == 1`; `decision_speed = delta_distance / delta_latency` e
+>   `total_speed = total_distance / total_latency` quando `primary_event == 1` e
+>   `total_event == 1`;
+> - em `probes.csv`: `primary_speed = primary_distance / primary_latency`,
+>   `decision_speed = (total_distance − primary_distance) / (90 − primary_latency)` e
+>   `total_speed = total_distance / 90`, com `probe_time = 90` fixo no código.
+>
+> Consequência: basta exportar as distâncias e latências (US-13, US-16, US-25), sem
+> coluna de velocidade.
+>
+> | | |
+> |---|---|
+> | Resposta do laboratório | não houve contato com o LNBio |
+> | Registro | decisão da equipe em 12/11/2026: `trials.csv` sem colunas de velocidade; probe de 90 s ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §3 e §11) |
 
 ## 3. Protocolo de referência
 
 | | |
 |---|---|
-| Artigo ou protocolo publicado a seguir (C5) | _a preencher_ |
+| Artigo ou protocolo publicado a seguir (C5) | Decisão da equipe (12/11/2026, sem o laboratório): Sunyer et al. (2007) para o método e Harrison et al. (2006) para as estratégias — citações a conferir antes do relatório ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §14) |
 
 ## 4. Calibração
 
@@ -137,6 +198,17 @@ Registro das rodadas de ajuste contra a anotação manual (US-12, US-13).
 | | | | | | |
 
 Alvos: encontrar ≤ 0,5 s · entrar ≤ 0,3 s.
+
+### 4.0 Calibração contra anotação manual: pulada (12/11/2026)
+
+Não há anotação manual de Barnes maze: o laboratório não foi contatado, e a busca por
+fontes públicas não encontrou nenhuma com pontuação humana
+([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §5.1). Por decisão
+da equipe, **as comparações com anotação manual estão puladas**: a calibração da
+US-12, as comparações da US-13, US-15, US-16 e US-17, o r ≥ 0,95 da US-18 e o kappa
+da US-21. As seções 4.1 a 4.3 abaixo ficam como registro do ferramental, que
+continua pronto caso uma anotação apareça. Nenhum limiar deste documento foi
+calibrado contra anotação humana.
 
 ### 4.1 Situação da entrega US-12/US-13 em 05/11/2026
 
@@ -166,7 +238,8 @@ como realizada nesta implementação.
 ### 4.2 Convenções técnicas propostas para entrada — confirmar em C2/G3
 
 - Área circular: raio do buraco em pixels × escala cm/px × `entrar.raio_fator`;
-  fronteira inclusiva. Fator e duração mínima permanecem `null` até definição.
+  fronteira inclusiva. Fator 1,0 e duração mínima de 0,2 s por decisão da equipe
+  (12/11/2026, sem G3).
 - Segmento contínuo: focinho válido dentro da área em quadros consecutivos;
   saída, focinho ausente ou salto de quadro interrompem a duração. Um quadro
   isolado não comprova duração positiva.
@@ -190,6 +263,33 @@ atribuídas ao laboratório**. Procedimento e formato D3 no
 [guia de calibração e entrada](eventos-calibracao-entrada.md). Pendências por ticket
 no [relatório da entrega](status-us12-us13.md).
 
+### 4.3 Distância da US-18 contra a medida manual (SCRUM-225)
+
+**Aceite r ≥ 0,95: pulado** — não há medida manual de distância nem fonte pública
+com ela (decisão da equipe em 12/11/2026,
+[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §5.1). A lista abaixo
+fica como roteiro caso uma referência apareça. Não há medida manual de
+distância para nenhum trial. A ferramenta está pronta: `barnes metrics distance-validate
+--manual <csv>` pareia o resultado atual de cada trial (gravado por `metrics
+displacement`) com a referência. O relatório traz r, viés médio e erro relativo médio,
+porque r não vê erro de escala: um valor automático 20% maior ainda dá r = 1. Sem
+referência, a rodada é registrada como bloqueada. Os testes são sintéticos e não
+representam aceite.
+
+Pendências para destravar:
+
+1. **Quem mede**: laboratório (D3) ou equipe, e quem assina o aceite (C6).
+2. **Método**: ferramenta, ponto do corpo (centro do corpo, o mesmo da métrica) e de
+   quantos em quantos quadros se marca a posição. Marcar a cada k quadros encurta o
+   caminho em relação ao vídeo a 25 fps, então o método precisa estar no CSV.
+3. **Trecho medido**: o mesmo intervalo útil registrado no trial (da soltura ao fim).
+4. **Unidade**: cm com a mesma calibração da montagem, ou px convertidos por nós.
+5. **Quais trials e quantos**: sugestão de ≥ 10–15, misturando buscas curtas e longas.
+   Sem variação entre trials, r não diz nada.
+6. **Inferência de pose real** nesses trials (modelo das US-07/08 treinado). Sobre a
+   inferência simulada do roteiro, o r não vale como aceite.
+7. **Formato de entrega**: CSV `trial_id,distance_cm_manual,observador,metodo,data`.
+
 ## 5. Aceite
 
 G3 exige aceite **por escrito** de quem decide as definições no laboratório.
@@ -206,6 +306,11 @@ Descobrir na semana 8 que quem respondeu não era quem decide é caro (C6).
 **Enquanto esta seção estiver em branco, o escopo não está congelado e os
 critérios de aceite da seção 10 da definição não podem ser fixados.**
 
+> **12/11/2026:** sem contato com o LNBio, esta seção fica em branco até o fim do
+> projeto. As definições em uso foram aprovadas pela equipe
+> ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §14) e o relatório
+> declara que G3 não foi fechado.
+
 ## 6. Referenciais e rotação da plataforma (US-05)
 
 Fixa em que referencial cada posição angular é expressa. Sem isso, comparar
@@ -217,12 +322,13 @@ se a plataforma girar ou a câmera mudar de lugar.
 
 | | |
 |---|---|
-| Resposta | **Não.** O LNBio não rotaciona a plataforma. |
-| Respondido por | _a preencher_ |
+| Resposta | **Suposição da equipe:** a plataforma não é rotacionada. Não houve resposta do LNBio ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §13). |
+| Respondido por | _a preencher_ (não há resposta do laboratório) |
 | Data | _a preencher_ |
 
-Consequência (US-05 RN04): a rotação de todo trial é gravada como **0°**,
-explicitamente (`barnes video load` usa `--rotation-deg 0` por padrão), e a
+Consequência (US-05 RN04): a rotação de todo trial é gravada como **0°**
+(`barnes video load` usa `--rotation-deg 0` quando a opção é omitida — é aí que
+mora a suposição), e a
 conversão entre plataforma e sala vira identidade. A coluna
 `trials.rotation_deg` e o caminho de código continuam existindo: se o
 protocolo mudar, basta informar a rotação real de cada trial.
@@ -240,8 +346,8 @@ montagem.
 
 | | |
 |---|---|
-| Buraco de referência | _a definir com o laboratório (ex.: buraco marcado com fita, ou o mais próximo da porta)_ |
-| Como identificá-lo no vídeo | _a preencher_ |
+| Buraco de referência | Decisão da equipe (sem o laboratório): escolhido visualmente por quem monta a configuração, sempre o mesmo buraco físico, gravado como buraco 0 ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §1) |
+| Como identificá-lo no vídeo | marcas estáveis entre sessões (desgaste, cor ou textura na borda do buraco) ou elementos fixos na borda do quadro; conferência cruzada por outra pessoa da equipe |
 
 Se a câmera for deslocada entre dias, cria-se uma montagem nova, arrastando
 de novo até o mesmo buraco físico. Os ângulos de sala continuam comparáveis

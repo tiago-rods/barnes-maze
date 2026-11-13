@@ -153,7 +153,7 @@ def target_room_angle(geometry: MazeGeometry) -> float:
 def target_hole_for_trial(geometry: MazeGeometry, *, rotation_deg: float) -> int:
     """Índice do buraco que ocupa a posição do alvo num trial com dada rotação (Cenário 1).
 
-    Com rotação 0 (B4: o LNBio não rotaciona), é o próprio buraco marcado
+    Com rotação 0 (B4: suposição da equipe de que a plataforma não rotaciona), é o próprio buraco marcado
     como alvo na montagem.
     """
     return room_angle_to_hole(geometry, target_room_angle(geometry), rotation_deg=rotation_deg)

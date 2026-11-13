@@ -11,6 +11,7 @@ import os
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import psycopg
 import pytest
 
 from barnes.db.calibration import save_calibration
@@ -168,3 +169,36 @@ def test_reprocessing_appends_history_and_current_is_latest(conn, trial_id):
     # Uma linha por trial, por execução: a anterior continua consultável.
     assert [row.execucao_id for row in list_trial_result_history(conn, trial)] == [second, first]
     assert sum(1 for row in list_trial_results(conn) if row.trial_id == trial) == 1
+
+
+def test_interpolated_fraction_is_stored_and_null_when_not_informed(conn, trial_id):
+    # US-18 RN05 (migração 0010): a fração vai junto da métrica; o `metrics process`
+    # (US-02), que não conhece interpolação, deixa NULL.
+    trial, maze_config_id = trial_id
+    _insert(conn, trial, maze_config_id)
+    assert get_trial_result(conn, trial).interpolated_fraction is None
+    _insert(conn, trial, maze_config_id, interpolated_fraction=0.25)
+    assert get_trial_result(conn, trial).interpolated_fraction == pytest.approx(0.25)
+
+
+def test_interpolated_fraction_outside_zero_one_is_refused_by_the_schema(conn, trial_id):
+    trial, maze_config_id = trial_id
+    with pytest.raises(psycopg.errors.CheckViolation):
+        _insert(conn, trial, maze_config_id, interpolated_fraction=1.5)
+
+
+def test_missing_distance_and_speed_are_stored_as_null_not_zero(conn, trial_id):
+    trial, maze_config_id = trial_id
+    _insert(conn, trial, maze_config_id, distance_cm=None, speed_mean_cm=None)
+    result = get_trial_result(conn, trial)
+    assert result.distance_cm is None and result.speed_mean_cm is None
+
+
+def test_speed_caveat_is_derived_from_the_trial_variable_fps_flag(conn, trial_id):
+    # US-18 RN07: a ressalva não é gravada; vem de trials.fps_is_variable na leitura.
+    trial, maze_config_id = trial_id
+    _insert(conn, trial, maze_config_id)
+    assert get_trial_result(conn, trial).speed_time_base_approx is False
+    conn.execute("UPDATE trials SET fps_is_variable = TRUE WHERE id = %s", (trial,))
+    assert get_trial_result(conn, trial).speed_time_base_approx is True
+    assert all(row.speed_time_base_approx for row in list_trial_result_history(conn, trial))

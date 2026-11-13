@@ -85,6 +85,22 @@ def test_reentry_does_not_collide_on_the_shared_discovery_time():
     to_visit_sequence(items)  # não deve levantar por ordem não estritamente crescente
 
 
+def test_discovery_after_first_entry_does_not_delay_the_visit():
+    # Caso real (vídeo completo do LNBio, 12/11/2026): a primeira entrada no buraco
+    # veio antes da descoberta (inconsistência D->E da US-13) e a reentrada caiu
+    # exatamente no quadro da descoberta. Usar D como início da primeira visita
+    # fazia as duas colidirem em inicio_s.
+    entries = [
+        _entry(0, 154.4, discovery_t_s=156.7, issues=("descoberta D posterior à entrada E",)),
+        _entry(0, 156.7, discovery_t_s=156.7),
+        _entry(0, 158.9, discovery_t_s=156.7),
+    ]
+    items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)
+    assert [item.inicio_s for item in items] == [154.4, 156.7, 158.9]
+    assert items[0].t_descoberta_s == 156.7
+    to_visit_sequence(items)
+
+
 def test_sequence_is_ordered_by_start_and_numbered_from_one():
     entries = [_entry(2, 5.0, discovery_t_s=4.0), _entry(0, 1.0, discovery_t_s=0.5)]
     items = build_sequence(entries, geometry=_geometry(), rotation_deg=0.0)

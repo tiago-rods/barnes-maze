@@ -15,6 +15,7 @@ from barnes.geometry.holes import generate_holes
 from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
 from barnes.metrics import process_trial
+from barnes.metrics.displacement import compute_displacement
 from barnes.metrics.errors import ErrorCriterion, ErrorDefinition, compute_errors
 from barnes.metrics.latency import TargetEvent, compute_target_latencies, target_discovery
 from barnes.pose.series import PoseFrames, build_series
@@ -212,6 +213,7 @@ def pipeline_output(expected: dict) -> dict:
     )
 
     coverage = float(table.column("pose_valida").to_numpy().mean())
+    deslocamento = compute_displacement(table)
 
     return {
         "table": table,
@@ -222,6 +224,7 @@ def pipeline_output(expected: dict) -> dict:
         "latencies": latencies,
         "trajeto": trajeto,
         "coverage": coverage,
+        "deslocamento": deslocamento,
     }
 
 
@@ -329,4 +332,33 @@ def test_trajeto(expected: dict, pipeline_output: dict) -> None:
     obtido = pipeline_output["trajeto"]
     for chave in esperado:
         failures.check(f"trajeto.{chave}", obtido[chave], esperado[chave], tol)
+    failures.finish()
+
+
+def test_deslocamento_us18(expected: dict, pipeline_output: dict) -> None:
+    """US-18 lê a série do contrato (US-09), não o CSV em pixels da US-02."""
+    tol = expected["tolerancia_absoluta"]
+    failures = RegressionFailures()
+    esperado = expected["deslocamento"]
+    obtido = pipeline_output["deslocamento"]
+    for chave in ("distance_cm", "mean_speed_cm_s", "duration_s", "interpolated_fraction"):
+        failures.check(f"deslocamento.{chave}", getattr(obtido, chave), esperado[chave], tol)
+    failures.check_eq("deslocamento.frames_used", obtido.frames_used, esperado["frames_used"])
+    failures.check_eq("deslocamento.ponto", obtido.ponto, esperado["ponto"])
+    failures.check_eq(
+        "deslocamento.speed_time_base_approx",
+        obtido.as_export_columns()["speed_time_base_approx"],
+        esperado["speed_time_base_approx"],
+    )
+    # As duas rotas (US-02 em px, US-18 pela série em cm) devem concordar sem lacunas.
+    trajeto = pipeline_output["trajeto"]
+    failures.check(
+        "deslocamento.distance_cm vs trajeto", obtido.distance_cm, trajeto["distance_cm"], tol
+    )
+    failures.check(
+        "deslocamento.mean_speed_cm_s vs trajeto",
+        obtido.mean_speed_cm_s,
+        trajeto["mean_speed_cm_s"],
+        tol,
+    )
     failures.finish()

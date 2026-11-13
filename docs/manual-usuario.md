@@ -696,6 +696,69 @@ final é auditável (`barnes execution show <id>`). Se a cobertura continuar aba
 mínimo, o trial fica marcado como **qualidade insuficiente** no catálogo e nas métricas.
 O vídeo usado na revisão precisa ter o mesmo conteúdo (hash) do catalogado.
 
+### 4.8 Distância total e velocidade média (US-18)
+
+```powershell
+barnes metrics displacement --trial 12
+barnes metrics displacement --trial 12 --ponto focinho   # outro ponto do corpo
+```
+
+O comando lê **só a série** do trial (`data/interim/trial_<id>.parquet`, gerada por
+`barnes pose series`), nunca o vídeo. Ele devolve **uma** distância total em cm e
+**uma** velocidade média em cm/s por trial, sobre o intervalo útil. Antes de calcular,
+confere se a série ainda corresponde ao trial: identidade, escala atual, fps,
+intervalo e tempos. Se a montagem foi recalibrada depois da série, ou se o trial não
+tem série, o comando recusa e pede para rodar `barnes pose series` de novo.
+
+Como cada número é obtido:
+
+- **Distância**: soma dos deslocamentos do centro do corpo entre quadros com o ponto.
+  Um trecho sem o ponto é atravessado em linha reta, o que subestima um pouco e nunca
+  inventa trajeto. O aviso diz quantos quadros foram atravessados.
+- **Velocidade média**: distância ÷ tempo do **primeiro ao último quadro com o ponto**.
+  Se falta pose no começo ou no fim do intervalo, esse tempo fica de fora, e o
+  resultado mostra quanto (`edge_gap_s`) ao lado da duração do intervalo
+  (`interval_duration_s`).
+- **Fração interpolada** (`interpolated_fraction`): parte das amostras usadas que foi
+  preenchida pela US-10. Basta um dos três pontos ter sido preenchido para o quadro
+  contar, então o valor é conservador.
+- **fps variável** (US-01): a distância sai normal; a velocidade sai com a ressalva de
+  **base temporal aproximada**, impressa no terminal e marcada em
+  `speed_time_base_approx`.
+- Sem nenhum quadro com o ponto, distância e velocidade ficam **vazias**, nunca zero.
+
+O resultado vai para `trial_results` numa execução própria (US-27). O JSON impresso traz
+as métricas, os avisos, a cobertura e a qualidade de pose, e as colunas que a exportação
+da US-25 vai usar:
+
+| Coluna | Unidade | Conteúdo |
+|---|---|---|
+| `path_distance` | cm (metros na exportação da US-25) | distância total no intervalo útil (não é o `total_distance` do laboratório, que é S→E) |
+| `mean_speed` | cm/s | velocidade média |
+| `interpolated_fraction` | 0–1 | fração interpolada das amostras usadas |
+| `speed_time_base_approx` | verdadeiro/falso | velocidade com base temporal aproximada (fps variável) |
+
+As velocidades por fase do laboratório (`primary_speed`, `decision_speed`,
+`total_speed`) não são calculadas aqui. O próprio `barnes_maze.py` as deriva das
+distâncias e latências do `trials.csv`.
+
+**Conferência contra a medida manual (aceite r ≥ 0,95).**
+
+```powershell
+barnes metrics distance-validate --manual referencia.csv
+```
+
+O CSV tem as colunas `trial_id,distance_cm_manual,observador,metodo,data`. O comando
+pareia cada trial com o resultado atual de `metrics displacement`. Ficam de fora, com o
+motivo, os trials sem resultado, com resultado obsoleto ou cujo resultado atual veio de
+outro comando.
+
+Cada rodada é gravada em `data/validation/distance/` (`correlacao.json` e
+`correlacao.md`) com r, viés médio e erro relativo médio. O código de saída é 2 quando
+r < 0,95. Sem `--manual`, a rodada é registrada como **bloqueada**.
+
+Requer o banco migrado até a `0010` (`barnes db migrate`).
+
 ## 5. Saídas
 
 Na US-02, os resultados são exibidos no terminal e persistidos no mesmo
@@ -707,6 +770,7 @@ respectivas histórias:
 | Arquivo | Conteúdo |
 |---|---|
 | `data/interim/trial_<id>.parquet` | série de pose por quadro: posição (cm), θ, t, `interpolado`, e o relatório de qualidade nos metadados (US-09/US-10, seções 4.6 e 4.7) |
+| `data/validation/distance/distance-<id>/` | rodada de correlação da distância com a medida manual (US-18, seção 4.8) |
 | CSV por trial | métricas do trial |
 | CSV consolidado | todos os trials |
 | `trials.csv` / `probes.csv` | formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |

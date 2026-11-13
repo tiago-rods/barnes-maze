@@ -158,7 +158,8 @@ SELECT avg(theta_deg_image) FROM 'data/interim/trial_12.parquet' WHERE pose_vali
 |---|---|
 | US-10 (qualidade de pose) | produz a série: preenche lacunas curtas e marca `interpolado`, sinaliza as longas, grava `pos_processamento` e a cobertura em `trials.cobertura_pose`; `fps_variavel` acompanha o relato (RN07) |
 | US-11 (descoberta) | `focinho_*_cm_image` para a distância focinho→buraco; `theta_deg_image` para o ângulo cabeça→buraco; `quadro`/`t_s` vão para `evento_buraco`; `interpolado` para marcar evento sobre dado reconstruído |
-| Métricas (US-15 em diante) | posições em cm e `t_s`; velocidade com ressalva quando `fps_variavel`; fração interpolada (`interpolado`) junto da métrica (US-18 RN04); trial de qualidade insuficiente marcado (VIEW `qualidade_pose`) |
+| US-18 (distância e velocidade média) | `<ponto>_x/y_cm_image` e `<ponto>_valido` (padrão `centro_corpo`) para a distância; `t_s` para a duração; `interpolado` para a fração interpolada (RN05); `fps_variavel` para a ressalva da velocidade (RN07). `barnes.metrics.displacement` |
+| Métricas (US-15 em diante) | posições em cm e `t_s`; velocidade com ressalva quando `fps_variavel`; fração interpolada (`interpolado`) junto da métrica; trial de qualidade insuficiente marcado (VIEW `qualidade_pose`) |
 
 ## Mudanças
 

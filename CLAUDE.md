@@ -82,6 +82,10 @@ uv run barnes pose review --trial N [--video PATH] [--todos] [--margem 10]
     # n/p segment, a/d frame, 1/2/3 point, click = mark, right/Backspace = undo,
     # Enter = segment reviewed, s = save, Esc/x = cancel (nothing saved)
 
+# US-18 (distance + mean speed from the trajectory parquet; no video)
+uv run barnes metrics displacement --trial N [--ponto centro_corpo]
+uv run barnes metrics distance-validate [--manual CSV] [--saida DIR]   # r >= 0.95; no CSV = blocked
+
 # US-27 (provenance + catalog)
 uv run barnes execution show ID      # model, thresholds, params, commit, dirty, "reproduzivel"
 uv run barnes catalog list [--experiment-id N] [--verificar-hash] [--procurar-em DIR] [--json]
@@ -99,7 +103,13 @@ uv run barnes db migrate --dsn postgresql://barnes:barnes@localhost:5433/barnes_
 Port 5433, not 5432, so it never collides with a native PostgreSQL on the
 dev machine. `database/docker-init/` creates the extra `barnes_test` DB on
 first volume creation. `get_connection()` loads `.env` via python-dotenv
-without overriding variables already set in the shell.
+without overriding variables already set in the shell. It adds
+`connect_timeout=10` unless the DSN sets its own (without it, a port with
+nothing listening hangs the command forever on Windows) and turns a failed
+connect into `DatabaseUnavailableError` — host/port/dbname only, never the
+password; it subclasses both `DatabaseConfigError` (clean CLI message) and
+`psycopg.OperationalError` (callers that already handle "database down" keep
+working).
 
 Tests never use the dev DB: `tests/conftest.py` overwrites
 `BARNES_DATABASE_URL` with `BARNES_TEST_DATABASE_URL` (or with an empty string
@@ -198,27 +208,37 @@ montagem's current values), never stored as a boolean — same philosophy as
 
 ### Video metadata quirk (US-01)
 
-`is_fps_variable()` compares each inter-frame interval to the **median**
-(not mean) with a **25%** tolerance — not 1%. Real LNBio footage showed
-B-frame reordering producing a legitimate, structural ~32ms/~48ms
-alternating pattern (still averaging to a constant 25fps); the original
-1%-of-mean check flagged essentially every real video as "variable fps",
-which defeats the point of the warning. Don't tighten this without
-re-testing against real (not synthetic) footage — synthetic test videos
-written via `cv2.VideoWriter` don't reproduce this jitter, which is why
-`tests/io/test_video.py` has a dedicated regression test for the alternating
-pattern alongside the synthetic-video tests.
+`is_fps_variable()` compares each inter-frame interval to the **mean**
+interval (`1 / fps_real`) with a **25%** tolerance — not 1%. Real LNBio
+footage showed B-frame reordering producing a legitimate, structural
+~32ms/~48ms alternating pattern (still averaging to a constant 25fps); the
+original 1%-of-mean check flagged essentially every real video as "variable
+fps", which defeats the point of the warning. A later **median** reference
+was also wrong: with almost half of each value, the median lands on 32 or
+48 ms depending on which group is a few intervals larger, and the whole other
+group exceeds 25% (false positive on the full 6-min LNBio video of
+23/06/2020). Against the mean, the pattern deviates ~20% whatever the balance.
+Don't change this without re-testing against real (not synthetic) footage —
+synthetic test videos written via `cv2.VideoWriter` don't reproduce this
+jitter, which is why `tests/io/test_video.py` has dedicated regression tests
+for the balanced and unbalanced alternating pattern.
 
 ### Configuration is data, not code
 
 `configs/default.yaml` (behavioral thresholds: discovery distance/angle,
 dwell, error criteria, strategy classification) is intentionally versioned
-YAML with most values `null` — populated from the lab via gate **G3** (see
-`docs/definicoes-metricas.md`, currently DRAFT/unsigned) and calibrated
-against manual annotation, never hardcoded or guessed. Don't fill it in
-"reasonably" — a value chosen for convenience produces plausible,
-well-formatted numbers with no relationship to what the lab actually means
-by e.g. "discovery latency".
+YAML, meant to be populated from the lab via gate **G3** (see
+`docs/definicoes-metricas.md`, DRAFT/unsigned) and calibrated against manual
+annotation, never hardcoded or guessed. **Contact with the lab never happened**:
+on 2026-11-12 the team approved its own values, each justified in
+`docs/decisoes-sem-laboratorio.md` and filled in with
+`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3` (copied into every
+`execucao.limiares`). G3 stays open and the report declares it. Don't change a
+threshold "reasonably" outside that document — a value chosen for convenience
+produces plausible, well-formatted numbers with no relationship to what the lab
+means by e.g. "discovery latency". The US-25 export follows the schema the lab's
+`barnes_maze.py` (outside the repo, in the parent folder) actually reads —
+including **distances in metres**, while every metric is computed in cm.
 
 Per-rig geometry/camera calibration (center, radius, N holes, target hole,
 px→cm scale) used to live in `configs/montagens/*.yaml`; US-04 moved it to
@@ -317,12 +337,34 @@ Native backend smoke tests use synthetic data and do not attest lab quality.
 `events/discovery.py` implements US-11 and is not changed by threshold calibration.
 US-12/13 live in `events/calibration.py`, `events/entry.py`, and `cli_events.py`:
 manual D3 comparisons append rounds, entry events include confirmation time and
-D-to-E path length. Numeric C2 parameters remain null pending the lab decision.
+D-to-E path length. Numeric C2 parameters are team decisions (raio_fator 1.0, 0.2 s), not lab-calibrated.
 `evento_buraco.details` (0009) stores entry evidence; processing and events share
 one transaction. Recalculation reads the trajectory and its provenance without
 opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions
 and actual acceptance blockers. `strategy`/`longitudinal`/`stats`/`report` remain
 empty `__init__.py` stubs pending their user story.
+
+US-18 (`metrics/displacement.py`, `metrics/validation.py`, `cli_metrics.py`): one
+distance and one mean speed per trial from the US-09 parquet (narrowed card: no
+per-phase speeds — the lab's `barnes_maze.py` derives those from trials.csv). Reuses
+US-16's `travelled_distance_cm` (gaps bridged in a straight line, `centro_corpo`); speed
+divides by first→last valid sample, not the whole interval. `cli_metrics` loads the
+series through `cli_events.load_trajectory_inputs` (same identity/scale/fps/interval
+checks as events). `trial_results.interpolated_fraction` (0010) is stored; the
+variable-fps speed caveat is **derived** from `trials.fps_is_variable` on read, never
+stored. US-25 complementary columns: `path_distance`, `mean_speed`,
+`interpolated_fraction`, `speed_time_base_approx` (`Displacement.as_export_columns`).
+The r >= 0.95 acceptance is blocked until a manual reference exists
+(`docs/definicoes-metricas.md` §4.3).
+
+US-28 (`tests/test_us28_trial_referencia.py`): regression test over a versioned
+**synthetic** video (`tests/fixtures/trial_referencia.mp4`) with a known trajectory
+injected as `PoseFrames` → `build_series`; expected values (abs. tolerance 1e-6) and
+its own thresholds live in `tests/fixtures/trial_referencia_esperado.yaml`, decoupled
+from `configs/default.yaml`. When a story adds a metric (US-19..22 next), add it to
+the expected YAML; changing an existing expected value needs a justification in the
+commit message (RN04). It must pass before merging to the main branch — a review
+rule, there is no CI. The fixture has no pose gaps, no censoring and constant fps.
 
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
 tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because

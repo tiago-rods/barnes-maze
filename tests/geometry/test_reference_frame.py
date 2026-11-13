@@ -45,7 +45,7 @@ def test_roundtrip_hole_room_hole_for_all_holes(hole_count, rotation_deg, start_
 
 @pytest.mark.parametrize("hole_count", [3, 8, 20])
 def test_without_rotation_room_angle_is_hole_index_times_step(hole_count) -> None:
-    # B4 (LNBio não rotaciona): sala(k) = k * 360/N, independente da câmera.
+    # B4 (suposição da equipe: a plataforma não rotaciona): sala(k) = k * 360/N, independente da câmera.
     geometry = _geometry(hole_count=hole_count, start_angle_deg=41.0)
     step = 360.0 / hole_count
     for hole in geometry.holes:

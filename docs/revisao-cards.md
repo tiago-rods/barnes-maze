@@ -5,6 +5,15 @@ vamos usar postgresql ao invés de SQLite
 - Podemos começar com suporte somente para mp4
 
 - Desconsiderar cenário 2 ou mudar a forma que está descrito
+- **Correção de 12/11/2026 (vídeo completo do LNBio, 23/06/2020, 6 min):** o vídeo
+  era marcado como fps variável por engano. Ele tem o padrão de B-frames
+  (~32/48 ms, média exata de 25 fps), mas com 4.699 intervalos curtos contra 4.664
+  longos a mediana caía em 32 ms e todos os de 48 ms passavam de 25%. A referência
+  passou a ser o intervalo **médio** (`1 / fps_real`); um quadro perdido continua
+  detectado. Trials gravados antes da correção mantêm o `fps_is_variable` antigo.
+- **US-03, mesmo vídeo:** a detecção automática da soltura dispara com a mão do
+  experimentador (4,4 s), 77 s antes da soltura real (caixa de partida levantada aos
+  81,5 s). Em vídeos com caixa de partida, o recorte é manual.
 
 #### tarefas
 - [ ] Implementar o leitor de vídeo em `src/barnes/io/` com OpenCV/FFmpeg
@@ -211,3 +220,92 @@ Decisões (detalhes no [contrato da trajetória](contrato-trajetoria.md), seçã
 - **Contrato da trajetória continua na versão 1:** `interpolado` passou a ser usado como
   previsto e entrou o metadado opcional `pos_processamento`. Linha interpolada sem esse
   metadado é recusada.
+
+## US-18 — distância total e velocidade média (novembro de 2026)
+
+O card foi **estreitado** ao entrar no Sprint 3. A versão de `CARDS.md` foi reescrita para
+a nova; as decisões de implementação estão no [manual](manual-usuario.md) §4.8 e em
+[definicoes-metricas.md](definicoes-metricas.md):
+
+- **Sai do escopo:** velocidades por fase (`primary_speed`, `decision_speed`,
+  `total_speed`), a série de velocidade instantânea e o `decision_speed` ausente.
+  Fica **uma** distância e **uma** velocidade média por trial, sobre o intervalo útil
+  inteiro, sem segmentar a trajetória (RN02). As distâncias por fase continuam com a
+  US-16 (`primary_distance`, `total_distance`) e a US-13 (`delta_distance`).
+- **Por que as velocidades por fase saíram (SCRUM-223):** o `barnes_maze.py` do
+  laboratório as **deriva** do próprio CSV. Para trials, `primary_distance /
+  primary_latency`, `delta_distance / delta_latency` e `total_distance / total_latency`,
+  só quando o evento é 1. Para probes, com `probe_time = 90` fixo no código. Exportar
+  distâncias e latências basta; falta a confirmação escrita do laboratório.
+- **Fonte:** a série da US-09 (`data/interim/trial_<id>.parquet`), lida por
+  `barnes metrics displacement` sem abrir o vídeo. O `metrics process` da US-02 (CSV em
+  pixels) continua existindo, mas não é a fonte da US-18.
+- **Ponto e lacunas:** `centro_corpo`, com lacunas atravessadas em linha reta, mesma
+  regra do `total_distance` da US-16. O ponto do laboratório continua a confirmar.
+- **Duração da velocidade (SCRUM-220):** do primeiro ao último ponto válido. Dividir
+  pelo intervalo inteiro subestimaria a velocidade sempre que falta pose numa borda. A
+  duração do intervalo e o tempo sem pose nas bordas saem junto.
+- **Fração interpolada (RN05):** fração das amostras usadas que vêm de linhas
+  `interpolado`. É marcada por linha, então é conservadora. Gravada em
+  `trial_results.interpolated_fraction` (migração 0010).
+- **fps variável (RN07):** a distância sai normal; a velocidade sai com a ressalva de
+  base temporal aproximada. A marca **não é gravada**: é derivada de
+  `trials.fps_is_variable` na leitura.
+- **Colunas da US-25 (SCRUM-224):** o `trials.csv` não tem velocidade nem distância do
+  intervalo inteiro (`total_distance` lá é S→E). Vão como colunas complementares
+  (US-25 RN04): `path_distance`, `mean_speed`, `interpolated_fraction`,
+  `speed_time_base_approx`.
+- **Aceite r ≥ 0,95 (SCRUM-225): bloqueado por dependência externa.** A ferramenta
+  (`barnes metrics distance-validate`) está pronta e testada com dados sintéticos; a
+  medida manual de referência não existe. As pendências estão em
+  `definicoes-metricas.md` §4.3.
+
+## Decisões sem o laboratório (12/11/2026)
+
+O contato com o LNBio não ocorreu. As pendências de G3 e dos blocos B/C/D viraram
+decisões da equipe, aprovadas em 12/11/2026 e registradas com justificativa em
+[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md). G3 não fecha; o
+relatório declara a limitação. O que muda nos cards:
+
+- **`configs/default.yaml` preenchido** com os valores aprovados, marcados com
+  `versao_definicoes: decisoes-equipe-2026-11-12-sem-G3` (copiado em toda
+  `execucao.limiares`): tempo limite 180 s (B5, US-16), entrada com o focinho no
+  buraco por 0,2 s (C2, US-13), erro = qualquer buraco incorreto (C3, US-17) e os
+  parâmetros de estratégia de Harrison 2006 (C4, US-20). `encontrar` (C1) continua
+  provisório.
+- **US-25:** o esquema de `trials.csv`/`probes.csv` é o que o `barnes_maze.py` lê,
+  com **distâncias em metros**. As métricas continuam em cm; a exportação converte.
+- **US-18:** SCRUM-223 fechada como decisão da equipe (sem colunas de velocidade);
+  r ≥ 0,95 (SCRUM-225) mantido como limitação declarada.
+- **US-26:** probe com plataforma limpa, 90 s, região do alvo antigo só pela posição
+  na sala.
+- **US-05:** "a plataforma não rotaciona" passa a ser suposição da equipe, não
+  resposta do LNBio.
+- **Comitê de ética (D4):** fora do escopo do documento.
+- **Anotação manual: pulada.** A busca por fontes públicas (Zenodo, Hugging Face, GitHub,
+  Mendeley, OSF e literatura) não achou anotação humana de Barnes maze; o único
+  dataset com Barnes (Multi-Task Mouse Behaviour) tem pose gerada por máquina. As
+  comparações com anotação manual saem do critério de pronto: US-12 inteira, as
+  comparações de US-13, US-15, US-16, US-17 e US-18, o kappa da US-21 e a comparação
+  de hazard ratios da US-25 (`decisoes-sem-laboratorio.md` §5.1).
+
+## US-28 — trial de referência e teste de regressão (novembro de 2026)
+
+O que a implementação estreita no card:
+
+- **Fixture sintético, não um trecho de trial real (RN01).** Não há modelo de pose
+  treinado no repositório. O vídeo (`tests/fixtures/trial_referencia.mp4`, 96 quadros,
+  200×150 px, 20 fps) exercita o carregamento e o recorte (US-01/US-03). A trajetória
+  conhecida é injetada como pose e passa por `build_series`, então o teste protege o
+  cálculo a partir do contrato da trajetória, não a qualidade da pose.
+- **Tolerância única, absoluta, de 1e-6 (RN02).** O fixture é determinístico; as
+  tolerâncias "da seção de critérios de aceite" valem para dados reais, não aqui.
+- **Limiares no próprio YAML do fixture**, desacoplados de `configs/default.yaml`.
+  Coincidem com as decisões da equipe, exceto o tempo limite (10 s, vídeo curto).
+- **Gate antes de merge (RN05) é regra de revisão**: o repositório não tem CI.
+- **Integração com a US-18 (12/11/2026):** o esperado ganhou a seção `deslocamento`
+  (`compute_displacement` sobre a série do contrato), e o teste confere que ela
+  concorda com a rota da US-02 (72,43 cm; 17,04 cm/s).
+- **Fora do fixture:** lacunas de pose, censura e fps variável ficam nos testes
+  unitários de cada módulo. As métricas do Sprint 4 (US-19 a US-22) entram no
+  esperado quando forem implementadas.

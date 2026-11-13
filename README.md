@@ -13,14 +13,14 @@ duas coisas é a exportação compatível com `trials.csv` e `probes.csv` (US-25
 A definição de escopo completa — cards, riscos, cronograma e critérios de aceite
 — está em `definicao-projeto.md`, no diretório acima deste repositório.
 
-> **Aviso para quem continuar a implementação — US-12/US-13 (06/11/2026):**
-> o código foi implementado e testado, mas a validação com o laboratório está
-> pendente de D3 (anotação manual) e C2/G3 (parâmetros e aceite escrito).
-> `entrar.raio_fator` e `entrar.duracao_minima_s` continuam `null` de propósito;
-> a detecção de entrada recusa esses valores até serem definidos. Não substituir
-> por números arbitrários nem considerar os testes sintéticos como aceite real.
-> Leia o [aviso de continuidade e as pendências](docs/status-us12-us13.md#aviso-de-continuidade)
-> antes de integrar novas métricas ou exportações.
+> **Aviso para quem continuar a implementação (atualizado em 12/11/2026):**
+> o laboratório nunca foi contatado, então G3 não fecha. Os limiares de
+> `configs/default.yaml` são **decisões da equipe**, cada uma justificada em
+> [`docs/decisoes-sem-laboratorio.md`](docs/decisoes-sem-laboratorio.md)
+> (`versao_definicoes: decisoes-equipe-2026-11-12-sem-G3`); `encontrar` (3 cm/30°)
+> continua provisório. Não há anotação manual, nem do laboratório nem pública:
+> as comparações com anotação manual foram puladas (§5.1 do mesmo documento).
+> Testes sintéticos não são aceite do laboratório.
 
 ## O que este projeto entrega
 
@@ -36,7 +36,7 @@ O que só ele pode entregar, e que a anotação manual não consegue produzir:
 ```
 barnes-maze/
 ├── configs/
-│   ├── default.yaml              # limiares operacionais — valores vêm de G3
+│   ├── default.yaml              # limiares operacionais — decisões da equipe (sem G3)
 │   ├── pose/single_animal.yaml   # perfil inicial de treino SLEAP-NN
 │   └── montagens/README.md       # geometria persistida no PostgreSQL
 ├── src/barnes/
@@ -283,8 +283,9 @@ uv run barnes events calibrate --trial 1 --kind entrada --annotations data/annot
 uv run barnes events calibration-evidence data/calibration/events/<uuid>.json
 ```
 
-Substitua os IDs/caminhos pelos dados reais. A área e a duração de entrada ainda
-dependem de C2/G3 e permanecem `null`; sem D3, a calibração registra bloqueio.
+Substitua os IDs/caminhos pelos dados reais. A área e a duração de entrada são
+decisões da equipe (raio ×1,0 e 0,2 s); sem anotação manual (D3), a calibração
+registra bloqueio.
 Veja o [guia de operação](docs/eventos-calibracao-entrada.md) e o
 [status por subtask](docs/status-us12-us13.md). A validação experimental e o
 aceite do laboratório continuam pendentes.
@@ -313,9 +314,10 @@ de verdade; os estágios de pose em diante usam essa trajetória conhecida de
 antemão, não o conteúdo de pixel do vídeo.
 
 Os limiares usados (`encontrar`, `entrar`, `erro`, `trial`) são fixados no
-próprio YAML do fixture, não lidos de `configs/default.yaml` — esse arquivo
-tem a maioria dos valores em `null`, pendentes do aceite do laboratório em
-G3, e usá-lo aqui acoplaria o teste a uma configuração que ainda vai mudar.
+próprio YAML do fixture, não lidos de `configs/default.yaml`, para que o teste
+proteja o **cálculo** e não a configuração. Hoje eles coincidem com as decisões
+da equipe (`docs/decisoes-sem-laboratorio.md`), exceto o tempo limite: 10 s,
+porque o vídeo do fixture tem menos de 5 s (produção usa 180 s).
 
 **Atualizar os valores esperados exige justificativa no commit.** Ajustar o
 esperado só para fazer o teste passar depois de uma mudança é exatamente o
@@ -332,20 +334,27 @@ neste repositório ainda.
 
 Cobertura atual: pose, descoberta (D), entrada (E) e dwell, sequência de
 visitação, erros, latência/distância com censura (S→D e S→E), distância
-percorrida, velocidade média e eficiência de rota. **Não coberto** (ainda não
-implementado no pipeline): classificação de estratégia/entropia (US-20),
-kappa contra observador (US-21), DTW/Fréchet e demais análises longitudinais.
+percorrida, velocidade média e eficiência de rota pela rota da US-02 (CSV em
+px), e distância/velocidade média/fração interpolada pela rota da US-18 (série
+do contrato, `compute_displacement`), conferindo que as duas rotas concordam.
+**Não coberto** (ainda não implementado no pipeline): classificação de
+estratégia/entropia (US-20), kappa contra observador (US-21), DTW/Fréchet e
+demais análises longitudinais. **Não exercitado pelo fixture**: lacunas de pose
+(a fração interpolada é 0), trial censurado (o animal entra no alvo antes do
+tempo limite) e fps variável — esses casos ficam nos testes unitários de cada
+módulo.
 
 ## Antes de escrever código
 
 Dois avisos que valem mais que qualquer linha deste repositório:
 
-**Não preencha os limiares de `configs/default.yaml` por conta própria.** Eles
-estão em `null` de propósito. Distância e ângulo de "encontrar", dwell, critério
-de erro, limiares de estratégia — todos vêm do laboratório via portão G3 e são
-calibrados contra anotação manual. Valores escolhidos por conveniência produzem
-números plausíveis e bem formatados, sem relação com o que o laboratório chama
-de latência. Ver `docs/definicoes-metricas.md`.
+**Não mude os limiares de `configs/default.yaml` por conta própria.** Sem
+contato com o laboratório, cada valor é uma decisão da equipe registrada em
+`docs/decisoes-sem-laboratorio.md`; o `dwell` continua `null` de propósito.
+Mudar um limiar exige atualizar esse documento junto com o YAML. Valores
+escolhidos por conveniência produzem números plausíveis e bem formatados, sem
+relação com o que o laboratório chama de latência. Ver
+`docs/definicoes-metricas.md`.
 
 **Confira a licença de todo pacote antes de adotar.** US-30 exige nenhuma
 dependência GPL/AGPL na distribuição. Por isso `scipy` + `scikit-learn` em vez
