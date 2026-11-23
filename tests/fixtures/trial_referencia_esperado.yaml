@@ -110,4 +110,17 @@ deslocamento:
   ponto: centro_corpo
   speed_time_base_approx: false
 
+# US-19 (metrics.efficiency): soltura = 1ª amostra válida do centro do corpo, no centro
+# da plataforma (50; 37,5) cm. Chegada = centro do corpo em D/E (3,3 s): (77; 40,5) cm.
+# Mínima = hypot(27, 3) = 27,166 cm. Percorrida = 30 cm até o buraco 2 + hypot(27, 27)
+# no trecho buraco 2 → alvo = 68,184 cm (= primary/total_distance). Índice = 2,5099.
+eficiencia_rota:
+  primary_route_efficiency: 2.5098791177459194
+  total_route_efficiency: 2.5098791177459194
+  release_x_cm_image: 50.0
+  release_y_cm_image: 37.5
+  release_t_s: 0.0
+  release_center_distance_cm: 0.0
+  distancia_minima_cm: 27.16615541441225
+
 tolerancia_absoluta: 1.0e-6
