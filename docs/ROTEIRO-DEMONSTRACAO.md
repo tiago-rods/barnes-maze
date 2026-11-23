@@ -1946,3 +1946,16 @@ docker exec barnes-maze-postgres-1 psql -U barnes -d barnes -c "DROP DATABASE IF
 | `Move-Item` da B.14 falha porque o vídeo já está em `data\raw\movidos` | Um ensaio anterior parou no meio. Devolva o vídeo com `Move-Item data\raw\movidos\renomeado.mp4 $v1`. |
 | `Move-Item` da B.15 ou da B.17 falha | Mesmo caso, com o vídeo completo: `Move-Item data\raw\movidos\completo.mp4 $vc`. |
 | `pose sample` do vídeo completo acha o animal em menos de 90% dos quadros (B.9) | Faltou o `--start-frame 2038 --end-frame 6750`: sem ele, entram a mão e a caixa de partida. Apague `data\demo_anotacao\f0fd949e5eff` e rode de novo com o intervalo. |
+# Curvas por sessão (US-22)
+
+Após aplicar as migrações e dispor de métricas no banco de demonstração:
+
+```powershell
+uv run barnes metrics learning-curves --phase acquisition --event primary
+```
+
+Conferir PNG/PDF/SVG individuais e de grupo, quatro painéis, dispersão,
+marcadores de censura e rodapé de execuções. Repetir com os vídeos indisponíveis:
+os resultados devem ser iguais. O manifesto identifica dados não avaliados e
+campos ausentes; eles não viram zero. Para restringir o grupo, repetir
+`--experiment ID` com os IDs reais. Ver [contrato e limitações](curvas-aprendizado.md).

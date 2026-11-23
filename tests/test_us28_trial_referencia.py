@@ -14,6 +14,7 @@ from barnes.events.sequence import build_sequence, to_visit_sequence
 from barnes.geometry.holes import generate_holes
 from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
+from barnes.longitudinal.learning import summarize
 from barnes.metrics import process_trial
 from barnes.metrics.displacement import compute_displacement
 from barnes.metrics.efficiency import compute_trial_route_efficiency
@@ -82,7 +83,9 @@ def _scenario_path(geometry, expected: dict) -> list[tuple[float, float]]:
         path.append((wrong_hole.x_px, wrong_hole.y_px))
     for i in range(1, SEG_C + 1):
         path.append(
-            _lerp((wrong_hole.x_px, wrong_hole.y_px), (target_hole.x_px, target_hole.y_px), i / SEG_C)
+            _lerp(
+                (wrong_hole.x_px, wrong_hole.y_px), (target_hole.x_px, target_hole.y_px), i / SEG_C
+            )
         )
     for _ in range(DWELL_C):
         path.append((target_hole.x_px, target_hole.y_px))
@@ -170,7 +173,9 @@ def pipeline_output(expected: dict) -> dict:
         radius_factor=expected["limiares_teste"]["entrar"]["raio_fator"],
         minimum_duration_s=expected["limiares_teste"]["entrar"]["duracao_minima_s"],
     )
-    error_def = ErrorDefinition(criterio=ErrorCriterion(expected["limiares_teste"]["erro"]["criterio"]))
+    error_def = ErrorDefinition(
+        criterio=ErrorCriterion(expected["limiares_teste"]["erro"]["criterio"])
+    )
     tempo_limite_s = expected["limiares_teste"]["trial"]["tempo_limite_s"]
 
     discoveries = detect_discoveries(table, geometry, expected["cm_per_px"], discovery_params)
@@ -251,13 +256,18 @@ def test_recorte_us03_nada_fora_do_intervalo(expected: dict, pipeline_output: di
     quadros = pipeline_output["table"].column("quadro").to_numpy()
     assert quadros.min() == start_frame
     assert quadros.max() == end_frame
-    assert pipeline_output["trajeto"]["samples_outside_interval"] == expected["video"]["pre_release_frames"]
+    assert (
+        pipeline_output["trajeto"]["samples_outside_interval"]
+        == expected["video"]["pre_release_frames"]
+    )
 
 
 def test_cobertura_de_pose(expected: dict, pipeline_output: dict) -> None:
     tol = expected["tolerancia_absoluta"]
     failures = RegressionFailures()
-    failures.check("pose.cobertura", pipeline_output["coverage"], expected["pose"]["cobertura"], tol)
+    failures.check(
+        "pose.cobertura", pipeline_output["coverage"], expected["pose"]["cobertura"], tol
+    )
     failures.finish()
 
 
@@ -286,7 +296,9 @@ def test_entradas(expected: dict, pipeline_output: dict) -> None:
         failures.check_eq(f"entradas[{i}].buraco", o.hole_number, e["buraco"])
         failures.check_eq(f"entradas[{i}].quadro", o.quadro, e["quadro"])
         failures.check(f"entradas[{i}].t_s", o.t_s, e["t_s"], tol)
-        failures.check(f"entradas[{i}].confirmado_em_s", o.confirmed_at_s, e["confirmado_em_s"], tol)
+        failures.check(
+            f"entradas[{i}].confirmado_em_s", o.confirmed_at_s, e["confirmado_em_s"], tol
+        )
         failures.check(f"entradas[{i}].dwell_s", o.dwell_s, e["dwell_s"], tol)
         failures.check(f"entradas[{i}].total_latency", o.total_latency, e["total_latency"], tol)
         failures.check(
@@ -303,8 +315,12 @@ def test_sequencia(expected: dict, pipeline_output: dict) -> None:
     failures.check_eq("sequencia.quantidade", len(obtido), len(esperado))
     for i, (e, o) in enumerate(zip(esperado, obtido, strict=False)):
         failures.check_eq(f"sequencia[{i}].ordem", o.ordem, e["ordem"])
-        failures.check_eq(f"sequencia[{i}].buraco_platform", o.buraco_platform, e["buraco_platform"])
-        failures.check(f"sequencia[{i}].angulo_deg_room", o.angulo_deg_room, e["angulo_deg_room"], tol)
+        failures.check_eq(
+            f"sequencia[{i}].buraco_platform", o.buraco_platform, e["buraco_platform"]
+        )
+        failures.check(
+            f"sequencia[{i}].angulo_deg_room", o.angulo_deg_room, e["angulo_deg_room"], tol
+        )
         failures.check(f"sequencia[{i}].inicio_s", o.inicio_s, e["inicio_s"], tol)
         failures.check_eq(f"sequencia[{i}].alvo", o.alvo, e["alvo"])
     failures.finish()
@@ -316,7 +332,9 @@ def test_erros(expected: dict, pipeline_output: dict) -> None:
     obtido = pipeline_output["errors"]
     failures.check_eq("erros.total_errors", obtido.total, esperado["total_errors"])
     failures.check_eq("erros.primary_errors", obtido.ate_alvo, esperado["primary_errors"])
-    failures.check_eq("erros.primary_censurado", obtido.primary_censurado, esperado["primary_censurado"])
+    failures.check_eq(
+        "erros.primary_censurado", obtido.primary_censurado, esperado["primary_censurado"]
+    )
     failures.finish()
 
 
@@ -391,3 +409,26 @@ def test_eficiencia_rota_us19(expected: dict, pipeline_output: dict) -> None:
         tol,
     )
     failures.finish()
+
+
+def test_curva_us22(expected: dict, pipeline_output: dict) -> None:
+    """A agregação conserva as métricas reais do fixture e não inventa entropia."""
+    latency = pipeline_output["latencies"].primary
+    row = {
+        "animal_id": 1,
+        "session": 1,
+        "observed": bool(latency.event),
+        "stale": False,
+        "latency": latency.latency_s,
+        "errors": pipeline_output["errors"].ate_alvo,
+        "distance": pipeline_output["deslocamento"].distance_cm,
+        "entropy": None,
+    }
+    for metric in ("latency", "errors", "distance"):
+        point = summarize([row], metric)["aggregate"][0]
+        assert point["mean"] == pytest.approx(
+            expected["aprendizado"][metric], abs=expected["tolerancia_absoluta"]
+        )
+        assert point["sd"] is None
+        assert point["n_animals"] == expected["aprendizado"]["n_animals"]
+    assert summarize([row], "entropy")["aggregate"] == []

@@ -124,3 +124,11 @@ eficiencia_rota:
   distancia_minima_cm: 27.16615541441225
 
 tolerancia_absoluta: 1.0e-6
+
+# US-22: uma sessão/animal; média = valor observado, DP indefinido (n=1).
+# Entropia não é produzida pelo fixture; deve permanecer sem curva.
+aprendizado:
+  latency: 3.3
+  errors: 1
+  distance: 72.42640687119284
+  n_animals: 1
