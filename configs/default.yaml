@@ -72,6 +72,17 @@ estrategia:
   erros_ate_alvo_max: 3             # C4 — erros admitidos antes do alvo na busca espacial
   entropia_max_espacial: null       # C4 — fora da regra de Harrison; null intencional
 
+# --- Estatística: distribuição de estratégias (US-23) -------------------------
+# Escolha automática entre qui-quadrado e exato de Fisher (US-23 RN02): se alguma
+# frequência ESPERADA da tabela sessão (ou grupo) × estratégia ficar abaixo deste
+# valor, aplica-se Fisher. A convenção usual é 5 (Cochran, 1954), mas NÃO foi
+# decidida pela equipe nem pelo laboratório: os testes de stats/ são revistos
+# depois da conversa com o estatístico, e o tamanho do conjunto (B1) muda a
+# leitura. Com null, barnes.stats.contingency.load_min_expected_frequency RECUSA
+# escolher o teste. A tabela de contingência continua sendo montada.
+estatistica:
+  frequencia_esperada_minima: null   # US-23 RN02 — origem: estatístico / B1; usual 5 (Cochran)
+
 # --- Trial (US-03, US-16) -----------------------------------------------------
 trial:
   tempo_limite_s: 180         # B5 — decisão da equipe (decisoes-sem-laboratorio.md §6);
