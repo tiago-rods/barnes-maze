@@ -348,8 +348,8 @@ D-to-E path length. Numeric C2 parameters are team decisions (raio_fator 1.0, 0.
 `evento_buraco.details` (0009) stores entry evidence; processing and events share
 one transaction. Recalculation reads the trajectory and its provenance without
 opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions
-and actual acceptance blockers. `strategy`/`longitudinal`/`stats`/`report` remain
-empty `__init__.py` stubs pending their user story.
+and actual acceptance blockers. `strategy`/`longitudinal`/`report` remain empty
+`__init__.py` stubs pending their user story; `stats` has only US-23 (below).
 
 US-18 (`metrics/displacement.py`, `metrics/validation.py`, `cli_metrics.py`): one
 distance and one mean speed per trial from the US-09 parquet (narrowed card: no
@@ -363,6 +363,28 @@ stored. US-25 complementary columns: `path_distance`, `mean_speed`,
 `interpolated_fraction`, `speed_time_base_approx` (`Displacement.as_export_columns`).
 The r >= 0.95 acceptance is blocked until a manual reference exists
 (`docs/definicoes-metricas.md` §4.3).
+
+US-19 (`metrics/efficiency.py`, pure; no DB/CLI yet, like US-16/17): index =
+travelled ÷ straight-line distance, **≥ 1** — the inverse of US-02's
+`route_efficiency` (ideal ÷ travelled, `CHECK 0..1` in `trial_results`), so storing it
+needs a new migration. Two indices (S→D `primary_*`, S→E `total_*`) from US-16's
+`CensoredMeasure`, which owns censoring (censored → `None`). Release point = first valid
+`centro_corpo` sample with `t_s >= 0` (measured, never assumed at the centre). Minimum
+distance goes to the **arrival point** (same body point at D/E), not the hole centre:
+the body centre stops short of the hole, so the hole centre would give < 1 on a
+straight route. Index < 1 − 1e-9 raises `RouteEfficiencyError` (RN05). Don't name a
+submodule `metrics/route_efficiency.py`: it would shadow the US-02 function
+`barnes.metrics.route_efficiency`.
+
+US-23 (`stats/contingency.py`, pure): session (or group) × strategy table from
+`StrategyObservation(linha, estrategia)` pairs (US-20 doesn't exist; nothing writes
+`trial_results.search_strategy` yet). Absent categories stay as zero columns, flagged,
+and are left out of the test. Chi-square vs Fisher by expected frequencies against
+`estatistica.frequencia_esperada_minima` (**null** → `StatsConfigError`). Fisher R×C =
+`fisher_exact(method=MonteCarloMethod(...))` (SciPy ≥ 1.15) with a **fixed seed**:
+without `method` SciPy also uses Monte Carlo, but unseeded (non-reproducible
+p-values). Don't name public functions `test_*` or classes `Test*` in `src/`: pytest
+collects them when a test module imports them.
 
 US-28 (`tests/test_us28_trial_referencia.py`): regression test over a versioned
 **synthetic** video (`tests/fixtures/trial_referencia.mp4`) with a known trajectory
