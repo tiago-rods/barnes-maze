@@ -1075,21 +1075,21 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** ele nunca é menor que 1,0; caso seja, o teste falha.
 
 #### Tarefas
-- [ ] Confirmar o protocolo de soltura do laboratório (pergunta B3)
-- [ ] Implementar a detecção do ponto de soltura por trial, a partir da trajetória
-- [ ] Implementar o cálculo da distância mínima do ponto de soltura ao alvo
-- [ ] Implementar a razão distância percorrida / distância mínima
-- [ ] Implementar o valor ausente do índice em trials censurados
-- [ ] Implementar a exportação do ponto de soltura detectado junto da métrica
-- [ ] Escrever o teste de sanidade índice ≥ 1,0
-- [ ] Validar em um trial de rota direta e um de tigmotaxia
+- [ ] SCRUM-227 — Confirmar o protocolo de soltura do laboratório (pergunta B3) *(sem contato com o LNBio; o software não depende da resposta: a soltura é medida por trial — `docs/decisoes-sem-laboratorio.md` §2)*
+- [x] SCRUM-228 — Implementar a detecção do ponto de soltura por trial, a partir da trajetória *(primeira amostra válida do centro do corpo no intervalo útil; `barnes.metrics.efficiency.detect_release_point`)*
+- [x] SCRUM-229 — Implementar o cálculo da distância mínima do ponto de soltura ao alvo *(linha reta da soltura ao ponto de chegada no alvo, mesmo ponto do corpo; ver `docs/definicoes-metricas.md`)*
+- [x] SCRUM-230 — Implementar a razão distância percorrida / distância mínima *(S→D e S→E, com a distância percorrida da US-16)*
+- [x] SCRUM-231 — Implementar o valor ausente do índice em trials censurados
+- [x] SCRUM-232 — Implementar a exportação do ponto de soltura detectado junto da métrica *(colunas complementares `TrialRouteEfficiency.as_trial_results`; banco e CLI pendentes, como US-16/17)*
+- [x] SCRUM-233 — Escrever o teste de sanidade índice ≥ 1,0 *(tolerância relativa 1e-9)*
+- [x] SCRUM-234 — Validar em um trial de rota direta e um de tigmotaxia *(sintéticos, `tests/metrics/test_efficiency.py`; índice também no trial de referência da US-28)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Detecção do ponto de soltura por trial implementada
-- [ ] Índice calculado, com ausência em trials censurados
-- [ ] Teste de sanidade (índice ≥ 1,0) automatizado
-- [ ] Ponto de soltura detectado exportado junto da métrica
-- [ ] Comportamento validado em um trial de rota direta e um de tigmotaxia
+- [x] Detecção do ponto de soltura por trial implementada
+- [x] Índice calculado, com ausência em trials censurados
+- [x] Teste de sanidade (índice ≥ 1,0) automatizado
+- [x] Ponto de soltura detectado exportado junto da métrica *(nas colunas complementares; gravação no banco pendente — a coluna `route_efficiency` da US-02 tem outra definição e CHECK 0..1)*
+- [x] Comportamento validado em um trial de rota direta e um de tigmotaxia *(sintéticos)*
 
 ---
 
@@ -1306,21 +1306,21 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a categoria aparece com zeros e o relatório sinaliza a ausência, em vez de omitir a coluna silenciosamente.
 
 #### Tarefas
-- [ ] Confirmar a existência de grupo experimental além do controle (pergunta B6)
-- [ ] Implementar a montagem da tabela de contingência sessão × estratégia a partir do banco
-- [ ] Implementar a regra de seleção entre qui-quadrado e Fisher pelas frequências esperadas
-- [ ] Implementar o registro da justificativa da escolha junto do resultado
-- [ ] Implementar o relato de estatística e valor-p
-- [ ] Implementar a sinalização de categoria de estratégia ausente
-- [ ] Estender o procedimento à tabela grupo × estratégia, se houver grupo experimental
-- [ ] Escrever testes cobrindo os dois caminhos de seleção de teste
+- [ ] SCRUM-265 — Confirmar a existência de grupo experimental além do controle (pergunta B6) *(sem resposta; o `barnes_maze.py` indica WT × mutante — indício, `docs/decisoes-sem-laboratorio.md` §15)*
+- [x] SCRUM-266 — Implementar a montagem da tabela de contingência sessão × estratégia a partir do banco *(função pura `barnes.stats.contingency.build_contingency_table`; leitura do banco pendente da US-20, que ainda não grava `search_strategy`)*
+- [x] SCRUM-267 — Implementar a regra de seleção entre qui-quadrado e Fisher pelas frequências esperadas *(limite `estatistica.frequencia_esperada_minima`, null até o estatístico)*
+- [x] SCRUM-268 — Implementar o registro da justificativa da escolha junto do resultado
+- [x] SCRUM-269 — Implementar o relato de estatística e valor-p
+- [x] SCRUM-270 — Implementar a sinalização de categoria de estratégia ausente
+- [x] SCRUM-271 — Estender o procedimento à tabela grupo × estratégia, se houver grupo experimental *(genérico: `dimensao="grupo"`)*
+- [x] SCRUM-272 — Escrever testes cobrindo os dois caminhos de seleção de teste
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Tabela de contingência gerada a partir do banco
-- [ ] Seleção automática entre qui-quadrado e Fisher implementada, com registro da justificativa
-- [ ] Testes unitários cobrindo os dois caminhos de seleção
-- [ ] Resultado exportado junto das demais saídas estatísticas
-- [ ] Nenhuma dependência GPL introduzida
+- [ ] Tabela de contingência gerada a partir do banco *(pendente da US-20; a função pura está pronta)*
+- [x] Seleção automática entre qui-quadrado e Fisher implementada, com registro da justificativa
+- [x] Testes unitários cobrindo os dois caminhos de seleção
+- [ ] Resultado exportado junto das demais saídas estatísticas *(`as_record`/`render_markdown` prontos; falta a exportação da US-25)*
+- [x] Nenhuma dependência GPL introduzida *(só SciPy, BSD-3, já dependência)*
 
 ---
 

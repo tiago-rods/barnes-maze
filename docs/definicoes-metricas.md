@@ -49,6 +49,7 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 10 | Estratégia — erros até o alvo | `estrategia.erros_ate_alvo_max` | 3 | C4 | decisão da equipe (sem G3), §10 |
 | 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | decisão da equipe: `null`, §10 |
 | 12 | Tempo limite do trial | `trial.tempo_limite_s` | 180 s | B5 | decisão da equipe (sem G3), §6 |
+| 13 | Frequência esperada mínima para o qui-quadrado (US-23) | `estatistica.frequencia_esperada_minima` | — (`null`) | estatístico · B1 | **pendente**: sem valor, o teste não é escolhido |
 
 As seções (§) da coluna Status são de `decisoes-sem-laboratorio.md`.
 
@@ -182,6 +183,89 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 > |---|---|
 > | Resposta do laboratório | não houve contato com o LNBio |
 > | Registro | decisão da equipe em 12/11/2026: `trials.csv` sem colunas de velocidade; probe de 90 s ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §3 e §11) |
+
+### Eficiência de rota
+
+> **US-19 — nota de implementação, não é a definição do laboratório
+> (`barnes.metrics.efficiency`, `tests/metrics/test_efficiency.py`).** Convenções da
+> equipe, sem resposta do laboratório:
+>
+> - **Índice** = distância percorrida até o alvo ÷ distância mínima da soltura ao alvo
+>   (RN01). Mínimo teórico 1,0. Não é o `route_efficiency` da US-02 (ideal ÷ percorrida,
+>   em [0, 1], coluna `trial_results.route_efficiency`), que continua como estava.
+> - **Dois índices por trial**, como as latências da US-16: `primary_route_efficiency`
+>   até a descoberta do alvo (D) e `total_route_efficiency` até a entrada (E). Qual dos
+>   dois o laboratório chama de "eficiência de rota" fica em aberto. A distância
+>   percorrida é a da US-16 (mesmo ponto, `centro_corpo`, lacunas em linha reta).
+> - **Ponto de soltura** (RN02, SCRUM-228): a posição do centro do corpo na primeira
+>   amostra válida do intervalo útil. O intervalo começa em S, a retirada do cilindro
+>   (`decisoes-sem-laboratorio.md` §2), então a soltura é **medida** em cada trial, não
+>   suposta no centro, e a resposta a B3 não muda o cálculo. Se falta pose no começo,
+>   vale a primeira amostra com pose, com aviso. Sai junto a distância da soltura ao
+>   centro da plataforma, para auditoria. Não há parâmetro novo.
+> - **Distância mínima** (SCRUM-229): linha reta da soltura ao **ponto de chegada**, a
+>   posição do centro do corpo na última amostra válida até D (ou E). Não é a distância
+>   ao centro do buraco: o evento é detectado pelo focinho, e o centro do corpo para
+>   alguns centímetros antes. Com o centro do buraco, um trajeto reto daria índice
+>   < 1,0. Com o mesmo ponto nos dois extremos, a desigualdade triangular garante
+>   índice ≥ 1,0. A distância da soltura ao centro do buraco-alvo sai junto, para
+>   auditoria.
+> - **Censura** (RN03): evento censurado na US-16 (`*_event = 0`) ou não calculado →
+>   índice ausente (`None`), com aviso. Chegada no próprio ponto de soltura (distância
+>   mínima zero) → ausente: a razão não é definida.
+> - **Sanidade** (RN05): índice < 1,0 é recusado (`RouteEfficiencyError`). A tolerância
+>   relativa é 1e-9. Em aritmética exata o índice nunca fica abaixo de 1. A soma de n
+>   segmentos em ponto flutuante erra ~n · 2,2e-16 (~1e-12 em 180 s a 25 fps), e um
+>   erro real de cálculo fica ordens de grandeza acima.
+> - **Exportação** (RN04): `TrialRouteEfficiency.as_trial_results()` traz os dois
+>   índices e a soltura (`release_x_cm_image`, `release_y_cm_image`, `release_t_s`,
+>   `release_center_distance_cm`), em cm, para o final do `trials.csv` (US-25 converte
+>   para metros). **Banco e CLI pendentes**, como nas US-16/17: a coluna
+>   `route_efficiency` existente tem outra definição e `CHECK` 0..1, então gravar o
+>   índice exige uma migração nova.
+> - Validação (Cenários 1 e 2) com trajetórias sintéticas: rota reta do centro ao alvo
+>   (índice 1,0, soltura no centro) e tigmotaxia (meia volta pela borda, índice > 3).
+>   No trial de referência da US-28, o índice é 2,51.
+
+### Distribuição de estratégias entre sessões
+
+> **US-23 — nota de implementação (`barnes.stats.contingency`,
+> `tests/stats/test_contingency.py`).** A US-20 (classificação) ainda não existe. A
+> entrada é uma lista mínima de pares (linha, estratégia), uma por trial, testada com
+> dados sintéticos. Quem ler `trial_results.search_strategy` depois da US-20 monta essa
+> lista. A leitura do banco fica pendente da US-20.
+>
+> - **Categorias**: as três de Harrison et al. (2006) (§10 de
+>   `decisoes-sem-laboratorio.md`), com os códigos do banco (`spatial`, `serial`,
+>   `random`, `CHECK` da 0001). São parâmetro da função. Categoria sem nenhum trial
+>   aparece com zeros e é sinalizada (Cenário 3). Estratégia desconhecida é recusada,
+>   nunca descartada. Trial não classificado fica fora da tabela, contado.
+> - **Linhas**: sessão (`trials.day_number`) ou grupo (RN04, B6 em aberto). O mesmo
+>   procedimento serve aos dois (`dimensao`). Probes devem ficar de fora (não há alvo).
+> - **Escolha do teste** (RN02, linha 13 da seção 1): se alguma frequência esperada
+>   fica abaixo de `estatistica.frequencia_esperada_minima`, aplica-se Fisher; senão,
+>   qui-quadrado de independência. É a regra do card (qualquer célula), mais estrita
+>   que a de Cochran (nenhuma < 1 e no máximo 20% < 5). A escolha entre as duas fica
+>   para o estatístico. **O limite fica `null`**: sem ele, a escolha é recusada.
+> - Linhas e colunas inteiramente zeradas ficam na tabela reportada, mas **fora do
+>   teste**. Frequência esperada zero deixa o qui-quadrado indefinido, e uma margem
+>   zero não muda o Fisher. Com menos de 2 linhas ou 2 categorias com trials, não há
+>   teste (`teste = None`), com justificativa.
+> - **Fisher 2×2**: exato e bilateral (`scipy.stats.fisher_exact`), estatística =
+>   razão de chances.
+> - **Fisher R×C** (Fisher–Freeman–Halton): o `fisher_exact` clássico do SciPy é só
+>   2×2. Desde a 1.15 ele aceita R×C com `method=MonteCarloMethod`: valor-p por Monte
+>   Carlo sobre tabelas com as mesmas margens, estatística = probabilidade da tabela
+>   observada. Sem `method`, o SciPy 1.17 também usa Monte Carlo, mas com semente
+>   aleatória: o mesmo dado deu 0,175, 0,185 e 0,175 em três execuções. Por isso a
+>   semente (0) e as reamostragens (99.999, erro-padrão ~0,0007 em p = 0,05) são fixas
+>   e saem no resultado. São parâmetros do método numérico, não limiares. O piso do
+>   SciPy no `pyproject.toml` subiu para 1.15.
+> - **Qui-quadrado**: `scipy.stats.chi2_contingency`, com a correção de Yates padrão,
+>   que só atua com 1 grau de liberdade. O uso fica registrado.
+> - **Relato** (RN03): `IndependenceResult.as_record()` (JSON) e `render_markdown()`
+>   trazem a tabela completa, o teste, a estatística, os graus de liberdade, o valor-p,
+>   as frequências esperadas e a justificativa. Valor-p alto é resultado válido (RN05).
 
 ## 3. Protocolo de referência
 

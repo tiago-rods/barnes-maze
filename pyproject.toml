@@ -10,7 +10,7 @@ requires-python = ">=3.11,<3.12"
 # Por isso este projeto NÃO usa pingouin (GPL-3) nem ultralytics (AGPL).
 dependencies = [
     "numpy>=1.26",
-    "scipy>=1.11",
+    "scipy>=1.15",               # US-23: fisher_exact R×C com MonteCarloMethod (1.15+)
     "pandas>=2.1",
     "opencv-python>=4.9",       # vídeo e janelas de ajuste do MVP
     "shapely>=2.0",             # geometria dos buracos

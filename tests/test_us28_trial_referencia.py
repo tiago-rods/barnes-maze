@@ -16,6 +16,7 @@ from barnes.io.trim import interval_from_seconds
 from barnes.io.video import load_trial_video
 from barnes.metrics import process_trial
 from barnes.metrics.displacement import compute_displacement
+from barnes.metrics.efficiency import compute_trial_route_efficiency
 from barnes.metrics.errors import ErrorCriterion, ErrorDefinition, compute_errors
 from barnes.metrics.latency import TargetEvent, compute_target_latencies, target_discovery
 from barnes.pose.series import PoseFrames, build_series
@@ -214,6 +215,9 @@ def pipeline_output(expected: dict) -> dict:
 
     coverage = float(table.column("pose_valida").to_numpy().mean())
     deslocamento = compute_displacement(table)
+    eficiencia = compute_trial_route_efficiency(
+        table, latencies, geometry=geometry, cm_per_px=expected["cm_per_px"]
+    )
 
     return {
         "table": table,
@@ -225,6 +229,7 @@ def pipeline_output(expected: dict) -> dict:
         "trajeto": trajeto,
         "coverage": coverage,
         "deslocamento": deslocamento,
+        "eficiencia": eficiencia,
     }
 
 
@@ -359,6 +364,30 @@ def test_deslocamento_us18(expected: dict, pipeline_output: dict) -> None:
         "deslocamento.mean_speed_cm_s vs trajeto",
         obtido.mean_speed_cm_s,
         trajeto["mean_speed_cm_s"],
+        tol,
+    )
+    failures.finish()
+
+
+def test_eficiencia_rota_us19(expected: dict, pipeline_output: dict) -> None:
+    """US-19: índice S→D e S→E e o ponto de soltura detectado na série."""
+    tol = expected["tolerancia_absoluta"]
+    failures = RegressionFailures()
+    esperado = expected["eficiencia_rota"]
+    obtido = pipeline_output["eficiencia"]
+    for chave, valor in obtido.as_trial_results().items():
+        failures.check(f"eficiencia_rota.{chave}", valor, esperado[chave], tol)
+    failures.check(
+        "eficiencia_rota.distancia_minima_cm",
+        obtido.total.distancia_minima_cm,
+        esperado["distancia_minima_cm"],
+        tol,
+    )
+    # A distância percorrida do índice é a mesma da US-16 (S→E).
+    failures.check(
+        "eficiencia_rota.distancia_percorrida_cm vs latencias",
+        obtido.total.distancia_percorrida_cm,
+        expected["latencias"]["total_distance"],
         tol,
     )
     failures.finish()
