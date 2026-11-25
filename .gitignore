@@ -34,6 +34,7 @@ Thumbs.db
 # Arquivos temporários
 *.tmp
 *.log
+docs/decisoes-sem-laboratorio.md
 
 # uv
 .uv/
