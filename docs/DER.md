@@ -153,13 +153,13 @@ erDiagram
         float total_latency_s "tempo até entrar na escape box (nulo na probe)"
         int primary_errors "buracos errados antes do 1º acerto"
         int total_errors "buracos errados no trial inteiro"
-        string search_strategy "random|serial|spatial"
+        string search_strategy "random|serial|spatial; US-20: gravado por barnes strategy classify, NULL = nao classificado"
         string heatmap_path
         string cox_test
         bool event_ocurred
         bool primary_event "US-22: true observado, false censurado, NULL nao avaliado"
         bool total_event "US-22: censura da entrada, independente da descoberta"
-        float entropy_bits "US-22: entropia persistida; NULL quando indisponivel"
+        float entropy_bits "US-22: coluna; US-20: gravada por barnes strategy classify, NULL quando indisponivel"
         datetime calculated_at "US-02 — quando as métricas foram calculadas"
         float px_per_10cm_used "US-02 RN05 — escala usada; obsoleta se != maze_configs.px_per_10cm"
         float route_efficiency "US-02 RN03 — caminho ideal / caminho percorrido"
@@ -280,8 +280,6 @@ marca da série difere da do trial.
 Pontos identificados na revisão do schema mas propositalmente adiados —
 retomar quando os cards correspondentes forem abertos:
 
-- US-20 (classificação de estratégia): TRIAL_RESULT não tem campo de entropia
-  espacial da trajetória, usada como critério ("entropia_max_espacial").
 - US-19 (índice de eficiência de rota): resolvido pela US-02 — `path_tortuosity`
   fica para outra métrica; `route_efficiency` (caminho-ideal / caminho-real)
   é campo próprio, adicionado em `0002_us02_calibration.sql`.

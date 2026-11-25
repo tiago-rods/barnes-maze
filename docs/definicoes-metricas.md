@@ -48,6 +48,8 @@ código. Ele é a fonte dos valores de `configs/default.yaml`.
 | 9 | Estratégia — adjacência angular | `estrategia.adjacencia_angular_graus` | 18° (20 buracos) | C4 · B2 | decisão da equipe (sem G3), §10 |
 | 10 | Estratégia — erros até o alvo | `estrategia.erros_ate_alvo_max` | 3 | C4 | decisão da equipe (sem G3), §10 |
 | 11 | Estratégia — entropia máxima | `estrategia.entropia_max_espacial` | — | C4 | decisão da equipe: `null`, §10 |
+| 11a | Estratégia — raio da zona central (cruzamentos) | `estrategia.centro_zona_raio_frac` | 0,5 | C4 (US-20) | decisão da equipe (sem G3), §10 |
+| 11b | Estratégia — mínimo de buracos para "serial" | `estrategia.serial_min_buracos` | 2 | C4 (US-20) | decisão da equipe (sem G3), §10 |
 | 12 | Tempo limite do trial | `trial.tempo_limite_s` | 180 s | B5 | decisão da equipe (sem G3), §6 |
 | 13 | Frequência esperada mínima para o qui-quadrado (US-23) | `estatistica.frequencia_esperada_minima` | — (`null`) | estatístico · B1 | **pendente**: sem valor, o teste não é escolhido |
 
@@ -118,9 +120,76 @@ _A definir em G3._
 ### Estratégias: aleatória, serial, espacial
 _Não definido pelo laboratório (G3 não fecha). Decisão da equipe em 12/11/2026:
 categorias de Harrison et al. (2006) — espacial, serial e aleatória —, com os
-parâmetros da tabela da seção 1 (linhas 8-11); ver
+parâmetros da tabela da seção 1 (linhas 8-11b); ver
 [`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §10. Sem anotação
 manual, o kappa da US-21 não tem contra o que ser medido._
+
+> **US-20 — implementação (`barnes.strategy.classification`, `barnes.strategy.signals`,
+> `barnes.strategy.entropy`, `tests/strategy/`, `barnes strategy classify`).** Regra
+> explícita, não modelo treinado (RN01): combina três sinais, todos calculados **até a
+> primeira checagem do alvo** (ou o trial inteiro, marcado censurado, se o alvo não foi
+> checado — mesma convenção de `primary_errors`, US-17):
+>
+> - **Cruzamentos do centro** (`barnes.strategy.signals.count_center_crossings`): número
+>   de entradas na zona central da plataforma (raio = `estrategia.centro_zona_raio_frac`
+>   × raio da circunferência dos buracos), na trajetória contínua (US-09). Rotação-invariante
+>   — não depende do referencial da sala, porque o centro não se move com a rotação (US-05).
+> - **Adjacência angular** (`barnes.strategy.signals.compute_angular_adjacency`): distância
+>   angular circular do primeiro buraco checado até o alvo, e o comprimento da maior
+>   sequência de buracos consecutivamente adjacentes entre si (`estrategia.adjacencia_angular_graus`),
+>   no mesmo sentido (horário ou anti-horário). Opera sobre a **sequência de visitação da
+>   US-15, no referencial da sala** (RN05) — nunca sobre a trajetória.
+> - **Erros até o alvo** (`barnes.metrics.errors.compute_errors`, US-17): reusado sem
+>   recálculo.
+>
+> **Regra de decisão:**
+>
+> - **Espacial** ⟺ erros ≤ `erros_ate_alvo_max` **e** primeiro buraco checado a ≤
+>   `adjacencia_angular_graus` do alvo (ou nenhum buraco checado antes — foi direto) **e**
+>   `cruzamentos < cruzamentos_centro_min`.
+> - **Serial** ⟺ não é espacial **e** existe uma sequência de ≥ `serial_min_buracos`
+>   buracos consecutivamente adjacentes, no mesmo sentido, antes do alvo **e**
+>   `cruzamentos < cruzamentos_centro_min`.
+> - **Aleatória** ⟺ nem espacial nem serial (sobra — decisão já escrita em §10).
+> - **Não classificado** (`search_strategy = NULL`) se cruzamentos ou erros não puderam
+>   ser calculados (sem pose válida, sem sequência) — nunca confundido com "aleatória"
+>   (RN01: nenhuma categoria é um padrão/default).
+>
+> **Origem do critério (C4/RN04) e correção do Cenário 2 do card.** Sem contato com o
+> laboratório, C4 é respondida com a citação de Harrison, F. A., et al. (2006),
+> "Spatial and nonspatial escape strategies in the Barnes maze", *Learning & Memory*
+> 13(6):809-816: a busca **aleatória** é definida ali, e replicada pela literatura
+> derivada (Bhatt et al.; calculadoras/protocolos como ConductScience e bio-protocol),
+> como a que cruza o centro da plataforma ou investiga os buracos sem sistema — nunca a
+> espacial. O Cenário 2 de `docs/CARDS.md` ("foi diretamente ao alvo com poucos erros e
+> **cruzando o centro**" → espacial) está em desacordo com essa citação; tratado como
+> **inconsistência de redação do card**, não como regra — a implementação segue a
+> literatura citada (0 cruzamentos tolerados para espacial, por padrão). Os demais três
+> cenários do card (serial, aleatória, ajuste de limiar sem alteração de código) são
+> reproduzidos tal como escritos, com um trial sintético por categoria em
+> `tests/strategy/test_classification.py` (DoD "validar a classificação em um trial de
+> cada categoria").
+>
+> **Entropia da trajetória** (`barnes.strategy.entropy.compute_trajectory_entropy`): índice
+> separado, **não é um dos três sinais da regra** (RN02 lista só os três acima;
+> `estrategia.entropia_max_espacial` continua `null` por decisão da equipe — fora da regra
+> de Harrison, §10). Entropia de Shannon, em bits (base 2), da distribuição do **tempo**
+> gasto pelo `centro_corpo` em setores angulares ao redor do centro da plataforma (padrão:
+> um setor por buraco da montagem), na mesma janela "até o alvo". `None` (não calculada)
+> sem amostra válida no trecho — nunca zero por omissão. Persistida em
+> `trial_results.entropy_bits` (migração 0011, US-22) junto com `search_strategy`
+> (coluna já existente desde a migração 0001).
+>
+> **Auditoria caso a caso (RN06):** os três sinais (cruzamentos, distância do primeiro
+> buraco ao alvo, maior sequência adjacente, erros até o alvo) e os limiares usados vão
+> para `execucao.metadata` e para um relatório JSON por execução de `strategy classify` —
+> não há colunas novas em `trial_results` para eles, só `entropy_bits`/`search_strategy`.
+>
+> **Ajuste de limiar sem alteração de código (RN03, Cenário 4):** todos os limiares da
+> regra — `cruzamentos_centro_min`, `adjacencia_angular_graus`, `erros_ate_alvo_max`,
+> `centro_zona_raio_frac`, `serial_min_buracos` — ficam em `configs/default.yaml`, seção
+> `estrategia`; alterar um valor e reexecutar `barnes strategy classify` produz a nova
+> classificação sem tocar no código-fonte.
 
 ### Censura
 Trial em que o animal não encontrou o alvo dentro do tempo limite. Marcado,
@@ -230,10 +299,14 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 ### Distribuição de estratégias entre sessões
 
 > **US-23 — nota de implementação (`barnes.stats.contingency`,
-> `tests/stats/test_contingency.py`).** A US-20 (classificação) ainda não existe. A
-> entrada é uma lista mínima de pares (linha, estratégia), uma por trial, testada com
-> dados sintéticos. Quem ler `trial_results.search_strategy` depois da US-20 monta essa
-> lista. A leitura do banco fica pendente da US-20.
+> `tests/stats/test_contingency.py`).** A entrada é uma lista mínima de pares (linha,
+> estratégia), uma por trial, testada com dados sintéticos — `barnes.stats.contingency`
+> continua sem ler o banco diretamente. Agora que a US-20 existe
+> (`barnes.strategy.classification`, `trial_results.search_strategy` gravado por
+> `barnes strategy classify`), quem monta essa lista a partir do banco lê
+> `search_strategy` de cada trial; trials com `search_strategy IS NULL` (não
+> classificado, RN01 da US-20) devem ser tratados como "estrategia = None" — fora da
+> tabela, contados e avisados — nunca como uma quarta categoria.
 >
 > - **Categorias**: as três de Harrison et al. (2006) (§10 de
 >   `decisoes-sem-laboratorio.md`), com os códigos do banco (`spatial`, `serial`,
@@ -271,7 +344,7 @@ nunca descartado — exportado como `primary_event` e `total_event`.
 
 | | |
 |---|---|
-| Artigo ou protocolo publicado a seguir (C5) | Decisão da equipe (12/11/2026, sem o laboratório): Sunyer et al. (2007) para o método e Harrison et al. (2006) para as estratégias — citações a conferir antes do relatório ([`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §14) |
+| Artigo ou protocolo publicado a seguir (C5) | Decisão da equipe (12/11/2026, sem o laboratório): Sunyer et al. (2007) para o método (citação a conferir) e Harrison, F. A., et al. (2006), "Spatial and nonspatial escape strategies in the Barnes maze", *Learning & Memory* 13(6):809-816, para as estratégias — **citação verificada na US-20** (seção "Estratégias" acima; `decisoes-sem-laboratorio.md` §14) |
 
 ## 4. Calibração
 
