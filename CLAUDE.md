@@ -420,6 +420,17 @@ synthetic `.mp4` fixtures via `cv2.VideoWriter` instead.
 
 ## Conventions
 
+US-22: `metrics learning-curves` reads only PostgreSQL through `db/learning.py`;
+`longitudinal/learning.py` aggregates successful trials into animal means and
+equally weighted group means with sample SD. `report/learning.py` exports
+PNG/PDF/SVG plus a database snapshot manifest, with censoring and all source
+execution identities printed. Migration 0011 adds nullable `primary_event`,
+`total_event`, `entropy_bits`; the legacy `event_ocurred` is not inferred.
+Producers must persist metrics under one execution via `insert_trial_result`.
+Latest result per trial is selected as a whole, never combined with older
+partial executions. See `docs/curvas-aprendizado.md` for missing upstream
+US-16/17/20 persistence and the exact descriptive aggregation convention.
+
 - Google-style docstrings, type hints, `pathlib.Path` over raw strings,
   frozen `@dataclass` for value objects, domain-specific exceptions
   (`VideoLoadError`, `DatabaseConfigError`, `GeometryValidationError`)

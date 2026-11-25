@@ -451,5 +451,15 @@ uv run pytest tests/test_us28_trial_referencia.py -q</code></pre></div><p class=
   }
 })();
 </script>
+<section class="step" id="s-us22" style="margin: 2rem; padding: 1rem">
+  <h2>US-22 — Curvas por sessão</h2>
+  <p>Após migrar o banco e persistir as métricas, execute:</p>
+  <pre><code>uv run barnes metrics learning-curves --phase acquisition --event primary</code></pre>
+  <p>Confira as figuras PNG/PDF/SVG por animal e grupo: quatro métricas, dispersão,
+    censura e identificação das execuções. Repita sem acesso aos vídeos.
+    Dados ausentes não viram zero. Use <code>--experiment ID</code> repetidamente
+    para selecionar o grupo.</p>
+  <p><a href="curvas-aprendizado.md">Contrato de integração e pendências dos produtores</a>.</p>
+</section>
 </body>
 </html>

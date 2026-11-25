@@ -24,6 +24,7 @@ A ressalva de base temporal da velocidade (RN07) é derivada na leitura de
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -59,6 +60,13 @@ def insert_trial_result(
     px_per_10cm_used: float,
     calculated_at: datetime,
     interpolated_fraction: float | None = None,
+    primary_latency_s: float | None = None,
+    total_latency_s: float | None = None,
+    primary_errors: int | None = None,
+    total_errors: int | None = None,
+    primary_event: bool | None = None,
+    total_event: bool | None = None,
+    entropy_bits: float | None = None,
 ) -> int:
     """Grava as métricas de um processamento de trial (US-02 RN03, US-27 RN02).
 
@@ -79,6 +87,13 @@ def insert_trial_result(
         calculated_at: Quando este cálculo foi feito.
         interpolated_fraction: Fração interpolada das amostras usadas (US-18
             RN05), ou `None` quando a origem não marca interpolação.
+        primary_latency_s: Latência de descoberta ou limite de censura (US-16).
+        total_latency_s: Latência de entrada ou limite de censura (US-16).
+        primary_errors: Erros até descobrir o alvo (US-17).
+        total_errors: Erros no trial inteiro (US-17).
+        primary_event: Descoberta observada (True), censurada (False), desconhecida (None).
+        total_event: Entrada observada (True), censurada (False), desconhecida (None).
+        entropy_bits: Entropia já calculada em base 2 (US-20), ou None.
 
     Returns:
         O id da nova linha em `trial_results`.
@@ -88,14 +103,37 @@ def insert_trial_result(
             execução não existir ou for de outro trial.
         psycopg.errors.UniqueViolation: Se a execução já tiver métricas.
     """
+    # Entradas opcionais permitem persistir resultados das US-16/17/20 na mesma
+    # execução. Não deduzir estado de censura a partir de latências ausentes.
+    for name, value in (
+        ("primary_latency_s", primary_latency_s),
+        ("total_latency_s", total_latency_s),
+        ("entropy_bits", entropy_bits),
+    ):
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError(f"{name} deve ser finito e não negativo.")
+    for name, value in (("primary_errors", primary_errors), ("total_errors", total_errors)):
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+        ):
+            raise ValueError(f"{name} deve ser inteiro não negativo.")
+    if any(v is not None and not isinstance(v, bool) for v in (primary_event, total_event)):
+        raise ValueError("Estado de evento deve ser bool ou None (não avaliado).")
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO trial_results (
                 trial_id, execucao_id, distance_cm, speed_mean_cm, route_efficiency,
-                px_per_10cm_used, calculated_at, interpolated_fraction
+                px_per_10cm_used, calculated_at, interpolated_fraction,
+                primary_latency_s, total_latency_s, primary_errors, total_errors,
+                primary_event, total_event, entropy_bits
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -107,6 +145,13 @@ def insert_trial_result(
                 px_per_10cm_used,
                 calculated_at,
                 interpolated_fraction,
+                primary_latency_s,
+                total_latency_s,
+                primary_errors,
+                total_errors,
+                primary_event,
+                total_event,
+                entropy_bits,
             ),
         )
         return cur.fetchone()[0]
@@ -167,9 +212,7 @@ def list_trial_results(conn: psycopg.Connection) -> list[StoredTrialResult]:
     return [_row_to_result(row) for row in rows]
 
 
-def list_trial_result_history(
-    conn: psycopg.Connection, trial_id: int
-) -> list[StoredTrialResult]:
+def list_trial_result_history(conn: psycopg.Connection, trial_id: int) -> list[StoredTrialResult]:
     """Todos os resultados já calculados para um trial, do mais recente ao mais antigo.
 
     Cada um aponta para sua execução (`execucao_id`), de onde saem modelo,

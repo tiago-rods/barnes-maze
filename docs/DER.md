@@ -157,6 +157,9 @@ erDiagram
         string heatmap_path
         string cox_test
         bool event_ocurred
+        bool primary_event "US-22: true observado, false censurado, NULL nao avaliado"
+        bool total_event "US-22: censura da entrada, independente da descoberta"
+        float entropy_bits "US-22: entropia persistida; NULL quando indisponivel"
         datetime calculated_at "US-02 — quando as métricas foram calculadas"
         float px_per_10cm_used "US-02 RN05 — escala usada; obsoleta se != maze_configs.px_per_10cm"
         float route_efficiency "US-02 RN03 — caminho ideal / caminho percorrido"

@@ -21,6 +21,7 @@ import psycopg
 import typer
 
 from barnes.cli_events import register_event_commands
+from barnes.cli_learning import register_learning_commands
 from barnes.cli_metrics import register_metric_commands
 from barnes.cli_pose import register_pose_commands
 from barnes.db.calibration import (
@@ -2115,6 +2116,7 @@ def events_discover(
 register_pose_commands(pose_app, _command_errors)
 register_event_commands(events_app, _command_errors)
 register_metric_commands(metrics_app, _command_errors)
+register_learning_commands(metrics_app, _command_errors)
 
 
 def _is_utf8(encoding: str | None) -> bool:

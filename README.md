@@ -24,6 +24,11 @@ A definição de escopo completa — cards, riscos, cronograma e critérios de a
 
 ## O que este projeto entrega
 
+**US-22 — curvas por sessão:** `uv run barnes metrics learning-curves` gera
+figuras por animal e grupo, com dispersão, censura e proveniência, somente a
+partir do banco. Consulte o [guia e o contrato de integração](docs/curvas-aprendizado.md)
+e aplique a migração `0011` antes de usar.
+
 O que só ele pode entregar, e que a anotação manual não consegue produzir:
 
 - **Eventos por buraco** — separar *encontrar* de *entrar*, com dwell e ordem de visitação
