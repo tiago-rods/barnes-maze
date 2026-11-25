@@ -194,6 +194,21 @@ def test_missing_distance_and_speed_are_stored_as_null_not_zero(conn, trial_id):
     assert result.distance_cm is None and result.speed_mean_cm is None
 
 
+def test_search_strategy_is_stored_and_null_when_not_classified(conn, trial_id):
+    # US-20: `None` = não classificado, nunca 'random' por omissão.
+    trial, maze_config_id = trial_id
+    _insert(conn, trial, maze_config_id)
+    assert get_trial_result(conn, trial).search_strategy is None
+    _insert(conn, trial, maze_config_id, search_strategy="serial")
+    assert get_trial_result(conn, trial).search_strategy == "serial"
+
+
+def test_search_strategy_unknown_value_is_refused_before_insert(conn, trial_id):
+    trial, maze_config_id = trial_id
+    with pytest.raises(ValueError, match="search_strategy"):
+        _insert(conn, trial, maze_config_id, search_strategy="direto")
+
+
 def test_speed_caveat_is_derived_from_the_trial_variable_fps_flag(conn, trial_id):
     # US-18 RN07: a ressalva não é gravada; vem de trials.fps_is_variable na leitura.
     trial, maze_config_id = trial_id

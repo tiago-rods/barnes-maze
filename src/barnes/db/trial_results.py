@@ -32,6 +32,11 @@ import psycopg
 
 from barnes.pose.quality import PoseQuality
 
+# Mesmo conjunto do CHECK de trial_results.search_strategy (migração 0001). Não importa
+# barnes.strategy.classification.SearchStrategy aqui: db/ persiste, não conhece o estágio
+# que produziu o valor (cli.py é o único que importa os dois, ver CLAUDE.md).
+_SEARCH_STRATEGIES = frozenset({"random", "serial", "spatial"})
+
 
 @dataclass(frozen=True)
 class StoredTrialResult:
@@ -47,6 +52,7 @@ class StoredTrialResult:
     qualidade_pose: PoseQuality | None = None
     interpolated_fraction: float | None = None
     speed_time_base_approx: bool = False
+    search_strategy: str | None = None
 
 
 def insert_trial_result(
@@ -67,6 +73,7 @@ def insert_trial_result(
     primary_event: bool | None = None,
     total_event: bool | None = None,
     entropy_bits: float | None = None,
+    search_strategy: str | None = None,
 ) -> int:
     """Grava as métricas de um processamento de trial (US-02 RN03, US-27 RN02).
 
@@ -94,6 +101,8 @@ def insert_trial_result(
         primary_event: Descoberta observada (True), censurada (False), desconhecida (None).
         total_event: Entrada observada (True), censurada (False), desconhecida (None).
         entropy_bits: Entropia já calculada em base 2 (US-20), ou None.
+        search_strategy: Categoria da classificação (US-20): 'spatial', 'serial',
+            'random', ou None (não classificado — nunca 'random' por omissão).
 
     Returns:
         O id da nova linha em `trial_results`.
@@ -124,6 +133,9 @@ def insert_trial_result(
             raise ValueError(f"{name} deve ser inteiro não negativo.")
     if any(v is not None and not isinstance(v, bool) for v in (primary_event, total_event)):
         raise ValueError("Estado de evento deve ser bool ou None (não avaliado).")
+    if search_strategy is not None and search_strategy not in _SEARCH_STRATEGIES:
+        opcoes = ", ".join(sorted(_SEARCH_STRATEGIES))
+        raise ValueError(f"search_strategy={search_strategy!r} desconhecido; use None ou um de: {opcoes}.")
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -131,9 +143,9 @@ def insert_trial_result(
                 trial_id, execucao_id, distance_cm, speed_mean_cm, route_efficiency,
                 px_per_10cm_used, calculated_at, interpolated_fraction,
                 primary_latency_s, total_latency_s, primary_errors, total_errors,
-                primary_event, total_event, entropy_bits
+                primary_event, total_event, entropy_bits, search_strategy
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -152,6 +164,7 @@ def insert_trial_result(
                 primary_event,
                 total_event,
                 entropy_bits,
+                search_strategy,
             ),
         )
         return cur.fetchone()[0]
@@ -167,7 +180,8 @@ _SELECT_WITH_STALENESS = """
            qp.cobertura_pose,
            qp.qualidade AS qualidade_pose,
            tr.interpolated_fraction,
-           t.fps_is_variable AS speed_time_base_approx
+           t.fps_is_variable AS speed_time_base_approx,
+           tr.search_strategy
     FROM trial_results tr
     JOIN trials t ON t.id = tr.trial_id
     JOIN maze_configs mc ON mc.id = t.maze_config_id
@@ -179,12 +193,13 @@ _LATEST_FIRST = " ORDER BY tr.trial_id, tr.calculated_at DESC NULLS LAST, tr.id 
 
 
 def _row_to_result(row: tuple) -> StoredTrialResult:
-    *fields, quality, interpolated_fraction, speed_time_base_approx = row
+    *fields, quality, interpolated_fraction, speed_time_base_approx, search_strategy = row
     return StoredTrialResult(
         *fields,
         qualidade_pose=None if quality is None else PoseQuality(quality),
         interpolated_fraction=interpolated_fraction,
         speed_time_base_approx=bool(speed_time_base_approx),
+        search_strategy=search_strategy,
     )
 
 
