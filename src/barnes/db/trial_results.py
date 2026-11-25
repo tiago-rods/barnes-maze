@@ -53,6 +53,7 @@ class StoredTrialResult:
     interpolated_fraction: float | None = None
     speed_time_base_approx: bool = False
     search_strategy: str | None = None
+    entropy_bits: float | None = None
 
 
 def insert_trial_result(
@@ -181,7 +182,8 @@ _SELECT_WITH_STALENESS = """
            qp.qualidade AS qualidade_pose,
            tr.interpolated_fraction,
            t.fps_is_variable AS speed_time_base_approx,
-           tr.search_strategy
+           tr.search_strategy,
+           tr.entropy_bits
     FROM trial_results tr
     JOIN trials t ON t.id = tr.trial_id
     JOIN maze_configs mc ON mc.id = t.maze_config_id
@@ -193,13 +195,14 @@ _LATEST_FIRST = " ORDER BY tr.trial_id, tr.calculated_at DESC NULLS LAST, tr.id 
 
 
 def _row_to_result(row: tuple) -> StoredTrialResult:
-    *fields, quality, interpolated_fraction, speed_time_base_approx, search_strategy = row
+    *fields, quality, interpolated_fraction, speed_time_base_approx, search_strategy, entropy_bits = row
     return StoredTrialResult(
         *fields,
         qualidade_pose=None if quality is None else PoseQuality(quality),
         interpolated_fraction=interpolated_fraction,
         speed_time_base_approx=bool(speed_time_base_approx),
         search_strategy=search_strategy,
+        entropy_bits=entropy_bits,
     )
 
 
