@@ -341,8 +341,9 @@ D-to-E path length. Numeric C2 parameters are team decisions (raio_fator 1.0, 0.
 `evento_buraco.details` (0009) stores entry evidence; processing and events share
 one transaction. Recalculation reads the trajectory and its provenance without
 opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions
-and actual acceptance blockers. `strategy`/`longitudinal`/`stats`/`report` remain
-empty `__init__.py` stubs pending their user story.
+and actual acceptance blockers. `strategy`/`longitudinal`/`stats` remain
+empty `__init__.py` stubs pending their user story; `report` is implemented (US-25,
+see below).
 
 US-18 (`metrics/displacement.py`, `metrics/validation.py`, `cli_metrics.py`): one
 distance and one mean speed per trial from the US-09 parquet (narrowed card: no
@@ -365,6 +366,27 @@ from `configs/default.yaml`. When a story adds a metric (US-19..22 next), add it
 the expected YAML; changing an existing expected value needs a justification in the
 commit message (RN04). It must pass before merging to the main branch — a review
 rule, there is no CI. The fixture has no pose gaps, no censoring and constant fps.
+
+US-25 (`db/export.py`, `report/trials_csv.py`, `report/probes_csv.py`,
+`cli_report.py`): exports the lab's exact schema
+(`docs/decisoes-sem-laboratorio.md` §4) — never read it from `configs/default.yaml`,
+which stays mostly `null`. Reads already-persisted `evento_buraco` rows (the
+latest `events enter` execution for the trial) instead of recomputing
+discovery/entry from the trajectory, so the exported `execucao_id` matches what
+actually produced the numbers. `EntryEvent` is reconstructed straight from
+`evento_buraco.details` (the same JSON blob `cli_events._record` wrote via
+`asdict(event)`); `DiscoveryEvent` is rebuilt from the plain columns plus a
+`hole_id -> hole_number` reverse lookup (`get_hole_ids`), since discoveries don't
+carry `details`. `experiments.group_label` (migration 0011) didn't exist before
+this card — set it with `barnes report set-group`. All CSV distances convert
+cm -> m at the report layer only (`barnes.metrics.*` stays in cm); missing values
+are an explicit empty string, never a dropped column (Cenário 3). `probes.csv`
+uses a fixed 90 s probe duration (not `trial.tempo_limite_s`) and omits
+`primary_event`/`total_event` — the lab's script derives
+`primary_event = primary_latency < total_latency` itself. RN03's literal
+acceptance test (running the lab's `barnes_maze.py` on the generated CSV) is
+**not verified** — that script lives outside this repo, on the LNBio machine,
+and isn't available in dev/CI.
 
 `pose/` notes (US-06): the internal annotation format (`anotacoes.csv`) is
 tool-agnostic and `annotations.from_slp` is the only SLEAP-aware code, because
