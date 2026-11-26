@@ -21,6 +21,7 @@ import typer
 from barnes.cli_events import register_event_commands
 from barnes.cli_metrics import register_metric_commands
 from barnes.cli_pose import register_pose_commands
+from barnes.cli_report import register_report_commands
 from barnes.db.calibration import (
     CalibrationRequiredError,
     get_calibration,
@@ -167,6 +168,9 @@ app.add_typer(pose_app, name="pose")
 
 events_app = typer.Typer(help="Descoberta, entrada e calibração de eventos (US-11/12/13).")
 app.add_typer(events_app, name="events")
+
+report_app = typer.Typer(help="Exportação compatível com trials.csv/probes.csv (US-25).")
+app.add_typer(report_app, name="report")
 
 
 @db_app.command("migrate")
@@ -2113,6 +2117,7 @@ def events_discover(
 register_pose_commands(pose_app, _command_errors)
 register_event_commands(events_app, _command_errors)
 register_metric_commands(metrics_app, _command_errors)
+register_report_commands(report_app, _command_errors)
 
 if __name__ == "__main__":
     app()
