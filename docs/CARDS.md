@@ -1384,6 +1384,18 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-25] Exportação compatível com `trials.csv` e `probes.csv`
 
+> **Correção de 26/11/2026 (`fix/us-25`).** A implementação original
+> (`US-25/Ravi`, mergeada em `develop`) partiu de um ponto do histórico
+> anterior às US-19/20/22/23 — por isso as "colunas complementares" do
+> RN04 só traziam `path_distance`/`pose_coverage`, faltando estratégia,
+> entropia e eficiência de rota. Corrigido: `search_strategy`/`entropy_bits`
+> agora vêm de `trial_results` (US-20) e `primary_route_efficiency`/
+> `total_route_efficiency` são computados com `barnes.metrics.efficiency.
+> compute_trial_route_efficiency` (US-19), sempre `None`/ausentes quando o
+> trial não tem essa métrica calculada, nunca bloqueando a linha. `docs/
+> CARDS.md` também não tinha o checklist atualizado para refletir o código
+> já existente.
+
 - **Épico / Módulo:** Relatórios e integração (`src/barnes/report/`, `db/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 8 Pontos · 1 semana
@@ -1420,22 +1432,22 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a coluna existe com valor ausente explícito no formato esperado pelo pipeline, e o trial é listado no relatório de pendências — o arquivo nunca é gerado com coluna faltante.
 
 #### Tarefas
-- [ ] Obter do laboratório um `trials.csv` e um `probes.csv` reais, como referência de esquema
-- [ ] Implementar o exportador com nomes, ordem, unidades e codificação de censura idênticos
-- [ ] Implementar o CSV por trial e o consolidado por estudo
-- [ ] Implementar as colunas complementares sem quebrar a leitura pelo pipeline existente
-- [ ] Implementar a identificação da execução em cada linha
-- [ ] Implementar o valor ausente explícito e o relatório de pendências por trial
-- [ ] Executar o `barnes_maze.py` sobre a saída automática, sem alteração, e verificar
-- [ ] Comparar os hazard ratios com os obtidos da anotação manual e registrar
-- [ ] Escrever o dicionário de colunas em `docs/manual-usuario.md`
+- [ ] Obter do laboratório um `trials.csv` e um `probes.csv` reais, como referência de esquema *(sem contato com o LNBio; esquema conferido contra `docs/decisoes-sem-laboratorio.md` §4)*
+- [x] Implementar o exportador com nomes, ordem, unidades e codificação de censura idênticos *(`barnes.report.trials_csv`/`probes_csv`, `barnes report trials`/`report probes`)*
+- [x] Implementar o CSV por trial e o consolidado por estudo
+- [x] Implementar as colunas complementares sem quebrar a leitura pelo pipeline existente *(estratégia/entropia/eficiência de rota/cobertura de pose ao final, sempre depois das colunas RN01; corrigido em 26/11/2026, ver nota acima)*
+- [x] Implementar a identificação da execução em cada linha
+- [x] Implementar o valor ausente explícito e o relatório de pendências por trial
+- [ ] Executar o `barnes_maze.py` sobre a saída automática, sem alteração, e verificar *(bloqueado — script do laboratório não está disponível neste ambiente, RN03)*
+- [ ] Comparar os hazard ratios com os obtidos da anotação manual e registrar *(idem, depende da tarefa anterior)*
+- [x] Escrever o dicionário de colunas em `docs/manual-usuario.md`
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Exportador com o esquema exato de `trials.csv` e `probes.csv` implementado
-- [ ] Execução do `barnes_maze.py` sobre a saída automática, sem alteração, verificada
-- [ ] CSV por trial e consolidado gerados
-- [ ] Identificação da execução presente em cada linha
-- [ ] Dicionário de colunas escrito em `docs/manual-usuario.md`
+- [x] Exportador com o esquema exato de `trials.csv` e `probes.csv` implementado
+- [ ] Execução do `barnes_maze.py` sobre a saída automática, sem alteração, verificada *(bloqueado — script do laboratório fora deste ambiente)*
+- [x] CSV por trial e consolidado gerados
+- [x] Identificação da execução presente em cada linha
+- [x] Dicionário de colunas escrito em `docs/manual-usuario.md`
 
 ---
 

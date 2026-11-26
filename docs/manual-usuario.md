@@ -771,10 +771,9 @@ respectivas histórias:
 |---|---|
 | `data/interim/trial_<id>.parquet` | série de pose por quadro: posição (cm), θ, t, `interpolado`, e o relatório de qualidade nos metadados (US-09/US-10, seções 4.6 e 4.7) |
 | `data/validation/distance/distance-<id>/` | rodada de correlação da distância com a medida manual (US-18, seção 4.8) |
-| CSV por trial | métricas do trial |
-| CSV consolidado | todos os trials |
-| `trials.csv` / `probes.csv` | formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |
-| Curvas e trajetória desenhada | |
+| `data/processed/trial_<id>.csv` | linha de `trials.csv`/`probes.csv` de um único trial (US-25) |
+| `data/processed/trials.csv` / `data/processed/probes.csv` | consolidado de todos os trials de um experimento, no formato que o `barnes_maze.py` do laboratório lê sem alteração (US-25) |
+| Curvas e trajetória desenhada | ainda não implementado |
 
 Todo trial com cobertura de pose calculada leva, nas saídas, a cobertura e a marcação de
 qualidade (`suficiente`, `revisao_pendente`, `insuficiente`). Um trial de qualidade
@@ -785,6 +784,80 @@ Colunas com posição trazem no nome o referencial em que estão expressas
 na sala e `_image` para ângulo no quadro do vídeo. Por exemplo,
 `target_hole_platform` e `target_angle_deg_room`. Para comparar trials,
 use sempre as colunas `_room`.
+
+### 5.1 Exportação `trials.csv` / `probes.csv` (US-25)
+
+```powershell
+uv run barnes report set-group --experiment-id <id> --group WT
+uv run barnes report trials --experiment-id <id> --out data/processed
+uv run barnes report probes --experiment-id <id> --out data/processed
+```
+
+`report set-group` só precisa ser rodado uma vez por experimento (ou quando o
+grupo mudar) — grava em `experiments.group_label`, que o `barnes_maze.py` lê
+como `group`. `report trials` exporta os trials de habituação/aquisição;
+`report probes`, os trials de fase `probe`.
+
+Pré-requisitos de cada trial: a montagem calibrada (US-02, `barnes scale
+calibrate`) e `barnes events enter` já ter sido rodado (US-13) — é de lá que
+vêm a descoberta (D), a entrada (E) e a hesitação D→E. Sem isso, o trial entra
+no CSV com as colunas numéricas em branco e aparece como pendência no
+terminal (Cenário 3 do card: a coluna nunca falta, mas pode vir vazia).
+
+**Esquema de `trials.csv`** — nomes, ordem e unidades exatamente como o
+`barnes_maze.py` lê (`docs/decisoes-sem-laboratorio.md` §4; distâncias em
+metros, o software calcula em cm internamente):
+
+| Coluna | Unidade | Significado |
+|---|---|---|
+| `animal` | — | `subjects.name` do experimento |
+| `group` | — | `experiments.group_label` (`report set-group`); `"WT"` vira `mutation = 0` no script, qualquer outro valor vira 1 |
+| `day` | — | `trials.day_number` |
+| `trial` | — | `trials.trial_number_in_day` |
+| `primary_latency` | s | S→D: soltura até a descoberta do alvo (US-16) |
+| `primary_distance` | m | distância percorrida de S a D |
+| `primary_event` | 0/1 | 1 = descobriu dentro do tempo limite; 0 = censurado |
+| `delta_latency` | s | D→E: hesitação entre descobrir e entrar (US-13) |
+| `delta_distance` | m | distância percorrida de D a E |
+| `total_latency` | s | S→E: soltura até a entrada no alvo (US-16) |
+| `total_distance` | m | distância percorrida de S a E |
+| `total_event` | 0/1 | 1 = entrou dentro do tempo limite; 0 = censurado |
+
+Colunas complementares do projeto, sempre ao final (RN04 do card, nunca
+inseridas entre as colunas acima): `execucao_id` (US-27 — qual execução de
+`events enter` gerou a linha), `path_distance`/`mean_speed` (m e m/s, trial
+inteiro, US-18), `interpolated_fraction`, `speed_time_base_approx` (ressalva
+de fps variável), `pose_coverage`, `search_strategy`/`entropy_bits` (US-20 —
+ausentes se o trial ainda não passou por `barnes strategy classify`) e
+`primary_route_efficiency`/`total_route_efficiency` (US-19, S→D e S→E,
+ausentes em trial censurado).
+
+**Esquema de `probes.csv`** (B7, comportamento do probe ainda a confirmar
+com o laboratório):
+
+| Coluna | Unidade | Significado |
+|---|---|---|
+| `animal` / `group` | — | iguais ao `trials.csv` |
+| `probe` | — | 0 = primeiro probe do experimento, 1 = segundo, ... (ordem por `day_number`/`trial_number_in_day`) |
+| `primary_latency` | s | descoberta do antigo alvo; 90 s se não descobriu |
+| `primary_distance` | m | distância até essa descoberta (ou até o fim do probe, se não descobriu) |
+| `total_latency` | s | sempre 90 (duração fixa do probe) |
+| `total_distance` | m | distância percorrida no probe inteiro |
+
+As mesmas colunas complementares de `trials.csv` (acima) são exportadas
+também em `probes.csv`. O script **não** lê `primary_event` de `probes.csv`:
+ele calcula `primary_latency < total_latency` sozinho — por isso um probe
+sem descoberta sai com `primary_latency == total_latency == 90`, nunca em
+branco.
+
+**Limitação conhecida (RN03 do card):** o critério de aceite formal — "o
+`barnes_maze.py` carrega e processa o CSV gerado sem edição" — não pôde ser
+verificado neste ambiente porque o script do laboratório não está disponível
+aqui (vive fora deste repositório, na máquina do LNBio). O esquema de
+colunas foi conferido linha a linha contra as citações de
+`docs/decisoes-sem-laboratorio.md` §4, mas a execução real do script sobre a
+saída automática continua pendente — quem tiver acesso ao script deve rodar
+o Cenário 1 do card e registrar o resultado aqui.
 
 ## 6. Problemas comuns
 
