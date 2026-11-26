@@ -6,7 +6,13 @@
 # cria também o banco `barnes_test`, usado só pela suíte de testes
 # (BARNES_TEST_DATABASE_URL) — os testes nunca tocam o banco `barnes`.
 #
-#   docker compose up -d        # sobe (dados persistem no volume)
+# Redis é a fila de jobs (RQ) do wizard web (`web/backend`) — não faz parte
+# do pipeline CLI/testes. Mesma lógica de porta deslocada do Postgres: 6380
+# por padrão (BARNES_REDIS_PORT), para não colidir com um Redis nativo na
+# 6379. Sem volume: estado de fila é efêmero por natureza (o registro
+# permanente de jobs é a tabela `jobs` no Postgres, migração 0013).
+#
+#   docker compose up -d        # sobe (dados do Postgres persistem no volume)
 #   docker compose down         # para, mantendo os dados
 #   docker compose down -v      # descarta tudo (volume incluído)
 services:
@@ -23,6 +29,16 @@ services:
       - ./database/docker-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U barnes"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${BARNES_REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -57,6 +57,16 @@ gui = [
     "PySide6>=6.6",
 ]
 
+# Wizard web + dashboard locais (web/backend) — desvio deliberado dos cards,
+# ferramenta de produtividade do time, não um US-NN. `web/backend` importa
+# `barnes.*` diretamente (mesmo venv); fila de jobs em RQ+Redis, não Oban.
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "rq>=1.16",
+    "redis>=5.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
