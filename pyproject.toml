@@ -95,6 +95,11 @@ addopts = "--import-mode=importlib"
 line-length = 100
 target-version = "py311"
 
+# `Depends(...)`/`Query(...)` como valor padrão é o próprio idiom do FastAPI
+# (web/backend) — não é o "mutable default" que a B008 existe para pegar.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
 # Windows/Linux: build NVIDIA explícito; não depende de CUDA instalado à parte.
 [[tool.uv.index]]
 name = "pytorch-cu128"
