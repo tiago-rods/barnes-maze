@@ -164,6 +164,8 @@ def compute_trajectory_entropy(
     contagem = np.bincount(indices, minlength=setores)
     proporcao = contagem[contagem > 0] / n_amostras
     bits = float(-np.sum(proporcao * np.log2(proporcao)))
+    if bits == 0.0:
+        bits = 0.0  # normaliza -0.0 (toda amostra num só setor) para 0.0 nos relatórios
 
     return TrajectoryEntropy(
         bits=bits,
