@@ -122,7 +122,8 @@ _Não definido pelo laboratório (G3 não fecha). Decisão da equipe em 12/11/20
 categorias de Harrison et al. (2006) — espacial, serial e aleatória —, com os
 parâmetros da tabela da seção 1 (linhas 8-11b); ver
 [`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §10. Sem anotação
-manual, o kappa da US-21 não tem contra o que ser medido._
+manual, o kappa da US-21 não tem contra o que ser medido; o ferramental dele está
+descrito na seção 4.4._
 
 > **US-20 — implementação (`barnes.strategy.classification`, `barnes.strategy.signals`,
 > `barnes.strategy.entropy`, `tests/strategy/`, `barnes strategy classify`).** Regra
@@ -446,6 +447,63 @@ Pendências para destravar:
 6. **Inferência de pose real** nesses trials (modelo das US-07/08 treinado). Sobre a
    inferência simulada do roteiro, o r não vale como aceite.
 7. **Formato de entrega**: CSV `trial_id,distance_cm_manual,observador,metodo,data`.
+
+### 4.4 Estratégia da US-20 contra o observador: kappa de Cohen (US-21)
+
+**Aceite kappa ≥ 0,70: pulado**: não há classificação de estratégia feita por um
+observador humano, nem do laboratório nem pública (decisão da equipe em 12/11/2026,
+[`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md) §5.1). O ferramental está
+pronto e foi testado com rótulos sintéticos (`tests/strategy/test_agreement.py`), que
+**não** valem como validação da regra. Sem rótulos, `barnes strategy agreement` grava a
+rodada como bloqueada e sai com código 2.
+
+**Medida.** Kappa de Cohen (`sklearn.metrics.cohen_kappa_score`, sem pesos) entre o
+rótulo do observador e o da regra da US-20, sobre as três categorias na ordem fixa
+`spatial`, `serial`, `random`. Junto com ele saem a concordância bruta e a **matriz de
+confusão** (linha = observador, coluna = regra), além de sensibilidade e precisão por
+categoria. Um kappa aceitável pode esconder uma categoria sistematicamente errada
+(RN02). Se nenhum dos dois lados usou uma categoria, ela fica com zeros e é sinalizada.
+O kappa indefinido (os dois lados usaram uma única e mesma categoria) e uma amostra com
+menos de 3 pares são recusados: não viram número. O critério 0,70 é uma constante do
+card (`barnes.strategy.agreement.KAPPA_THRESHOLD`), não um limiar G3, e por isso não
+está em `configs/default.yaml`.
+
+**Rótulo automático.** É o do resultado **mais recente do `strategy classify`** de cada
+trial, buscado no histórico de `trial_results`. A linha atual pode ser de outro comando,
+com `search_strategy` nulo. Um trial fica fora da comparação, com o motivo no relatório,
+em quatro casos: nunca foi classificado, a regra não o classificou (US-20 RN01, que
+nunca vira "aleatória"), a classificação ficou obsoleta porque a montagem foi
+recalibrada, ou ele não existe no banco. Se os trials de uma mesma rodada tiverem sido
+classificados com versões diferentes da seção `estrategia`, a rodada é recusada.
+
+**Calibração × avaliação (RN05).** `barnes strategy split` sorteia a partição uma única
+vez por anotação. O sorteio é estratificado pela estratégia do observador, usa semente
+fixa (padrão 21) e reserva 30% para avaliação. A partição fica em `particao.json` com o
+hash do CSV e nunca é sobrescrita; se o CSV mudar, ela é recusada. Os limiares só são
+ajustados olhando rodadas de `calibracao`. O kappa final sai de uma rodada de
+`avaliacao`, cujo relatório declara que aqueles trials não participaram do ajuste
+(Cenário 3). Uma nova rodada de `avaliacao` com limiares diferentes dos de uma rodada de
+avaliação anterior recebe **aviso de resultado otimista**: avaliar, ajustar e reavaliar
+o mesmo subconjunto também é ajuste sobre ele.
+
+**Ajuste (RN04): manual, sem otimizador.**
+
+1. Rodar `strategy agreement --subconjunto calibracao`.
+2. Se reprovar, ler a matriz de confusão e mudar a seção `estrategia` do YAML, sempre
+   com a justificativa em [`decisoes-sem-laboratorio.md`](decisoes-sem-laboratorio.md)
+   §10.
+3. Reexecutar `strategy classify` em **todos** os trials anotados.
+4. Rodar uma nova rodada de calibração.
+5. Quando a calibração passar, rodar **uma** rodada de `avaliacao`.
+
+Cada rodada fica em `data/validation/strategy/agreement-<uuid>/rodada.{json,md}`, com os
+limiares usados e o hash do CSV e da partição. `strategy agreement-history` lista as
+rodadas em ordem cronológica. A US-29 consome os `rodada.json`.
+
+**Formato de entrega**: CSV `trial_id,estrategia_manual,observador,data`, em que
+`estrategia_manual` pode ser `espacial|spatial`, `serial` ou `aleatoria|aleatória|random`.
+O observador classifica sem ver a saída da regra, usando o critério da seção
+"Estratégias".
 
 ## 5. Aceite
 

@@ -759,6 +759,50 @@ r < 0,95. Sem `--manual`, a rodada é registrada como **bloqueada**.
 
 Requer o banco migrado até a `0010` (`barnes db migrate`).
 
+### Estratégia de busca contra o observador (US-21, aceite kappa ≥ 0,70)
+
+Compara a estratégia que `barnes strategy classify` (US-20) atribuiu a cada trial com a
+que um observador atribuiu à mão. O CSV de rótulos tem as colunas
+`trial_id,estrategia_manual,observador,data`; `estrategia_manual` aceita `espacial`,
+`serial` ou `aleatoria`, e também os nomes em inglês.
+
+1. **Uma vez por anotação**, separe os trials em calibração e avaliação:
+
+   ```powershell
+   barnes strategy split --manual rotulos.csv
+   ```
+
+   A partição vai para `data/validation/strategy/particao.json` e nunca é
+   sobrescrita. Se o CSV mudar, ela deixa de valer.
+
+2. **Calibração**: compare só os trials de calibração.
+
+   ```powershell
+   barnes strategy agreement --subconjunto calibracao --manual rotulos.csv
+   ```
+
+   Se o kappa ficar abaixo de 0,70, o código de saída é 2. Para ajustar a regra: leia a
+   matriz de confusão, mude a seção `estrategia` de `configs/default.yaml` (com a
+   justificativa registrada em `docs/decisoes-sem-laboratorio.md` §10), rode
+   `barnes strategy classify` de novo em **todos** os trials anotados e repita este
+   passo.
+
+3. **Avaliação final**: rode **uma vez**, depois que a calibração passar.
+
+   ```powershell
+   barnes strategy agreement --subconjunto avaliacao --manual rotulos.csv
+   ```
+
+   O relatório declara que esses trials não participaram do ajuste. Se a avaliação for
+   repetida com limiares diferentes, a rodada sai com aviso de resultado otimista.
+
+Cada rodada fica em `data/validation/strategy/agreement-<id>/` (`rodada.json` e
+`rodada.md`), com o kappa, a matriz de confusão, a sensibilidade e a precisão por
+categoria, os limiares usados e os trials deixados de fora, cada um com o motivo. Para
+ver todas as rodadas em ordem: `barnes strategy agreement-history`. Sem `--manual`, a
+rodada é registrada como **bloqueada**, que é a situação atual: não há rótulos de um
+observador.
+
 ## 5. Saídas
 
 Na US-02, os resultados são exibidos no terminal e persistidos no mesmo

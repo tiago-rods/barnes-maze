@@ -222,7 +222,9 @@ dos cards:
   hazard ratios com um `trials.csv` manual (US-25, cenário 2).
 
 As ferramentas continuam no software e testadas com dados sintéticos
-(`events calibrate`, `compare_sequence`, `metrics distance-validate`). Se uma
+(`events calibrate`, `compare_sequence`, `metrics distance-validate` e, desde
+25/11/2026, `strategy split`/`strategy agreement` da US-21 — ver
+`definicoes-metricas.md` §4.4). Se uma
 anotação manual aparecer, a comparação pode ser feita sem mudar código. O relatório
 declara que nenhum limiar foi calibrado contra anotação humana.
 
@@ -349,7 +351,10 @@ Mapeamento proposto para `configs/default.yaml` — semântica confirmada pela U
 | `estrategia.cruzamentos_centro_min` | `1` | um cruzamento do centro antes do alvo já descaracteriza a busca espacial (e também "serial", que pressupõe permanência na periferia) |
 | `estrategia.entropia_max_espacial` | `null` | não faz parte da regra de Harrison; só se a equipe quiser um critério adicional |
 
-Sem anotação (seção 5), o kappa da US-21 não tem contra o que ser medido.
+Sem anotação (seção 5), o kappa da US-21 não tem contra o que ser medido. O
+ferramental está pronto (`barnes strategy agreement`, `definicoes-metricas.md` §4.4):
+o ajuste destes limiares contra um observador usa só o subconjunto de calibração e
+continua exigindo a justificativa nesta seção.
 
 Decidido em: 12/11/2026 · por: equipe (aprovado por Lucas); atualizado em
 25/11/2026 na implementação da US-20.
