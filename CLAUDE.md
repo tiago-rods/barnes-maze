@@ -90,6 +90,13 @@ uv run barnes pose review --trial N [--video PATH] [--todos] [--margem 10]
 uv run barnes metrics displacement --trial N [--ponto centro_corpo]
 uv run barnes metrics distance-validate [--manual CSV] [--saida DIR]   # r >= 0.95; no CSV = blocked
 
+# US-20/US-21 (strategy rule; agreement with a human observer)
+uv run barnes strategy classify --trial N
+uv run barnes strategy split --manual CSV [--particao P --frac-avaliacao 0.3 --seed 21]  # once per annotation
+uv run barnes strategy agreement --subconjunto calibracao|avaliacao [--manual CSV --particao P --saida DIR]
+    # kappa >= 0.70 + confusion matrix; no CSV = blocked (exit 2)
+uv run barnes strategy agreement-history [--saida DIR]
+
 # US-27 (provenance + catalog)
 uv run barnes execution show ID      # model, thresholds, params, commit, dirty, "reproduzivel"
 uv run barnes catalog list [--experiment-id N] [--verificar-hash] [--procurar-em DIR] [--json]
@@ -402,6 +409,23 @@ missing, never a default category or zero. `cli_events.load_sequence_entries` (r
 from `_load_sequence_entries`) is reused to read the persisted US-15 sequence, same
 pattern as `load_trajectory_inputs` (US-18). The three raw signals and thresholds go into
 `execucao.metadata`/a JSON report for RN06 auditing, not new `trial_results` columns.
+
+US-21 (`strategy/agreement.py`, pure; commands in `cli_strategy.py`): Cohen's kappa
+(scikit-learn, unweighted) + confusion matrix (row = observer, column = rule, fixed order
+spatial/serial/random) against a manual-label CSV `trial_id,estrategia_manual,observador,
+data`. `KAPPA_THRESHOLD = 0.70` is a card constant in code, not a YAML threshold (same as
+US-18's r). The automatic label is the **latest `strategy classify` result** from
+`list_trial_result_history`, not the current `trial_results` row (another command may have
+written a later row with `search_strategy` NULL); unclassified/stale/never-classified trials
+are excluded with a reason, and a round whose trials were classified under different
+`estrategia` thresholds (`execucao.metadata.estrategia.limiares`) is refused. The
+calibration/evaluation partition (RN05) is drawn once (`strategy split`, stratified, seeded),
+stored with the CSV hash and never overwritten. Threshold tuning is manual (edit YAML →
+re-classify → new calibration round), no optimizer. Rounds are append-only
+`agreement-<uuid>/rodada.{json,md}`; re-evaluating the evaluation subset under different
+thresholds gets an optimism warning. No human labels exist (§5.1 of
+`docs/decisoes-sem-laboratorio.md`), so real rounds are "bloqueado" (exit 2); tests use
+synthetic labels only.
 
 US-23 (`stats/contingency.py`, pure): session (or group) × strategy table from
 `StrategyObservation(linha, estrategia)` pairs (US-20 now writes `trial_results.

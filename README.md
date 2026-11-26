@@ -50,9 +50,9 @@ barnes-maze/
 │   ├── geometry/                 # plataforma, buracos, rotação, referencial da sala
 │   ├── events/                   # encontrar, entrar, dwell, ordem de visitação
 │   ├── metrics/                  # latência, erros, distância, eficiência, entropia
-│   ├── strategy/                 # classificador por regra e validação
+│   ├── strategy/                 # classificador por regra e kappa contra o observador (US-21)
 │   ├── longitudinal/             # curvas, DTW/Fréchet, probe, palpites
-│   ├── stats/                    # qui-quadrado / Fisher sobre estratégias, kappa
+│   ├── stats/                    # qui-quadrado / Fisher sobre estratégias
 │   ├── report/                   # CSV, PDF, gráficos
 │   ├── db/                       # esquema PostgreSQL e acesso
 │   └── cli.py

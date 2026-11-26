@@ -1196,22 +1196,22 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** ele é calculado sobre trials que **não** participaram do ajuste, e isso está declarado no relatório.
 
 #### Tarefas
-- [ ] Cobrar e receber a anotação de estratégia de **D3**, com data acordada
-- [ ] Separar a amostra anotada em subconjunto de calibração e de avaliação
-- [ ] Implementar o cálculo de kappa de Cohen com scikit-learn
-- [ ] Implementar a matriz de confusão por categoria
-- [ ] Executar a primeira rodada de avaliação
-- [ ] Ajustar os limiares de [US-20] sobre o subconjunto de calibração, se o kappa reprovar
-- [ ] Reavaliar sobre o subconjunto de avaliação e registrar o histórico das rodadas
-- [ ] Declarar no relatório que a avaliação final não usou trials de calibração
-- [ ] Incorporar o resultado ao relatório de validação de [US-29]
+- [ ] Cobrar e receber a anotação de estratégia de **D3**, com data acordada *(pulada — decisão de 12/11/2026, `decisoes-sem-laboratorio.md` §5.1)*
+- [x] Separar a amostra anotada em subconjunto de calibração e de avaliação *(`barnes strategy split`: estratificada, semente fixa, `particao.json` com hash do CSV e nunca sobrescrito)*
+- [x] Implementar o cálculo de kappa de Cohen com scikit-learn *(`barnes.strategy.agreement.compute_agreement`; kappa indefinido e n < 3 são recusados)*
+- [x] Implementar a matriz de confusão por categoria *(linha = observador, coluna = regra, com sensibilidade/precisão por categoria)*
+- [ ] Executar a primeira rodada de avaliação *(pulada — sem rótulos; a rodada real sai como "bloqueada", código 2)*
+- [ ] Ajustar os limiares de [US-20] sobre o subconjunto de calibração, se o kappa reprovar *(pulado — sem rótulos; ciclo manual documentado em `definicoes-metricas.md` §4.4)*
+- [x] Reavaliar sobre o subconjunto de avaliação e registrar o histórico das rodadas *(ferramental: cada rodada em `data/validation/strategy/agreement-<uuid>/`, `barnes strategy agreement-history`; aviso de otimismo ao reavaliar a avaliação com outros limiares — reavaliação real pulada)*
+- [x] Declarar no relatório que a avaliação final não usou trials de calibração *(`declaracao` em toda rodada de avaliação)*
+- [ ] Incorporar o resultado ao relatório de validação de [US-29] *(depende da US-29, S5: ela consome `rodada.json`)*
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Cálculo de kappa de Cohen implementado com scikit-learn
-- [ ] Matriz de confusão por categoria gerada
-- [ ] Separação entre trials de calibração e de avaliação implementada e declarada
-- [ ] Histórico de rodadas de ajuste registrado
-- [ ] Resultado incorporado ao relatório de validação de [US-29]
+- [x] Cálculo de kappa de Cohen implementado com scikit-learn *(testado com rótulos **sintéticos**, `tests/strategy/test_agreement.py` — não é validação da regra)*
+- [x] Matriz de confusão por categoria gerada
+- [x] Separação entre trials de calibração e de avaliação implementada e declarada
+- [x] Histórico de rodadas de ajuste registrado
+- [ ] Resultado incorporado ao relatório de validação de [US-29] *(aguarda a US-29)*
 
 ---
 
