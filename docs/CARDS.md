@@ -1305,9 +1305,22 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Quando** a tabela é montada,
   - **Então** a categoria aparece com zeros e o relatório sinaliza a ausência, em vez de omitir a coluna silenciosamente.
 
+> **Correção de 26/11/2026 (`fix/us-25`, mesma branch do US-25).** A US-20
+> já grava `trial_results.search_strategy` desde 25/11/2026, mas nada lia o
+> banco para montar a tabela — a tarefa "ler do banco" ficava marcada como
+> pendente mesmo depois da US-20 existir. Adicionado `barnes stats
+> contingency` (`barnes.db.contingency.load_strategy_rows` +
+> `barnes.cli_stats`): lê sessão/grupo/estratégia mais recente de cada
+> trial, monta a tabela (`sessao` por padrão, `grupo` via
+> `experiments.group_label`, exige `barnes report set-group` da US-25
+> antes) e roda o teste quando `estatistica.frequencia_esperada_minima`
+> está definido — hoje é `null` (G3 aberto), então o comando produz a
+> tabela e sai com código 2 ("bloqueado"), mesmo padrão do `metrics
+> distance-validate` da US-18.
+
 #### Tarefas
 - [ ] SCRUM-265 — Confirmar a existência de grupo experimental além do controle (pergunta B6) *(sem resposta; o `barnes_maze.py` indica WT × mutante — indício, `docs/decisoes-sem-laboratorio.md` §15)*
-- [x] SCRUM-266 — Implementar a montagem da tabela de contingência sessão × estratégia a partir do banco *(função pura `barnes.stats.contingency.build_contingency_table`; leitura do banco pendente da US-20, que ainda não grava `search_strategy`)*
+- [x] SCRUM-266 — Implementar a montagem da tabela de contingência sessão × estratégia a partir do banco *(função pura `barnes.stats.contingency.build_contingency_table`; leitura do banco via `barnes stats contingency`, corrigido em 26/11/2026)*
 - [x] SCRUM-267 — Implementar a regra de seleção entre qui-quadrado e Fisher pelas frequências esperadas *(limite `estatistica.frequencia_esperada_minima`, null até o estatístico)*
 - [x] SCRUM-268 — Implementar o registro da justificativa da escolha junto do resultado
 - [x] SCRUM-269 — Implementar o relato de estatística e valor-p
@@ -1316,10 +1329,10 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] SCRUM-272 — Escrever testes cobrindo os dois caminhos de seleção de teste
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Tabela de contingência gerada a partir do banco *(pendente da US-20; a função pura está pronta)*
+- [x] Tabela de contingência gerada a partir do banco *(`barnes stats contingency`, corrigido em 26/11/2026)*
 - [x] Seleção automática entre qui-quadrado e Fisher implementada, com registro da justificativa
 - [x] Testes unitários cobrindo os dois caminhos de seleção
-- [ ] Resultado exportado junto das demais saídas estatísticas *(`as_record`/`render_markdown` prontos; falta a exportação da US-25)*
+- [x] Resultado exportado junto das demais saídas estatísticas *(`resultado.json`/`resultado.md` por rodada, mesmo padrão do `metrics distance-validate` da US-18 e do `strategy agreement` da US-21)*
 - [x] Nenhuma dependência GPL introduzida *(só SciPy, BSD-3, já dependência)*
 
 ---

@@ -189,7 +189,12 @@ def test_list_trial_ids_by_phase_orders_by_day_and_trial_number(conn, experiment
     experiment_id, maze_config_id = experiment_and_maze
     ids = []
     for day, trial_in_day in ((2, 1), (1, 2), (1, 1)):
-        video = load_trial_video(make_mp4(f"t_{day}_{trial_in_day}.mp4", frame_count=10))
+        # frame_count varia por vídeo: o conteúdo sintético depende só dele, não do nome
+        # do arquivo (`tests/conftest.py::make_mp4`) — mesma contagem colidiria em
+        # `trials.content_hash` (UNIQUE).
+        video = load_trial_video(
+            make_mp4(f"t_{day}_{trial_in_day}.mp4", frame_count=10 + day * 10 + trial_in_day)
+        )
         ids.append(
             insert_trial(
                 conn,
@@ -267,12 +272,13 @@ def test_load_export_context_rejects_trial_without_calibration(
 def test_load_export_context_reconstructs_discoveries_and_entries(conn, trial):
     trial_id, maze_config_id = trial
     hole_ids = get_hole_ids(conn, maze_config_id)
+    execucao_id = _execution(conn, trial_id, maze_config_id)
 
     insert_hole_event(
         conn,
         trial_id=trial_id,
         hole_id=hole_ids[0],
-        execucao_id=1,
+        execucao_id=execucao_id,
         tipo="descoberta",
         quadro=30,
         t_s=3.0,
@@ -297,7 +303,7 @@ def test_load_export_context_reconstructs_discoveries_and_entries(conn, trial):
         conn,
         trial_id=trial_id,
         hole_id=hole_ids[0],
-        execucao_id=1,
+        execucao_id=execucao_id,
         tipo="entrada",
         quadro=35,
         t_s=3.5,
@@ -313,7 +319,7 @@ def test_load_export_context_reconstructs_discoveries_and_entries(conn, trial):
     assert len(context.entries) == 1
     assert context.entries[0].hole_number == 0
     assert context.entries[0].delta_latency == pytest.approx(0.5)
-    assert context.execucao_id == 1
+    assert context.execucao_id == execucao_id
     assert context.cm_per_px == pytest.approx(1.0)
     assert context.search_strategy is None
     assert context.entropy_bits is None
@@ -323,11 +329,12 @@ def test_load_export_context_reads_strategy_and_entropy_from_latest_result(conn,
     """US-20 persiste `search_strategy`/`entropy_bits` em `trial_results` (RN04 do card)."""
     trial_id, maze_config_id = trial
     hole_ids = get_hole_ids(conn, maze_config_id)
+    execucao_id = _execution(conn, trial_id, maze_config_id)
     insert_hole_event(
         conn,
         trial_id=trial_id,
         hole_id=hole_ids[0],
-        execucao_id=1,
+        execucao_id=execucao_id,
         tipo="entrada",
         quadro=35,
         t_s=3.5,
@@ -352,7 +359,7 @@ def test_load_export_context_reads_strategy_and_entropy_from_latest_result(conn,
     insert_trial_result(
         conn,
         trial_id,
-        execucao_id=strategy_execucao_id,
+        execucao_id=strategy_execucao_id,  # linha distinta: trial_results.execucao_id é UNIQUE
         distance_cm=None,
         speed_mean_cm=None,
         route_efficiency=None,
