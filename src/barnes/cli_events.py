@@ -344,14 +344,16 @@ def _export_entries(directory: Path, inputs: EventInputs, execution: int, entrie
     _write_report_csv(directory / "entries.csv", fields, rows)
 
 
-def _load_sequence_entries(
+def load_sequence_entries(
     trial_id: int, dsn: str | None
 ) -> tuple[MazeGeometry, float, int, list[EntryEvent], int | None]:
     """Lê as entradas já persistidas da execução de eventos mais recente do trial (US-15).
 
     Não abre a trajetória nem a pose (RN03): só a montagem, a rotação e
     `evento_buraco`. Entradas de execuções antigas (recalibração) são
-    ignoradas — a sequência nunca mistura rodadas diferentes.
+    ignoradas — a sequência nunca mistura rodadas diferentes. Pública: além
+    do comando `events sequence`, a US-20 (`cli_strategy.py`) também monta a
+    sequência a partir destas entradas.
     """
     with get_connection(dsn) as conn:
         stored = get_trial(conn, trial_id)
@@ -501,7 +503,7 @@ def register_event_commands(events_app: typer.Typer, command_errors: Callable) -
     ) -> None:
         """Monta a sequência cronológica de checagens a partir do evento_buraco persistido."""
         with command_errors():
-            geometry, rotation_deg, target, entries, execucao_id = _load_sequence_entries(
+            geometry, rotation_deg, target, entries, execucao_id = load_sequence_entries(
                 trial, dsn
             )
             items = build_sequence(

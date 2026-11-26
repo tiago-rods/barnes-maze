@@ -303,7 +303,35 @@ Decidido em: 12/11/2026 · por: equipe (aprovado por Lucas)
 
 **Decisão: as três categorias de Harrison et al. (2006), em regra explícita
 sobre a sequência de visitação da US-15 até a primeira checagem do alvo.**
-Definições a conferir no artigo antes de usar como citação:
+
+> **Atualização de 25/11/2026 (implementação da US-20) — citação verificada e
+> semântica das chaves fechada.** A proposta original desta seção (abaixo) tinha
+> dois pontos em aberto, resolvidos agora que a US-20 foi implementada
+> (`barnes.strategy.classification`, `docs/definicoes-metricas.md` seção
+> "Estratégias"):
+>
+> 1. **A citação foi conferida.** Harrison, F. A., et al. (2006), "Spatial and
+>    nonspatial escape strategies in the Barnes maze", *Learning & Memory*
+>    13(6):809-816: a busca **aleatória** é definida ali (e replicada pela
+>    literatura derivada — Bhatt et al.; ConductScience; bio-protocol) como a que
+>    cruza o centro da plataforma ou investiga os buracos sem sistema. A
+>    "espacial" é o inverso: sem cruzar o centro.
+> 2. **O Cenário 2 do card US-20 (`docs/CARDS.md`) está em desacordo com essa
+>    citação** — descreve o trial espacial "cruzando o centro". Decisão: tratado
+>    como inconsistência de redação do card, não como regra; a implementação
+>    segue a literatura citada (ver os 4 cenários reproduzidos em
+>    `tests/strategy/test_classification.py`).
+>
+> A tabela de chaves abaixo (proposta original) foi confirmada como está, mais
+> duas chaves novas, necessárias para operacionalizar o sinal de cruzamento do
+> centro (que exige uma zona geométrica, não só uma contagem) e o de adjacência
+> em sequência (que exige um comprimento mínimo de buracos, não só um limiar
+> angular):
+>
+> | Chave nova | Valor | Observação |
+> |---|---|---|
+> | `estrategia.centro_zona_raio_frac` | `0,5` | raio da zona central (fração do raio da circunferência dos buracos) usada para contar cruzamentos; mesma convenção de `anotacao.regioes.centro_raio_frac`, chave própria (outro dono/concern) |
+> | `estrategia.serial_min_buracos` | `2` | mínimo de buracos consecutivamente adjacentes, no mesmo sentido, para caracterizar "serial" — era só texto nesta seção ("ao menos 2 buracos"), agora é limiar explícito (RN03) |
 
 - **Espacial:** vai direto ao alvo ou a um buraco vizinho dele, com poucos
   erros antes (proposta: até 3) e sem cruzar o centro da plataforma.
@@ -312,19 +340,19 @@ Definições a conferir no artigo antes de usar como citação:
 - **Aleatória:** qualquer busca que não se encaixe nas duas acima, típica
   com cruzamentos pelo centro.
 
-Mapeamento proposto para `configs/default.yaml` — a revisar quando a US-20 for
-implementada, porque a semântica exata das chaves é dela:
+Mapeamento proposto para `configs/default.yaml` — semântica confirmada pela US-20:
 
 | Chave | Proposta | Observação |
 |---|---|---|
 | `estrategia.adjacencia_angular_graus` | `360 / N` (um buraco de distância; 18° com 20 buracos) | depende de B2 (seção 12) |
 | `estrategia.erros_ate_alvo_max` | `3` | limite da busca espacial |
-| `estrategia.cruzamentos_centro_min` | `1` | um cruzamento do centro antes do alvo já descaracteriza a busca espacial |
+| `estrategia.cruzamentos_centro_min` | `1` | um cruzamento do centro antes do alvo já descaracteriza a busca espacial (e também "serial", que pressupõe permanência na periferia) |
 | `estrategia.entropia_max_espacial` | `null` | não faz parte da regra de Harrison; só se a equipe quiser um critério adicional |
 
 Sem anotação (seção 5), o kappa da US-21 não tem contra o que ser medido.
 
-Decidido em: 12/11/2026 · por: equipe (aprovado por Lucas)
+Decidido em: 12/11/2026 · por: equipe (aprovado por Lucas); atualizado em
+25/11/2026 na implementação da US-20.
 
 ## 11. Comportamento do probe (B7 — US-25, US-26)
 
@@ -443,9 +471,11 @@ reais informe a rotação verdadeira trial a trial.
 
 **Decisão:**
 
-- **C5:** adotar Sunyer et al. (2007) como protocolo de referência do método e
-  Harrison et al. (2006) para as estratégias, conferindo as citações antes do
-  relatório.
+- **C5:** adotar Sunyer et al. (2007) como protocolo de referência do método
+  (citação ainda a conferir) e Harrison, F. A., et al. (2006), "Spatial and
+  nonspatial escape strategies in the Barnes maze", *Learning & Memory*
+  13(6):809-816, para as estratégias — **citação verificada na implementação da
+  US-20** (25/11/2026; ver seção 10 acima e `docs/definicoes-metricas.md`).
 - **C6:** sem contato, não há quem assine pelo laboratório. Quem aprova este
   documento é a equipe (aprovação de 12/11/2026: Lucas). O relatório
   declara que **G3 não foi fechado** e que os critérios de aceite que dependem

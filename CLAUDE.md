@@ -348,7 +348,7 @@ D-to-E path length. Numeric C2 parameters are team decisions (raio_fator 1.0, 0.
 `evento_buraco.details` (0009) stores entry evidence; processing and events share
 one transaction. Recalculation reads the trajectory and its provenance without
 opening the video. See `docs/eventos-calibracao-entrada.md` for time conventions
-and actual acceptance blockers. `strategy`/`longitudinal`/`report` remain empty
+and actual acceptance blockers. `longitudinal`/`report` remain empty
 `__init__.py` stubs pending their user story; `stats` has only US-23 (below).
 
 US-18 (`metrics/displacement.py`, `metrics/validation.py`, `cli_metrics.py`): one
@@ -376,9 +376,38 @@ straight route. Index < 1 − 1e-9 raises `RouteEfficiencyError` (RN05). Don't n
 submodule `metrics/route_efficiency.py`: it would shadow the US-02 function
 `barnes.metrics.route_efficiency`.
 
+US-20 (`strategy/classification.py`, `strategy/signals.py`, `strategy/entropy.py`,
+`cli_strategy.py`): explicit rule (RN01), not a trained model. Three RN02 signals, all
+computed over the same "until the target" window (first target check in the US-15
+sequence, or the whole trial, censored, like US-17's `primary_errors`): center crossings
+(`signals.count_center_crossings`, on the US-09 trajectory — rotation-invariant, the
+platform center doesn't move with rotation) use a new `estrategia.centro_zona_raio_frac`
+threshold; angular adjacency (`signals.compute_angular_adjacency`, on the US-15 sequence,
+room frame, RN05) uses the existing `adjacencia_angular_graus` plus a new
+`estrategia.serial_min_buracos`; errors reuse `metrics.errors.compute_errors` (US-17)
+unchanged. Spatial ⟺ errors ≤ max, first checked hole within the angular threshold of the
+target (or none), and crossings below the minimum; serial ⟺ not spatial and a run of ≥
+`serial_min_buracos` mutually-adjacent holes, same rotational sign, crossings still below
+the minimum; random is the fallback. `categoria = None` ("not classified") when a signal
+couldn't be computed — never defaults to "random". Harrison, F. A., et al. (2006),
+*Learning & Memory* 13(6):809-816, defines "random" as the strategy that crosses the
+platform center — Cenário 2 of the `docs/CARDS.md` card describes the spatial trial
+"crossing the center", which contradicts that citation; treated as a card wording
+inconsistency, not as the rule (see `docs/definicoes-metricas.md`). Trajectory entropy
+(`strategy/entropy.py`, Shannon, base 2, bits, over angular sectors — default one per
+hole) is a **separate** index, not one of the three RN02 signals; persisted as
+`trial_results.entropy_bits` (already added by migration 0011/US-22) alongside
+`search_strategy` (column already existed since 0001) — both `None` until a signal is
+missing, never a default category or zero. `cli_events.load_sequence_entries` (renamed
+from `_load_sequence_entries`) is reused to read the persisted US-15 sequence, same
+pattern as `load_trajectory_inputs` (US-18). The three raw signals and thresholds go into
+`execucao.metadata`/a JSON report for RN06 auditing, not new `trial_results` columns.
+
 US-23 (`stats/contingency.py`, pure): session (or group) × strategy table from
-`StrategyObservation(linha, estrategia)` pairs (US-20 doesn't exist; nothing writes
-`trial_results.search_strategy` yet). Absent categories stay as zero columns, flagged,
+`StrategyObservation(linha, estrategia)` pairs (US-20 now writes `trial_results.
+search_strategy`, but `barnes.stats.contingency` still takes the list as an argument —
+whoever reads the database into that list must treat `search_strategy IS NULL`, US-20's
+"not classified", as `estrategia=None`, same as any other unclassified trial). Absent categories stay as zero columns, flagged,
 and are left out of the test. Chi-square vs Fisher by expected frequencies against
 `estatistica.frequencia_esperada_minima` (**null** → `StatsConfigError`). Fisher R×C =
 `fisher_exact(method=MonteCarloMethod(...))` (SciPy ≥ 1.15) with a **fixed seed**:

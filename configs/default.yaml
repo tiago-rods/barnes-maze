@@ -62,15 +62,28 @@ erro:
   duracao_minima_s: null      # C3 — segundos (> 0); só se criterio == "acima_de_duracao"
 
 # --- Estratégia de busca (US-20) ----------------------------------------------
-# Regra explícita e calibrável, não modelo treinado (seção 4 da definição).
-# Decisão da equipe (C4, sem G3): categorias de Harrison et al. (2006),
-# docs/decisoes-sem-laboratorio.md, seção 10. A semântica exata das chaves é
-# da US-20, ainda não implementada: revisar estes valores junto com ela.
+# Regra explícita e calibrável, não modelo treinado (RN01). Decisão da equipe
+# (C4, sem G3): categorias de Harrison et al. (2006), docs/decisoes-sem-laboratorio.md,
+# seção 10 — semântica das chaves fixada pela própria US-20 (barnes.strategy).
+# Harrison et al. 2006 (Learn Mem 13:809-816) e a literatura derivada (Bhatt et al.,
+# ConductScience) definem "aleatória" como a busca que cruza o centro da plataforma
+# ou é assistemática; "espacial" é o inverso (sem cruzar o centro, erros e distância
+# do primeiro buraco até o alvo <= 3). cruzamentos_centro_min confirma essa leitura:
+# 1 cruzamento antes do alvo já descaracteriza "espacial" (e também "serial", que
+# pressupõe permanência na periferia). O Cenário 2 de docs/CARDS.md descreve o
+# trial espacial "cruzando o centro" — redação em desacordo com a citação acima;
+# tratado como inconsistência de redação do card, não como regra (ver
+# docs/definicoes-metricas.md, seção "Estratégias").
 estrategia:
-  cruzamentos_centro_min: 1         # C4 — um cruzamento do centro antes do alvo descaracteriza "espacial"
+  cruzamentos_centro_min: 1         # C4 — um cruzamento do centro antes do alvo descaracteriza "espacial"/"serial"
   adjacencia_angular_graus: 18      # C4 — um buraco de distância = 360/N; 18 com 20 buracos (revisar se N != 20)
   erros_ate_alvo_max: 3             # C4 — erros admitidos antes do alvo na busca espacial
   entropia_max_espacial: null       # C4 — fora da regra de Harrison; null intencional
+  centro_zona_raio_frac: 0.5        # C4 — raio da zona central (fração do raio da circunf. dos buracos) usada
+                                     # para contar cruzamentos; mesma convenção de anotacao.regioes.centro_raio_frac,
+                                     # chave própria por ser outro dono/concern (US-20, não protocolo de anotação)
+  serial_min_buracos: 2             # C4 — mínimo de buracos consecutivamente adjacentes, no mesmo sentido, antes
+                                     # do alvo, para caracterizar "serial" (decisoes-sem-laboratorio.md §10)
 
 # --- Estatística: distribuição de estratégias (US-23) -------------------------
 # Escolha automática entre qui-quadrado e exato de Fisher (US-23 RN02): se alguma
