@@ -1305,9 +1305,22 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Quando** a tabela é montada,
   - **Então** a categoria aparece com zeros e o relatório sinaliza a ausência, em vez de omitir a coluna silenciosamente.
 
+> **Correção de 26/11/2026 (`fix/us-25`, mesma branch do US-25).** A US-20
+> já grava `trial_results.search_strategy` desde 25/11/2026, mas nada lia o
+> banco para montar a tabela — a tarefa "ler do banco" ficava marcada como
+> pendente mesmo depois da US-20 existir. Adicionado `barnes stats
+> contingency` (`barnes.db.contingency.load_strategy_rows` +
+> `barnes.cli_stats`): lê sessão/grupo/estratégia mais recente de cada
+> trial, monta a tabela (`sessao` por padrão, `grupo` via
+> `experiments.group_label`, exige `barnes report set-group` da US-25
+> antes) e roda o teste quando `estatistica.frequencia_esperada_minima`
+> está definido — hoje é `null` (G3 aberto), então o comando produz a
+> tabela e sai com código 2 ("bloqueado"), mesmo padrão do `metrics
+> distance-validate` da US-18.
+
 #### Tarefas
 - [ ] SCRUM-265 — Confirmar a existência de grupo experimental além do controle (pergunta B6) *(sem resposta; o `barnes_maze.py` indica WT × mutante — indício, `docs/decisoes-sem-laboratorio.md` §15)*
-- [x] SCRUM-266 — Implementar a montagem da tabela de contingência sessão × estratégia a partir do banco *(função pura `barnes.stats.contingency.build_contingency_table`; leitura do banco pendente da US-20, que ainda não grava `search_strategy`)*
+- [x] SCRUM-266 — Implementar a montagem da tabela de contingência sessão × estratégia a partir do banco *(função pura `barnes.stats.contingency.build_contingency_table`; leitura do banco via `barnes stats contingency`, corrigido em 26/11/2026)*
 - [x] SCRUM-267 — Implementar a regra de seleção entre qui-quadrado e Fisher pelas frequências esperadas *(limite `estatistica.frequencia_esperada_minima`, null até o estatístico)*
 - [x] SCRUM-268 — Implementar o registro da justificativa da escolha junto do resultado
 - [x] SCRUM-269 — Implementar o relato de estatística e valor-p
@@ -1316,10 +1329,10 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 - [x] SCRUM-272 — Escrever testes cobrindo os dois caminhos de seleção de teste
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Tabela de contingência gerada a partir do banco *(pendente da US-20; a função pura está pronta)*
+- [x] Tabela de contingência gerada a partir do banco *(`barnes stats contingency`, corrigido em 26/11/2026)*
 - [x] Seleção automática entre qui-quadrado e Fisher implementada, com registro da justificativa
 - [x] Testes unitários cobrindo os dois caminhos de seleção
-- [ ] Resultado exportado junto das demais saídas estatísticas *(`as_record`/`render_markdown` prontos; falta a exportação da US-25)*
+- [x] Resultado exportado junto das demais saídas estatísticas *(`resultado.json`/`resultado.md` por rodada, mesmo padrão do `metrics distance-validate` da US-18 e do `strategy agreement` da US-21)*
 - [x] Nenhuma dependência GPL introduzida *(só SciPy, BSD-3, já dependência)*
 
 ---
@@ -1384,6 +1397,18 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
 
 ### [US-25] Exportação compatível com `trials.csv` e `probes.csv`
 
+> **Correção de 26/11/2026 (`fix/us-25`).** A implementação original
+> (`US-25/Ravi`, mergeada em `develop`) partiu de um ponto do histórico
+> anterior às US-19/20/22/23 — por isso as "colunas complementares" do
+> RN04 só traziam `path_distance`/`pose_coverage`, faltando estratégia,
+> entropia e eficiência de rota. Corrigido: `search_strategy`/`entropy_bits`
+> agora vêm de `trial_results` (US-20) e `primary_route_efficiency`/
+> `total_route_efficiency` são computados com `barnes.metrics.efficiency.
+> compute_trial_route_efficiency` (US-19), sempre `None`/ausentes quando o
+> trial não tem essa métrica calculada, nunca bloqueando a linha. `docs/
+> CARDS.md` também não tinha o checklist atualizado para refletir o código
+> já existente.
+
 - **Épico / Módulo:** Relatórios e integração (`src/barnes/report/`, `db/`)
 - **Prioridade Sugerida:** Alta
 - **Complexidade Estimada:** 8 Pontos · 1 semana
@@ -1420,22 +1445,22 @@ Cards gerados a partir das histórias de [Apresentacao.md](Apresentacao.md), dos
   - **Então** a coluna existe com valor ausente explícito no formato esperado pelo pipeline, e o trial é listado no relatório de pendências — o arquivo nunca é gerado com coluna faltante.
 
 #### Tarefas
-- [ ] Obter do laboratório um `trials.csv` e um `probes.csv` reais, como referência de esquema
-- [ ] Implementar o exportador com nomes, ordem, unidades e codificação de censura idênticos
-- [ ] Implementar o CSV por trial e o consolidado por estudo
-- [ ] Implementar as colunas complementares sem quebrar a leitura pelo pipeline existente
-- [ ] Implementar a identificação da execução em cada linha
-- [ ] Implementar o valor ausente explícito e o relatório de pendências por trial
-- [ ] Executar o `barnes_maze.py` sobre a saída automática, sem alteração, e verificar
-- [ ] Comparar os hazard ratios com os obtidos da anotação manual e registrar
-- [ ] Escrever o dicionário de colunas em `docs/manual-usuario.md`
+- [ ] Obter do laboratório um `trials.csv` e um `probes.csv` reais, como referência de esquema *(sem contato com o LNBio; esquema conferido contra `docs/decisoes-sem-laboratorio.md` §4)*
+- [x] Implementar o exportador com nomes, ordem, unidades e codificação de censura idênticos *(`barnes.report.trials_csv`/`probes_csv`, `barnes report trials`/`report probes`)*
+- [x] Implementar o CSV por trial e o consolidado por estudo
+- [x] Implementar as colunas complementares sem quebrar a leitura pelo pipeline existente *(estratégia/entropia/eficiência de rota/cobertura de pose ao final, sempre depois das colunas RN01; corrigido em 26/11/2026, ver nota acima)*
+- [x] Implementar a identificação da execução em cada linha
+- [x] Implementar o valor ausente explícito e o relatório de pendências por trial
+- [ ] Executar o `barnes_maze.py` sobre a saída automática, sem alteração, e verificar *(bloqueado — script do laboratório não está disponível neste ambiente, RN03)*
+- [ ] Comparar os hazard ratios com os obtidos da anotação manual e registrar *(idem, depende da tarefa anterior)*
+- [x] Escrever o dicionário de colunas em `docs/manual-usuario.md`
 
 #### Definição de Pronto (DoD Específica do Card)
-- [ ] Exportador com o esquema exato de `trials.csv` e `probes.csv` implementado
-- [ ] Execução do `barnes_maze.py` sobre a saída automática, sem alteração, verificada
-- [ ] CSV por trial e consolidado gerados
-- [ ] Identificação da execução presente em cada linha
-- [ ] Dicionário de colunas escrito em `docs/manual-usuario.md`
+- [x] Exportador com o esquema exato de `trials.csv` e `probes.csv` implementado
+- [ ] Execução do `barnes_maze.py` sobre a saída automática, sem alteração, verificada *(bloqueado — script do laboratório fora deste ambiente)*
+- [x] CSV por trial e consolidado gerados
+- [x] Identificação da execução presente em cada linha
+- [x] Dicionário de colunas escrito em `docs/manual-usuario.md`
 
 ---
 

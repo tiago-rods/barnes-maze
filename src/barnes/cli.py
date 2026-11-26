@@ -24,6 +24,8 @@ from barnes.cli_events import register_event_commands
 from barnes.cli_learning import register_learning_commands
 from barnes.cli_metrics import register_metric_commands
 from barnes.cli_pose import register_pose_commands
+from barnes.cli_report import register_report_commands
+from barnes.cli_stats import register_stats_commands
 from barnes.cli_strategy import register_strategy_commands
 from barnes.db.calibration import (
     CalibrationRequiredError,
@@ -174,6 +176,12 @@ app.add_typer(events_app, name="events")
 
 strategy_app = typer.Typer(help="Classificação de estratégia de busca (US-20).")
 app.add_typer(strategy_app, name="strategy")
+
+report_app = typer.Typer(help="Exportação compatível com trials.csv/probes.csv (US-25).")
+app.add_typer(report_app, name="report")
+
+stats_app = typer.Typer(help="Estatística: distribuição de estratégias (US-23).")
+app.add_typer(stats_app, name="stats")
 
 
 @db_app.command("migrate")
@@ -2122,6 +2130,8 @@ register_event_commands(events_app, _command_errors)
 register_metric_commands(metrics_app, _command_errors)
 register_learning_commands(metrics_app, _command_errors)
 register_strategy_commands(strategy_app, _command_errors)
+register_report_commands(report_app, _command_errors)
+register_stats_commands(stats_app, _command_errors)
 
 
 def _is_utf8(encoding: str | None) -> bool:

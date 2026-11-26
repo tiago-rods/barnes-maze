@@ -34,6 +34,7 @@ erDiagram
         string name
         string description
         int qts_trials
+        string group_label "US-25: coluna group do trials.csv/probes.csv"
     }
     SUBJECT {
         int id PK
