@@ -140,6 +140,28 @@ def mark_failed(conn: psycopg.Connection, rq_job_id: str, error_message: str) ->
             raise ValueError(f"Job {rq_job_id!r} não encontrado.")
 
 
+def get_job(conn: psycopg.Connection, job_id: int) -> JobRecord:
+    """Lê um job pelo seu id interno (Postgres).
+
+    Raises:
+        ValueError: Se não existir job com esse id.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, rq_job_id, kind, trial_id, status, execucao_id,
+                   error_message, created_at, started_at, finished_at
+            FROM jobs
+            WHERE id = %s
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise ValueError(f"Job {job_id} não encontrado.")
+    return JobRecord(*row)
+
+
 def list_recent_jobs(conn: psycopg.Connection, limit: int = 50) -> list[JobRecord]:
     """Lista os jobs mais recentes, do mais novo para o mais antigo.
 

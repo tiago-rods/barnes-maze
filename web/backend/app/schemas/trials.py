@@ -15,6 +15,22 @@ class TrialInterval(BaseModel):
     manually_adjusted: bool
 
 
+class LoadTrialRequest(BaseModel):
+    path: str
+    experiment_id: int
+    maze_config_id: int
+    phase: str
+    day_number: int
+    trial_number_in_day: int
+    rotation_deg: float = 0.0
+    start_s: float | None = None
+    end_s: float | None = None
+
+
+class JobEnqueued(BaseModel):
+    job_id: int
+
+
 class Trial(BaseModel):
     id: int
     maze_config_id: int

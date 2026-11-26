@@ -1,14 +1,21 @@
-"""`GET /api/trials/{id}` — leitura de um trial já carregado."""
+"""`GET /api/trials/{id}` — leitura de um trial já carregado.
+
+`POST /api/trials` — enfileira o carregamento (US-01/03/05); roda no
+worker RQ via `app.jobs.video_jobs.run_load_trial`.
+"""
 
 from __future__ import annotations
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 
+from barnes.db.jobs import insert_job
 from barnes.db.trials import get_trial
 
 from ..deps import get_db
-from ..schemas.trials import Trial
+from ..jobs.video_jobs import run_load_trial
+from ..queue import queue
+from ..schemas.trials import JobEnqueued, LoadTrialRequest, Trial
 
 router = APIRouter(prefix="/api/trials", tags=["trials"])
 
@@ -20,3 +27,13 @@ def get_trial_endpoint(trial_id: int, conn: psycopg.Connection = Depends(get_db)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Trial.model_validate(trial, from_attributes=True)
+
+
+@router.post("", response_model=JobEnqueued, status_code=202)
+def load_trial(
+    request: LoadTrialRequest, conn: psycopg.Connection = Depends(get_db)
+) -> JobEnqueued:
+    """Enfileira o carregamento; devolve o job para polling em `GET /api/jobs/{id}`."""
+    rq_job = queue.enqueue(run_load_trial, **request.model_dump())
+    job_id = insert_job(conn, rq_job_id=rq_job.id, kind="video_load", trial_id=None)
+    return JobEnqueued(job_id=job_id)

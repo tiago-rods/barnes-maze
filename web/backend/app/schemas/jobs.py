@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -31,3 +31,14 @@ class Job(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+
+
+class JobDetail(Job):
+    """Mesmos campos de `Job`, mais o resultado do RQ enquanto o Redis o tiver.
+
+    `result` é `None` até o job terminar (ou depois que o Redis expirar o
+    resultado via `result_ttl`) — o status/erro em si continua disponível
+    (vêm da tabela `jobs`, permanente).
+    """
+
+    result: dict[str, Any] | None = None
