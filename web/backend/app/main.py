@@ -20,10 +20,12 @@ from .routers import (
     executions,
     experiments,
     jobs,
+    learning,
     maze,
     metrics,
     pose,
     pose_review,
+    report,
     scale,
     strategy,
     trials,
@@ -53,3 +55,5 @@ app.include_router(pose_review.router)
 app.include_router(events.router)
 app.include_router(metrics.router)
 app.include_router(strategy.router)
+app.include_router(learning.router)
+app.include_router(report.router)
