@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { MazeCreateStep } from '@/wizard/steps/MazeCreateStep'
+import { PoseInferStep } from '@/wizard/steps/PoseInferStep'
+import { PoseSeriesStep } from '@/wizard/steps/PoseSeriesStep'
 import { ScaleCalibrateStep } from '@/wizard/steps/ScaleCalibrateStep'
 import { VideoLoadStep } from '@/wizard/steps/VideoLoadStep'
 
@@ -9,6 +11,8 @@ const STEPS = [
   { id: 'video-load', label: 'Carregar vídeo', render: () => <VideoLoadStep /> },
   { id: 'maze-create', label: 'Criar montagem', render: () => <MazeCreateStep /> },
   { id: 'scale-calibrate', label: 'Calibrar escala', render: () => <ScaleCalibrateStep /> },
+  { id: 'pose-infer', label: 'Inferir pose', render: () => <PoseInferStep /> },
+  { id: 'pose-series', label: 'Gerar série', render: () => <PoseSeriesStep /> },
 ] as const
 
 export function SubmissionWizard() {

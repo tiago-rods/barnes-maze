@@ -27,10 +27,6 @@ class LoadTrialRequest(BaseModel):
     end_s: float | None = None
 
 
-class JobEnqueued(BaseModel):
-    job_id: int
-
-
 class SetRotationRequest(BaseModel):
     rotation_deg: float
 

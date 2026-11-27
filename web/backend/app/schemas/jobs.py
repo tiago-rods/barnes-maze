@@ -20,6 +20,10 @@ JobKind = Literal[
 JobStatus = Literal["queued", "started", "finished", "failed"]
 
 
+class JobEnqueued(BaseModel):
+    job_id: int
+
+
 class Job(BaseModel):
     id: int
     rq_job_id: str

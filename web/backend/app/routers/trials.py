@@ -15,7 +15,8 @@ from barnes.db.trials import get_trial, set_trial_rotation
 from ..deps import get_db
 from ..jobs.video_jobs import run_load_trial
 from ..queue import queue
-from ..schemas.trials import JobEnqueued, LoadTrialRequest, SetRotationRequest, Trial
+from ..schemas.jobs import JobEnqueued
+from ..schemas.trials import LoadTrialRequest, SetRotationRequest, Trial
 
 router = APIRouter(prefix="/api/trials", tags=["trials"])
 

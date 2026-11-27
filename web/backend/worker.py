@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from rq import SimpleWorker
 
-from web.backend.app.jobs import video_jobs  # noqa: F401  (necessário para desserializar os jobs)
+from web.backend.app.jobs import (  # noqa: F401  (necessário para desserializar os jobs)
+    pose_jobs,
+    video_jobs,
+)
 from web.backend.app.queue import redis_conn
 
 if __name__ == "__main__":
