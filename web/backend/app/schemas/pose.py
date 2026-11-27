@@ -18,3 +18,7 @@ class SeriesRequest(BaseModel):
     trial_id: int
     inference_dir: str
     out_dir: str = "data/interim"
+
+
+class DemoRequest(BaseModel):
+    trial_id: int

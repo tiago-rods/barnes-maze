@@ -18,3 +18,13 @@ export function loadTrial(request: LoadTrialRequest) {
     body: JSON.stringify(request),
   })
 }
+
+export interface TrialSummary {
+  id: number
+  maze_config_id: number
+  content_hash: string | null
+}
+
+export function getTrial(trialId: number) {
+  return apiFetch<TrialSummary>(`/api/trials/${trialId}`)
+}

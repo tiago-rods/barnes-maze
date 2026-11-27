@@ -26,6 +26,7 @@ from .routers import (
     pose,
     pose_review,
     report,
+    results,
     scale,
     strategy,
     trials,
@@ -45,6 +46,7 @@ app = FastAPI(title="Barnes Maze — Wizard & Dashboard", lifespan=lifespan)
 app.include_router(experiments.router)
 app.include_router(catalog.router)
 app.include_router(trials.router)
+app.include_router(results.router)
 app.include_router(executions.router)
 app.include_router(jobs.router)
 app.include_router(videos.router)

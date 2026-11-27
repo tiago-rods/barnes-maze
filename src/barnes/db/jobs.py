@@ -54,9 +54,7 @@ class JobRecord:
     finished_at: datetime | None
 
 
-def insert_job(
-    conn: psycopg.Connection, *, rq_job_id: str, kind: str, trial_id: int | None
-) -> int:
+def insert_job(conn: psycopg.Connection, *, rq_job_id: str, kind: str, trial_id: int | None) -> int:
     """Registra um job recém-enfileirado e devolve seu id interno.
 
     Args:
@@ -182,5 +180,29 @@ def list_recent_jobs(conn: psycopg.Connection, limit: int = 50) -> list[JobRecor
             LIMIT %s
             """,
             (limit,),
+        )
+        return [JobRecord(*row) for row in cur.fetchall()]
+
+
+_JOB_COLUMNS = """
+    id, rq_job_id, kind, trial_id, status, execucao_id,
+    error_message, created_at, started_at, finished_at
+"""
+
+
+def get_job_by_rq_id(conn: psycopg.Connection, rq_job_id: str) -> JobRecord | None:
+    """Lê um job pelo id do RQ; `None` se não houver registro."""
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {_JOB_COLUMNS} FROM jobs WHERE rq_job_id = %s", (rq_job_id,))
+        row = cur.fetchone()
+    return None if row is None else JobRecord(*row)
+
+
+def list_jobs_for_trial(conn: psycopg.Connection, trial_id: int) -> list[JobRecord]:
+    """Lista os jobs de um trial, do mais antigo para o mais novo (ordem do pipeline)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_JOB_COLUMNS} FROM jobs WHERE trial_id = %s ORDER BY created_at, id",
+            (trial_id,),
         )
         return [JobRecord(*row) for row in cur.fetchall()]

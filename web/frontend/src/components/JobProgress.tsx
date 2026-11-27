@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { useJobPolling } from '@/hooks/useJobPolling'
 
@@ -10,12 +10,19 @@ interface JobProgressProps {
 
 export function JobProgress({ jobId, onFinished }: JobProgressProps) {
   const { job, error } = useJobPolling(jobId)
-
+  const notified = useRef<number | null>(null)
+  const callback = useRef(onFinished)
   useEffect(() => {
-    if (job?.status === 'finished' && onFinished) {
-      onFinished(job.result)
+    callback.current = onFinished
+  }, [onFinished])
+
+  // Uma vez por job: o callback costuma ser uma arrow inline (nova a cada render).
+  useEffect(() => {
+    if (job?.status === 'finished' && notified.current !== job.id) {
+      notified.current = job.id
+      callback.current?.(job.result)
     }
-  }, [job, onFinished])
+  }, [job])
 
   if (jobId === null) return null
   if (error) return <p className="text-sm text-red-600">Erro ao consultar o job: {error}</p>

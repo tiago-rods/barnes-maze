@@ -10,12 +10,14 @@ from pydantic import BaseModel
 JobKind = Literal[
     "video_load",
     "pose_infer",
+    "pose_demo",
     "pose_series",
     "pose_review_save",
     "events_discover",
     "events_enter",
     "metrics_displacement",
     "strategy_classify",
+    "trial_metrics",
 ]
 JobStatus = Literal["queued", "started", "finished", "failed"]
 

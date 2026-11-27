@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { type ExperimentSummary, createExperiment, listExperiments } from '@/api/experiments'
+import { listCatalog } from '@/api/catalog'
+import {
+  type ExperimentSummary,
+  createExperiment,
+  createSubject,
+  listExperiments,
+} from '@/api/experiments'
 import {
   type VideoInfo,
   type VideoSummary,
@@ -9,6 +15,7 @@ import {
   listVideos,
   pickVideo,
 } from '@/api/videos'
+import { getTrial } from '@/api/trials'
 import { FrameCanvas } from '@/components/canvas/FrameCanvas'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -20,9 +27,18 @@ const PHASES = ['habituation', 'acquisition', 'probe'] as const
 
 interface VideoLoadStepProps {
   onNext: () => void
+  /** Vídeo já cadastrado como trial (mesmo hash): pula direto para pose/resultados. */
+  onUseExistingTrial: (step: 3 | 4) => void
 }
 
-export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
+interface ExistingTrial {
+  trialId: number
+  experimentId: number
+  mazeConfigId: number
+  situacao: string
+}
+
+export function VideoLoadStep({ onNext, onUseExistingTrial }: VideoLoadStepProps) {
   const {
     videoPath,
     setVideoPath,
@@ -36,7 +52,10 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
     setTrialNumberInDay,
     rotationDeg,
     setRotationDeg,
+    setMazeConfigId,
+    setTrialId,
   } = useWizardState()
+  const [existingTrial, setExistingTrial] = useState<ExistingTrial | null>(null)
 
   const [dir, setDir] = useState('')
   const [videos, setVideos] = useState<VideoSummary[]>([])
@@ -50,6 +69,8 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
   const [creatingExperiment, setCreatingExperiment] = useState(false)
   const [newExperimentName, setNewExperimentName] = useState('')
   const [newExperimentDescription, setNewExperimentDescription] = useState('')
+  const [newAnimalName, setNewAnimalName] = useState('')
+  const [missingAnimalName, setMissingAnimalName] = useState('')
   const [experimentError, setExperimentError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -82,8 +103,22 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
     setVideoInfo(null)
     setFrameIndex(0)
     setInspectError(null)
+    setExistingTrial(null)
     try {
-      setVideoInfo(await inspectVideo(path))
+      const info = await inspectVideo(path)
+      setVideoInfo(info)
+      // Um vídeo só pode virar trial uma vez (hash único, US-01): se já virou,
+      // oferecer o trial existente em vez de deixar "Criar trial" falhar no passo 2.
+      const match = (await listCatalog()).find((row) => row.content_hash === info.content_hash)
+      if (match) {
+        const trial = await getTrial(match.trial_id)
+        setExistingTrial({
+          trialId: match.trial_id,
+          experimentId: match.experiment_id,
+          mazeConfigId: trial.maze_config_id,
+          situacao: match.situacao,
+        })
+      }
     } catch (err) {
       setInspectError(err instanceof Error ? err.message : String(err))
     }
@@ -95,20 +130,43 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
       setExperimentError('Informe um nome para o experimento.')
       return
     }
+    if (!newAnimalName.trim()) {
+      setExperimentError('Informe o animal: sem ele o trial não entra nas curvas de aprendizado.')
+      return
+    }
     try {
       const { experiment_id } = await createExperiment({
         name: newExperimentName.trim(),
         description: newExperimentDescription.trim() || undefined,
+        animal_name: newAnimalName.trim(),
       })
       setExperiments(await listExperiments())
       setExperimentId(experiment_id)
       setCreatingExperiment(false)
       setNewExperimentName('')
       setNewExperimentDescription('')
+      setNewAnimalName('')
     } catch (err) {
       setExperimentError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  async function handleRegisterAnimal(targetExperimentId: number | null) {
+    setExperimentError(null)
+    if (targetExperimentId === null || !missingAnimalName.trim()) {
+      setExperimentError('Informe o nome do animal.')
+      return
+    }
+    try {
+      await createSubject(targetExperimentId, missingAnimalName.trim())
+      setExperiments(await listExperiments())
+      setMissingAnimalName('')
+    } catch (err) {
+      setExperimentError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const selectedExperiment = experiments.find((exp) => exp.id === experimentId) ?? null
 
   const canContinue = videoPath !== null && videoInfo !== null && experimentId !== null
 
@@ -201,7 +259,70 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
         </CardContent>
       </Card>
 
-      {videoPath && videoInfo && (
+      {existingTrial && (
+        <Card>
+          <CardContent className="flex flex-col gap-3 pt-6">
+            <p className="text-sm text-zinc-700">
+              Este vídeo já está cadastrado como <strong>trial #{existingTrial.trialId}</strong>{' '}
+              (experimento #{existingTrial.experimentId}, montagem #{existingTrial.mazeConfigId},
+              situação: {existingTrial.situacao}). Um mesmo vídeo não pode virar dois trials.
+            </p>
+            {(() => {
+              const experiment = experiments.find((exp) => exp.id === existingTrial.experimentId)
+              if (!experiment || experiment.animal_name) return null
+              return (
+                <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-sm text-amber-900">
+                    O experimento #{experiment.id} não tem animal cadastrado — sem ele este trial
+                    não aparece nas curvas de aprendizado (US-22).
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      aria-label="Nome do animal"
+                      placeholder="Nome do animal"
+                      value={missingAnimalName}
+                      onChange={(e) => setMissingAnimalName(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleRegisterAnimal(experiment.id)}
+                    >
+                      Cadastrar animal
+                    </Button>
+                  </div>
+                  {experimentError && <p className="text-sm text-red-600">{experimentError}</p>}
+                </div>
+              )
+            })()}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => {
+                  setExperimentId(existingTrial.experimentId)
+                  setMazeConfigId(existingTrial.mazeConfigId)
+                  setTrialId(existingTrial.trialId)
+                  onUseExistingTrial(3)
+                }}
+              >
+                Usar este trial → pose
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setExperimentId(existingTrial.experimentId)
+                  setMazeConfigId(existingTrial.mazeConfigId)
+                  setTrialId(existingTrial.trialId)
+                  onUseExistingTrial(4)
+                }}
+              >
+                Ver resultados do trial #{existingTrial.trialId}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {videoPath && videoInfo && !existingTrial && (
         <Card>
           <CardHeader>
             <CardTitle>2. Dados do trial</CardTitle>
@@ -227,6 +348,7 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
                     {experiments.map((exp) => (
                       <option key={exp.id} value={exp.id}>
                         #{exp.id} — {exp.name}
+                        {exp.animal_name ? ` (${exp.animal_name})` : ' (sem animal)'}
                       </option>
                     ))}
                   </select>
@@ -277,6 +399,18 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
                 </div>
                 <div className="flex flex-col gap-1">
                   <FieldLabel
+                    htmlFor="new-animal-name"
+                    text="Animal"
+                    hint="Identificação do animal deste experimento (1 experimento = 1 animal)."
+                  />
+                  <Input
+                    id="new-animal-name"
+                    value={newAnimalName}
+                    onChange={(e) => setNewAnimalName(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <FieldLabel
                     htmlFor="new-experiment-description"
                     text="Descrição (opcional)"
                     hint="Descrição livre, opcional."
@@ -294,6 +428,33 @@ export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
                   </Button>
                 </div>
               </div>
+            )}
+
+            {selectedExperiment && !selectedExperiment.animal_name && !creatingExperiment && (
+              <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+                <p className="text-sm text-amber-900">
+                  O experimento #{selectedExperiment.id} não tem animal cadastrado — os trials dele
+                  não aparecem nas curvas de aprendizado (US-22).
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    aria-label="Nome do animal"
+                    placeholder="Nome do animal"
+                    value={missingAnimalName}
+                    onChange={(e) => setMissingAnimalName(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleRegisterAnimal(experimentId)}
+                  >
+                    Cadastrar animal
+                  </Button>
+                </div>
+              </div>
+            )}
+            {experimentError && !creatingExperiment && (
+              <p className="text-sm text-red-600">{experimentError}</p>
             )}
 
             <div className="grid grid-cols-3 gap-3">

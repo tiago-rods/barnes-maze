@@ -19,6 +19,7 @@ from web.backend.app.jobs import (  # noqa: F401  (necessário para desserializa
     metrics_jobs,
     pose_jobs,
     strategy_jobs,
+    trial_metrics_jobs,
     video_jobs,
 )
 from web.backend.app.queue import redis_conn

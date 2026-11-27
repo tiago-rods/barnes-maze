@@ -10,11 +10,18 @@ class ExperimentSummary(BaseModel):
     name: str
     description: str | None
     group_label: str | None
+    animal_name: str | None = None
 
 
 class CreateExperimentRequest(BaseModel):
     name: str
     description: str | None = None
+    animal_name: str | None = None
+
+
+class CreateSubjectRequest(BaseModel):
+    name: str
+    genotype: str | None = None
 
 
 class CreateExperimentResponse(BaseModel):

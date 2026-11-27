@@ -13,3 +13,11 @@ export function inferPose(params: {
     body: JSON.stringify(params),
   })
 }
+
+/** Modo DEMONSTRAÇÃO: pose sintética gerada por regra (sem modelo treinado), marcada como DEMO. */
+export function runPoseDemo(trialId: number) {
+  return apiFetch<{ job_id: number }>('/api/pose/demo', {
+    method: 'POST',
+    body: JSON.stringify({ trial_id: trialId }),
+  })
+}

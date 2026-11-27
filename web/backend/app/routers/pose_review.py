@@ -8,15 +8,11 @@ muda para estes endpoints + o canvas React.
 
 from __future__ import annotations
 
-import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Response
-
-from barnes.db.jobs import insert_job
+from fastapi import APIRouter, HTTPException, Response
 
 from .. import pose_review_state as review
-from ..deps import get_db
 from ..jobs.pose_jobs import run_pose_review_save
-from ..queue import queue
+from ..jobs.tracking import enqueue_tracked
 from ..schemas.jobs import JobEnqueued
 from ..schemas.pose_review import (
     MarkRequest,
@@ -145,7 +141,7 @@ def cancel(trial_id: int) -> None:
 
 
 @router.post("/{trial_id}/save", response_model=JobEnqueued, status_code=202)
-def save(trial_id: int, conn: psycopg.Connection = Depends(get_db)) -> JobEnqueued:
+def save(trial_id: int) -> JobEnqueued:
     state = _require(trial_id)
     result = state.session.result()
     if result.empty:
@@ -153,18 +149,21 @@ def save(trial_id: int, conn: psycopg.Connection = Depends(get_db)) -> JobEnqueu
         raise HTTPException(
             status_code=400, detail="Nada marcado nem confirmado: nenhuma correção a salvar."
         )
-    rq_job = queue.enqueue(
+    job_id = enqueue_tracked(
         run_pose_review_save,
+        {
+            "trial_id": trial_id,
+            "inference_dir": str(state.inputs.inference),
+            "destination": str(state.destination),
+            "corrections": [
+                {"frame": c.frame, "point": c.point, "x_px": c.x_px, "y_px": c.y_px}
+                for c in result.corrections
+            ],
+            "reviewed_segments": [list(pair) for pair in result.reviewed_segments],
+            "generator_execucao_id": state.generator_execucao_id,
+        },
+        kind="pose_review_save",
         trial_id=trial_id,
-        inference_dir=str(state.inputs.inference),
-        destination=str(state.destination),
-        corrections=[
-            {"frame": c.frame, "point": c.point, "x_px": c.x_px, "y_px": c.y_px}
-            for c in result.corrections
-        ],
-        reviewed_segments=[list(pair) for pair in result.reviewed_segments],
-        generator_execucao_id=state.generator_execucao_id,
     )
-    job_id = insert_job(conn, rq_job_id=rq_job.id, kind="pose_review_save", trial_id=trial_id)
     review.discard(trial_id)
     return JobEnqueued(job_id=job_id)

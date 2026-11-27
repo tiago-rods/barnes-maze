@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 
 import { Dashboard } from '@/pages/Dashboard'
 import { SubmissionWizard } from '@/pages/SubmissionWizard'
+import { TrialResultsPage } from '@/pages/TrialResultsPage'
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
         <Route path="/" element={<SubmissionWizard />} />
         <Route path="/wizard" element={<SubmissionWizard />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/trials/:trialId" element={<TrialResultsPage />} />
       </Routes>
     </div>
   )

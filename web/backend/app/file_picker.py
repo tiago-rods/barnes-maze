@@ -59,8 +59,6 @@ def pick_video_file(initial_dir: str | None = None) -> str | None:
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Falha ao abrir o Explorador de Arquivos: {result.stderr.strip()}"
-        )
+        raise RuntimeError(f"Falha ao abrir o Explorador de Arquivos: {result.stderr.strip()}")
     path = result.stdout.strip()
     return path or None

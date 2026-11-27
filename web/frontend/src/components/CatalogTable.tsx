@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { type CatalogEntry, listCatalog } from '@/api/catalog'
 
@@ -30,12 +31,17 @@ export function CatalogTable({ experimentId }: CatalogTableProps) {
             <th className="py-1 pr-3">Situação</th>
             <th className="py-1 pr-3">Cobertura pose</th>
             <th className="py-1 pr-3">Qualidade pose</th>
+            <th className="py-1 pr-3" />
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.trial_id} className="border-b border-zinc-100">
-              <td className="py-1 pr-3">#{row.trial_id}</td>
+              <td className="py-1 pr-3">
+                <Link to={`/trials/${row.trial_id}`} className="text-blue-600 underline">
+                  #{row.trial_id}
+                </Link>
+              </td>
               <td className="py-1 pr-3">{row.animal ?? '-'}</td>
               <td className="py-1 pr-3">{row.sessao}</td>
               <td className="py-1 pr-3">{row.fase}</td>
@@ -44,6 +50,11 @@ export function CatalogTable({ experimentId }: CatalogTableProps) {
                 {row.cobertura_pose !== null ? `${(row.cobertura_pose * 100).toFixed(0)}%` : '-'}
               </td>
               <td className="py-1 pr-3">{row.qualidade_pose ?? '-'}</td>
+              <td className="py-1 pr-3">
+                <Link to={`/trials/${row.trial_id}`} className="text-blue-600 underline">
+                  resultados
+                </Link>
+              </td>
             </tr>
           ))}
         </tbody>

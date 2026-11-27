@@ -118,9 +118,7 @@ def create_maze(
 
 
 @router.get("/{maze_config_id}", response_model=MazeGeometrySchema)
-def get_maze(
-    maze_config_id: int, conn: psycopg.Connection = Depends(get_db)
-) -> MazeGeometrySchema:
+def get_maze(maze_config_id: int, conn: psycopg.Connection = Depends(get_db)) -> MazeGeometrySchema:
     try:
         geometry = get_maze_config(conn, maze_config_id)
     except ValueError as exc:

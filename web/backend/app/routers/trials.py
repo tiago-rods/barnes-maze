@@ -9,12 +9,11 @@ from __future__ import annotations
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 
-from barnes.db.jobs import insert_job
 from barnes.db.trials import get_trial, set_trial_rotation
 
 from ..deps import get_db
+from ..jobs.tracking import enqueue_tracked
 from ..jobs.video_jobs import run_load_trial
-from ..queue import queue
 from ..schemas.jobs import JobEnqueued
 from ..schemas.trials import LoadTrialRequest, SetRotationRequest, Trial
 
@@ -31,12 +30,9 @@ def get_trial_endpoint(trial_id: int, conn: psycopg.Connection = Depends(get_db)
 
 
 @router.post("", response_model=JobEnqueued, status_code=202)
-def load_trial(
-    request: LoadTrialRequest, conn: psycopg.Connection = Depends(get_db)
-) -> JobEnqueued:
+def load_trial(request: LoadTrialRequest) -> JobEnqueued:
     """Enfileira o carregamento; devolve o job para polling em `GET /api/jobs/{id}`."""
-    rq_job = queue.enqueue(run_load_trial, **request.model_dump())
-    job_id = insert_job(conn, rq_job_id=rq_job.id, kind="video_load", trial_id=None)
+    job_id = enqueue_tracked(run_load_trial, request.model_dump(), kind="video_load", trial_id=None)
     return JobEnqueued(job_id=job_id)
 
 

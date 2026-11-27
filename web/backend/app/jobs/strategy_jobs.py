@@ -6,7 +6,7 @@ Mesma sequência que `cli_strategy.py`'s `classify` já executa.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -36,6 +36,78 @@ def _fail(dsn: str | None, rq_job_id: str, message: str) -> None:
         mark_failed(conn, rq_job_id, message)
 
 
+@dataclass(frozen=True)
+class StrategyCore:
+    """Resultado da regra da US-20 sobre um trial, sem nada gravado."""
+
+    thresholds: object
+    entries: list
+    sequence: object
+    errors: object
+    adjacency: object
+    crossings: object
+    entropy: object
+    classification: object
+    target_hole_number: int
+    rotation_deg: float
+    source_execucao_id: int | None
+    until_s: float | None
+
+
+def compute_strategy_core(
+    inputs, trial_id: int, dsn: str | None, config_path: Path
+) -> StrategyCore:
+    """Sequência (US-15), erros (US-17), sinais e classificação (US-20), entropia.
+
+    Mesma sequência de passos de `cli_strategy.py`'s `classify`; compartilhada
+    com o job de métricas consolidadas (`trial_metrics_jobs`).
+    """
+    thresholds = load_strategy_thresholds(config_path)
+    error_definition = load_error_definition(config_path)
+    geometry, rotation_deg, target_hole_number, entries, source_execucao_id = load_sequence_entries(
+        trial_id, dsn
+    )
+    items = build_sequence(
+        entries,
+        geometry=geometry,
+        rotation_deg=rotation_deg,
+        target_hole_number=target_hole_number,
+    )
+    sequence = to_visit_sequence(items)
+    target_angle_deg_room = target_room_angle(geometry)
+    until_s = next((item.inicio_s for item in sequence.itens if item.alvo), None)
+
+    errors = compute_errors(sequence, error_definition)
+    adjacency = compute_angular_adjacency(
+        sequence,
+        target_angle_deg_room=target_angle_deg_room,
+        adjacencia_angular_graus=thresholds.adjacencia_angular_graus,
+    )
+    crossings = count_center_crossings(
+        inputs.table,
+        geometry,
+        inputs.cm_per_px,
+        zona_raio_frac=thresholds.centro_zona_raio_frac,
+        until_s=until_s,
+    )
+    entropy = compute_trajectory_entropy(inputs.table, geometry, inputs.cm_per_px, until_s=until_s)
+    classification = classify_strategy(crossings, adjacency, errors, thresholds=thresholds)
+    return StrategyCore(
+        thresholds=thresholds,
+        entries=entries,
+        sequence=sequence,
+        errors=errors,
+        adjacency=adjacency,
+        crossings=crossings,
+        entropy=entropy,
+        classification=classification,
+        target_hole_number=target_hole_number,
+        rotation_deg=rotation_deg,
+        source_execucao_id=source_execucao_id,
+        until_s=until_s,
+    )
+
+
 def run_strategy_classify(
     *,
     trial_id: int,
@@ -50,39 +122,10 @@ def run_strategy_classify(
     started_at = datetime.now(UTC)
     config_path = Path(config) if config else DEFAULT_THRESHOLDS_PATH
     try:
-        thresholds = load_strategy_thresholds(config_path)
-        error_definition = load_error_definition(config_path)
         inputs = load_trajectory_inputs(trial_id, dsn)
-        geometry, rotation_deg, target_hole_number, entries, source_execucao_id = (
-            load_sequence_entries(trial_id, dsn)
-        )
-        items = build_sequence(
-            entries,
-            geometry=geometry,
-            rotation_deg=rotation_deg,
-            target_hole_number=target_hole_number,
-        )
-        sequence = to_visit_sequence(items)
-        target_angle_deg_room = target_room_angle(geometry)
-        until_s = next((item.inicio_s for item in sequence.itens if item.alvo), None)
-
-        errors = compute_errors(sequence, error_definition)
-        adjacency = compute_angular_adjacency(
-            sequence,
-            target_angle_deg_room=target_angle_deg_room,
-            adjacencia_angular_graus=thresholds.adjacencia_angular_graus,
-        )
-        crossings = count_center_crossings(
-            inputs.table,
-            geometry,
-            inputs.cm_per_px,
-            zona_raio_frac=thresholds.centro_zona_raio_frac,
-            until_s=until_s,
-        )
-        entropy = compute_trajectory_entropy(
-            inputs.table, geometry, inputs.cm_per_px, until_s=until_s
-        )
-        classification = classify_strategy(crossings, adjacency, errors, thresholds=thresholds)
+        core = compute_strategy_core(inputs, trial_id, dsn, config_path)
+        thresholds, entropy, classification = core.thresholds, core.entropy, core.classification
+        source_execucao_id, until_s = core.source_execucao_id, core.until_s
 
         meta = read_metadata(inputs.table)
         source = git_revision_record(PACKAGE_DIR)

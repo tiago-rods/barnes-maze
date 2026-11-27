@@ -24,12 +24,12 @@ from barnes.cli_events import (
     _unchanged,
 )
 from barnes.db.connection import get_connection
-from barnes.db.jobs import insert_job, mark_failed, mark_finished, mark_started
+from barnes.db.jobs import mark_failed, mark_finished, mark_started
 from barnes.events.entry import load_entry_params
 from barnes.provenance import DEFAULT_THRESHOLDS_PATH
 
-from ..queue import queue
-from .strategy_jobs import run_strategy_classify
+from .tracking import enqueue_tracked
+from .trial_metrics_jobs import run_trial_metrics
 
 
 def _fail(dsn: str | None, rq_job_id: str, message: str) -> None:
@@ -109,11 +109,15 @@ def run_events_enter(
     with get_connection(dsn) as conn:
         mark_finished(conn, job.id, execucao_id)
 
-    # Último elo do pipeline automático: estratégia precisa da sequência de
+    # Último elo do pipeline automático: métricas consolidadas (latência,
+    # erros, distância, eficiência, estratégia) precisam da sequência de
     # visitação, que só existe depois que os eventos foram gravados.
-    next_job = queue.enqueue(run_strategy_classify, trial_id=trial_id, dsn=dsn)
-    with get_connection(dsn) as conn:
-        insert_job(conn, rq_job_id=next_job.id, kind="strategy_classify", trial_id=trial_id)
+    enqueue_tracked(
+        run_trial_metrics,
+        {"trial_id": trial_id, "dsn": dsn},
+        kind="trial_metrics",
+        trial_id=trial_id,
+    )
 
     return {
         "execucao_id": execucao_id,
