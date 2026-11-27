@@ -14,7 +14,7 @@ from fastapi import FastAPI
 
 from barnes.db.connection import apply_migrations, get_connection
 
-from .routers import catalog, executions, experiments, jobs, trials, videos
+from .routers import catalog, executions, experiments, jobs, maze, trials, videos
 
 
 @asynccontextmanager
@@ -32,3 +32,4 @@ app.include_router(trials.router)
 app.include_router(executions.router)
 app.include_router(jobs.router)
 app.include_router(videos.router)
+app.include_router(maze.router)
