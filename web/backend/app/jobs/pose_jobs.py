@@ -16,12 +16,16 @@ from rq import get_current_job
 from barnes.cli import _load_series_inputs, _write_series
 from barnes.cli_pose import _persist_or_explain
 from barnes.db.connection import get_connection
-from barnes.db.jobs import mark_failed, mark_finished, mark_started
+from barnes.db.jobs import insert_job, mark_failed, mark_finished, mark_started
 from barnes.db.pose_corrections import REVIEW_COMMAND
 from barnes.db.pose_executions import get_inference_trial
 from barnes.pose.inference import InferenceError, infer_trial
 from barnes.pose.quality import PointCorrection
 from barnes.pose.trajectory import trajectory_path
+
+from ..queue import queue
+from .events_jobs import run_events_enter
+from .metrics_jobs import run_metrics_displacement
 
 
 def _fail(dsn: str | None, rq_job_id: str, message: str) -> None:
@@ -69,6 +73,16 @@ def run_pose_infer(
     execucao_id = _persist_or_explain(run_dir, "inferencia", dsn)
     with get_connection(dsn) as conn:
         mark_finished(conn, job.id, execucao_id)
+
+    # Pipeline automático (sem intervenção do operador): série -> eventos +
+    # métricas -> estratégia. Cada elo só enfileira o próximo depois do seu
+    # próprio sucesso (nunca a partir do branch de erro acima).
+    next_job = queue.enqueue(
+        run_pose_series, trial_id=trial_id, inference_dir=str(run_dir), dsn=dsn
+    )
+    with get_connection(dsn) as conn:
+        insert_job(conn, rq_job_id=next_job.id, kind="pose_series", trial_id=trial_id)
+
     return {"execucao_id": execucao_id, "run_dir": str(run_dir)}
 
 
@@ -96,6 +110,16 @@ def run_pose_series(
 
     with get_connection(dsn) as conn:
         mark_finished(conn, job.id, written.execucao_id)
+
+    # Continuação automática do pipeline: eventos e métricas só dependem da
+    # série, não um do outro — podem correr em paralelo.
+    events_job = queue.enqueue(run_events_enter, trial_id=trial_id, dsn=dsn)
+    metrics_job = queue.enqueue(run_metrics_displacement, trial_id=trial_id, dsn=dsn)
+    with get_connection(dsn) as conn:
+        insert_job(conn, rq_job_id=events_job.id, kind="events_enter", trial_id=trial_id)
+        insert_job(
+            conn, rq_job_id=metrics_job.id, kind="metrics_displacement", trial_id=trial_id
+        )
 
     table = written.table
     without_pose = table.num_rows - sum(table.column("pose_valida").to_pylist())

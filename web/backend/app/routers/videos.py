@@ -16,8 +16,15 @@ from barnes.io.trim import TrialIntervalError, build_trial_interval
 from barnes.io.video import VideoLoadError, load_trial_video, read_frame
 
 from ..config import VIDEO_DATA_DIR
+from ..file_picker import pick_video_file
 from ..schemas.trials import TrialInterval as TrialIntervalSchema
-from ..schemas.videos import InspectRequest, VideoInfo, VideoSummary
+from ..schemas.videos import (
+    InspectRequest,
+    PickVideoRequest,
+    PickVideoResponse,
+    VideoInfo,
+    VideoSummary,
+)
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -28,6 +35,13 @@ def list_videos(dir: str | None = None) -> list[VideoSummary]:
     if not root.is_dir():
         raise HTTPException(status_code=404, detail=f"Diretório não encontrado: {root}")
     return [VideoSummary(path=str(path), name=path.name) for path in sorted(root.glob("*.mp4"))]
+
+
+@router.post("/pick", response_model=PickVideoResponse | None)
+def pick_video(request: PickVideoRequest) -> PickVideoResponse | None:
+    """Abre o Explorador de Arquivos nativo e devolve o caminho escolhido, ou `None` se cancelado."""
+    path = pick_video_file(request.initial_dir or str(VIDEO_DATA_DIR))
+    return PickVideoResponse(path=path) if path else None
 
 
 @router.post("/inspect", response_model=VideoInfo)

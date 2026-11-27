@@ -12,6 +12,14 @@ class VideoSummary(BaseModel):
     name: str
 
 
+class PickVideoRequest(BaseModel):
+    initial_dir: str | None = None
+
+
+class PickVideoResponse(BaseModel):
+    path: str
+
+
 class InspectRequest(BaseModel):
     path: str
     start_s: float | None = None

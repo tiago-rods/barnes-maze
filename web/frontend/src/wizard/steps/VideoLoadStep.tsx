@@ -1,43 +1,61 @@
 import { useEffect, useState } from 'react'
 
-import { type ExperimentSummary, listExperiments } from '@/api/experiments'
-import { loadTrial } from '@/api/trials'
-import { type VideoInfo, type VideoSummary, frameUrl, inspectVideo, listVideos } from '@/api/videos'
-import { JobProgress } from '@/components/JobProgress'
+import { type ExperimentSummary, createExperiment, listExperiments } from '@/api/experiments'
+import {
+  type VideoInfo,
+  type VideoSummary,
+  frameUrl,
+  inspectVideo,
+  listVideos,
+  pickVideo,
+} from '@/api/videos'
 import { FrameCanvas } from '@/components/canvas/FrameCanvas'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FieldLabel } from '@/components/ui/field-label'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useWizardState } from '@/wizard/WizardContext'
 
 const PHASES = ['habituation', 'acquisition', 'probe'] as const
 
-export function VideoLoadStep() {
+interface VideoLoadStepProps {
+  onNext: () => void
+}
+
+export function VideoLoadStep({ onNext }: VideoLoadStepProps) {
+  const {
+    videoPath,
+    setVideoPath,
+    experimentId,
+    setExperimentId,
+    phase,
+    setPhase,
+    dayNumber,
+    setDayNumber,
+    trialNumberInDay,
+    setTrialNumberInDay,
+    rotationDeg,
+    setRotationDeg,
+  } = useWizardState()
+
   const [dir, setDir] = useState('')
   const [videos, setVideos] = useState<VideoSummary[]>([])
   const [videosError, setVideosError] = useState<string | null>(null)
 
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null)
   const [frameIndex, setFrameIndex] = useState(0)
   const [inspectError, setInspectError] = useState<string | null>(null)
 
-  const { experimentId, setExperimentId, mazeConfigId, setMazeConfigId, trialId, setTrialId } =
-    useWizardState()
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([])
-  const [phase, setPhase] = useState<string>(PHASES[1])
-  const [dayNumber, setDayNumber] = useState(1)
-  const [trialNumberInDay, setTrialNumberInDay] = useState(1)
-  const [rotationDeg, setRotationDeg] = useState(0)
-
-  const [jobId, setJobId] = useState<number | null>(null)
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [creatingExperiment, setCreatingExperiment] = useState(false)
+  const [newExperimentName, setNewExperimentName] = useState('')
+  const [newExperimentDescription, setNewExperimentDescription] = useState('')
+  const [experimentError, setExperimentError] = useState<string | null>(null)
 
   useEffect(() => {
     listExperiments()
       .then(setExperiments)
-      .catch((err) => setSubmitError(err instanceof Error ? err.message : String(err)))
+      .catch(() => {})
   }, [])
 
   async function handleListVideos() {
@@ -49,8 +67,18 @@ export function VideoLoadStep() {
     }
   }
 
+  async function handlePickVideo() {
+    setVideosError(null)
+    try {
+      const result = await pickVideo(dir || undefined)
+      if (result) handleSelectVideo(result.path)
+    } catch (err) {
+      setVideosError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleSelectVideo(path: string) {
-    setSelectedPath(path)
+    setVideoPath(path)
     setVideoInfo(null)
     setFrameIndex(0)
     setInspectError(null)
@@ -61,43 +89,49 @@ export function VideoLoadStep() {
     }
   }
 
-  async function handleSubmit() {
-    setSubmitError(null)
-    setJobId(null)
-    if (!selectedPath || experimentId === null || mazeConfigId === null) {
-      setSubmitError('Selecione um vídeo, o experimento e a montagem antes de continuar.')
+  async function handleCreateExperiment() {
+    setExperimentError(null)
+    if (!newExperimentName.trim()) {
+      setExperimentError('Informe um nome para o experimento.')
       return
     }
     try {
-      const { job_id } = await loadTrial({
-        path: selectedPath,
-        experiment_id: experimentId,
-        maze_config_id: mazeConfigId,
-        phase,
-        day_number: dayNumber,
-        trial_number_in_day: trialNumberInDay,
-        rotation_deg: rotationDeg,
+      const { experiment_id } = await createExperiment({
+        name: newExperimentName.trim(),
+        description: newExperimentDescription.trim() || undefined,
       })
-      setJobId(job_id)
+      setExperiments(await listExperiments())
+      setExperimentId(experiment_id)
+      setCreatingExperiment(false)
+      setNewExperimentName('')
+      setNewExperimentDescription('')
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : String(err))
+      setExperimentError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  const canContinue = videoPath !== null && videoInfo !== null && experimentId !== null
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>1. Escolher o vídeo</CardTitle>
+          <CardTitle>1. Vídeo e experimento</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <div>
+            <Button onClick={handlePickVideo}>Abrir Explorador de Arquivos…</Button>
+          </div>
+          <p className="text-sm text-zinc-500">Ou liste os vídeos de uma pasta específica:</p>
           <div className="flex gap-2">
             <Input
               placeholder="Diretório (padrão: BARNES_VIDEO_DATA_DIR do backend)"
               value={dir}
               onChange={(e) => setDir(e.target.value)}
             />
-            <Button onClick={handleListVideos}>Listar vídeos</Button>
+            <Button variant="outline" onClick={handleListVideos}>
+              Listar vídeos
+            </Button>
           </div>
           {videosError && <p className="text-sm text-red-600">{videosError}</p>}
           <ul className="flex flex-col gap-1">
@@ -107,7 +141,7 @@ export function VideoLoadStep() {
                   type="button"
                   onClick={() => handleSelectVideo(video.path)}
                   className={`w-full rounded-md px-2 py-1 text-left text-sm hover:bg-zinc-100 ${
-                    selectedPath === video.path ? 'bg-zinc-100 font-medium' : ''
+                    videoPath === video.path ? 'bg-zinc-100 font-medium' : ''
                   }`}
                 >
                   {video.name}
@@ -115,86 +149,103 @@ export function VideoLoadStep() {
               </li>
             ))}
           </ul>
+
+          {inspectError && <p className="text-sm text-red-600">{inspectError}</p>}
+          {videoInfo && videoPath && (
+            <>
+              <p className="text-sm text-zinc-600">
+                {videoInfo.width}×{videoInfo.height}px · {videoInfo.fps_real.toFixed(2)} fps
+                {videoInfo.fps_is_variable ? ' (fps variável)' : ''} ·{' '}
+                {videoInfo.duration_s.toFixed(1)}s · intervalo útil{' '}
+                {videoInfo.interval.start_s.toFixed(2)}s–{videoInfo.interval.end_s.toFixed(2)}s
+              </p>
+              <FrameCanvas src={frameUrl(videoPath, frameIndex)} />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFrameIndex((i) => Math.max(0, i - 1))}
+                >
+                  ← Anterior
+                </Button>
+                <FieldLabel
+                  htmlFor="frame-index"
+                  text="Quadro"
+                  hint="Número do quadro exibido (0 = primeiro quadro do vídeo)."
+                />
+                <Input
+                  id="frame-index"
+                  type="number"
+                  className="w-24"
+                  min={0}
+                  max={videoInfo.frame_count - 1}
+                  value={frameIndex}
+                  onChange={(e) => {
+                    const next = Number(e.target.value)
+                    if (!Number.isNaN(next)) {
+                      setFrameIndex(Math.min(Math.max(0, next), videoInfo.frame_count - 1))
+                    }
+                  }}
+                />
+                <span className="text-sm text-zinc-500">/ {videoInfo.frame_count - 1}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFrameIndex((i) => Math.min(videoInfo.frame_count - 1, i + 1))}
+                >
+                  Próximo →
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
-      {selectedPath && (
+      {videoPath && videoInfo && (
         <Card>
           <CardHeader>
-            <CardTitle>2. Pré-visualizar</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {inspectError && <p className="text-sm text-red-600">{inspectError}</p>}
-            {videoInfo && (
-              <>
-                <p className="text-sm text-zinc-600">
-                  {videoInfo.width}×{videoInfo.height}px · {videoInfo.fps_real.toFixed(2)} fps
-                  {videoInfo.fps_is_variable ? ' (fps variável)' : ''} ·{' '}
-                  {videoInfo.duration_s.toFixed(1)}s · intervalo útil{' '}
-                  {videoInfo.interval.start_s.toFixed(2)}s–{videoInfo.interval.end_s.toFixed(2)}s
-                </p>
-                <FrameCanvas src={frameUrl(selectedPath, frameIndex)} />
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setFrameIndex((i) => Math.max(0, i - 1))}
-                  >
-                    ← Anterior
-                  </Button>
-                  <span className="text-sm text-zinc-500">
-                    quadro {frameIndex} / {videoInfo.frame_count - 1}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setFrameIndex((i) => Math.min(videoInfo.frame_count - 1, i + 1))
-                    }
-                  >
-                    Próximo →
-                  </Button>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {selectedPath && videoInfo && (
-        <Card>
-          <CardHeader>
-            <CardTitle>3. Registrar o trial</CardTitle>
+            <CardTitle>2. Dados do trial</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="experiment">Experimento</Label>
-                <select
-                  id="experiment"
-                  className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                  value={experimentId ?? ''}
-                  onChange={(e) => setExperimentId(e.target.value ? Number(e.target.value) : null)}
-                >
-                  <option value="">Selecione…</option>
-                  {experiments.map((exp) => (
-                    <option key={exp.id} value={exp.id}>
-                      #{exp.id} — {exp.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="maze-config">Montagem (maze_config_id)</Label>
-                <Input
-                  id="maze-config"
-                  type="number"
-                  value={mazeConfigId ?? ''}
-                  onChange={(e) => setMazeConfigId(e.target.value ? Number(e.target.value) : null)}
+                <FieldLabel
+                  htmlFor="experiment"
+                  text="Experimento"
+                  hint="Experimento ao qual este trial pertence. Use 'Novo experimento' para criar um."
                 />
+                <div className="flex gap-2">
+                  <select
+                    id="experiment"
+                    className="h-9 flex-1 rounded-md border border-zinc-200 bg-white px-3 text-sm"
+                    value={experimentId ?? ''}
+                    onChange={(e) =>
+                      setExperimentId(e.target.value ? Number(e.target.value) : null)
+                    }
+                  >
+                    <option value="">Selecione…</option>
+                    {experiments.map((exp) => (
+                      <option key={exp.id} value={exp.id}>
+                        #{exp.id} — {exp.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCreatingExperiment((v) => !v)}
+                  >
+                    {creatingExperiment ? 'Cancelar' : 'Novo experimento'}
+                  </Button>
+                </div>
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="phase">Fase</Label>
+                <FieldLabel
+                  htmlFor="phase"
+                  text="Fase"
+                  hint="Etapa do protocolo: habituation (habituação), acquisition (aquisição) ou probe (teste sem o alvo)."
+                />
                 <select
                   id="phase"
                   className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm"
@@ -208,8 +259,50 @@ export function VideoLoadStep() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            {creatingExperiment && (
+              <div className="flex flex-col gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                <div className="flex flex-col gap-1">
+                  <FieldLabel
+                    htmlFor="new-experiment-name"
+                    text="Nome do novo experimento"
+                    hint="Nome livre para identificar o experimento (ex.: 'Grupo WT — novembro')."
+                  />
+                  <Input
+                    id="new-experiment-name"
+                    value={newExperimentName}
+                    onChange={(e) => setNewExperimentName(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <FieldLabel
+                    htmlFor="new-experiment-description"
+                    text="Descrição (opcional)"
+                    hint="Descrição livre, opcional."
+                  />
+                  <Input
+                    id="new-experiment-description"
+                    value={newExperimentDescription}
+                    onChange={(e) => setNewExperimentDescription(e.target.value)}
+                  />
+                </div>
+                {experimentError && <p className="text-sm text-red-600">{experimentError}</p>}
+                <div>
+                  <Button type="button" onClick={handleCreateExperiment}>
+                    Criar experimento
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="rotation">Rotação da plataforma (graus)</Label>
+                <FieldLabel
+                  htmlFor="rotation"
+                  text="Rotação da plataforma (graus)"
+                  hint="Rotação da plataforma física, em graus — usada para converter o buraco alvo entre o referencial da imagem e o da sala (US-05)."
+                />
                 <Input
                   id="rotation"
                   type="number"
@@ -218,7 +311,11 @@ export function VideoLoadStep() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="day">Dia (sessão)</Label>
+                <FieldLabel
+                  htmlFor="day"
+                  text="Dia (sessão)"
+                  hint="Número do dia/sessão do trial dentro do experimento (1, 2, 3...)."
+                />
                 <Input
                   id="day"
                   type="number"
@@ -227,7 +324,11 @@ export function VideoLoadStep() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="trial-in-day">Trial no dia</Label>
+                <FieldLabel
+                  htmlFor="trial-in-day"
+                  text="Trial no dia"
+                  hint="Ordem deste trial dentro do dia (1º trial do dia = 1, 2º = 2...)."
+                />
                 <Input
                   id="trial-in-day"
                   type="number"
@@ -236,20 +337,12 @@ export function VideoLoadStep() {
                 />
               </div>
             </div>
-            {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+
             <div>
-              <Button onClick={handleSubmit}>Carregar trial</Button>
+              <Button onClick={onNext} disabled={!canContinue}>
+                Continuar →
+              </Button>
             </div>
-            <JobProgress
-              jobId={jobId}
-              onFinished={(result) => {
-                const id = result?.trial_id
-                if (typeof id === 'number') setTrialId(id)
-              }}
-            />
-            {trialId !== null && (
-              <p className="text-sm text-green-700">Trial atual: #{trialId}</p>
-            )}
           </CardContent>
         </Card>
       )}

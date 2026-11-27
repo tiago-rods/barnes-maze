@@ -1,39 +1,44 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { inferPose } from '@/api/pose'
 import { JobProgress } from '@/components/JobProgress'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FieldLabel } from '@/components/ui/field-label'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useWizardState } from '@/wizard/WizardContext'
 
-export function PoseInferStep() {
-  const { trialId, setTrialId, setInferenceDir } = useWizardState()
+interface PoseInferStepProps {
+  onBack: () => void
+}
+
+export function PoseInferStep({ onBack }: PoseInferStepProps) {
+  const { trialId } = useWizardState()
   const [modelDir, setModelDir] = useState('')
-  const [videoPath, setVideoPath] = useState('')
   const [device, setDevice] = useState('cpu')
   const [batchSize, setBatchSize] = useState(4)
 
   const [jobId, setJobId] = useState<number | null>(null)
+  const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit() {
     setError(null)
     setJobId(null)
     if (!modelDir || trialId === null) {
-      setError('Informe o diretório do modelo e o trial.')
+      setError('Informe o diretório do modelo (precisa de um trial criado no passo anterior).')
       return
     }
     try {
       const { job_id } = await inferPose({
         model_dir: modelDir,
         trial_id: trialId,
-        video_path: videoPath || undefined,
         device,
         batch_size: batchSize,
       })
       setJobId(job_id)
+      setStarted(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -42,37 +47,34 @@ export function PoseInferStep() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Inferência de pose</CardTitle>
+        <CardTitle>3. Inferência de pose (opcional)</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <p className="text-sm text-zinc-600">
-          Pressupõe um modelo já treinado e avaliado (US-07/08) — este passo apenas roda a
-          inferência sobre o vídeo do trial.
+          Pressupõe um modelo já treinado e avaliado (US-07/08). A partir daqui, série,
+          detecção de eventos, métricas e classificação de estratégia rodam sozinhos, em
+          segundo plano — nada mais precisa de você. Sem um modelo agora, pode pular e voltar
+          depois (o trial #{trialId} já está salvo).
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="model-dir">Diretório do modelo</Label>
+            <FieldLabel
+              htmlFor="model-dir"
+              text="Diretório do modelo"
+              hint="Pasta do modelo de pose já treinado (US-07/08)."
+            />
             <Input id="model-dir" value={modelDir} onChange={(e) => setModelDir(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="infer-trial">Trial</Label>
-            <Input
-              id="infer-trial"
-              type="number"
-              value={trialId ?? ''}
-              onChange={(e) => setTrialId(e.target.value ? Number(e.target.value) : null)}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="video-path">Vídeo alternativo (opcional)</Label>
-            <Input id="video-path" value={videoPath} onChange={(e) => setVideoPath(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="device">Dispositivo</Label>
+            <FieldLabel htmlFor="device" text="Dispositivo" hint="'cpu' ou 'cuda' (GPU)." />
             <Input id="device" value={device} onChange={(e) => setDevice(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor="batch-size">Batch size</Label>
+            <FieldLabel
+              htmlFor="batch-size"
+              text="Batch size"
+              hint="Quantos quadros processar por vez na inferência."
+            />
             <Input
               id="batch-size"
               type="number"
@@ -82,16 +84,22 @@ export function PoseInferStep() {
           </div>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onBack}>
+            ← Voltar
+          </Button>
           <Button onClick={handleSubmit}>Inferir</Button>
+          <Link to="/dashboard">
+            <Button variant="outline">{started ? 'Ir para o Dashboard' : 'Pular esta etapa'}</Button>
+          </Link>
         </div>
-        <JobProgress
-          jobId={jobId}
-          onFinished={(result) => {
-            const dir = result?.run_dir
-            if (typeof dir === 'string') setInferenceDir(dir)
-          }}
-        />
+        <JobProgress jobId={jobId} />
+        {started && (
+          <p className="text-sm text-zinc-500">
+            O restante do pipeline (série, eventos, métricas, estratégia) continua em segundo
+            plano. Os resultados aparecem no Dashboard sob o experimento quando terminar.
+          </p>
+        )}
       </CardContent>
     </Card>
   )

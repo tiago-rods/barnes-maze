@@ -31,6 +31,14 @@ export function listVideos(dir?: string) {
   return apiFetch<VideoSummary[]>(`/api/videos${query}`)
 }
 
+/** Abre o Explorador de Arquivos nativo do backend; `null` se o operador cancelar. */
+export function pickVideo(initialDir?: string) {
+  return apiFetch<{ path: string } | null>('/api/videos/pick', {
+    method: 'POST',
+    body: JSON.stringify({ initial_dir: initialDir ?? null }),
+  })
+}
+
 export function inspectVideo(path: string, startS?: number, endS?: number) {
   return apiFetch<VideoInfo>('/api/videos/inspect', {
     method: 'POST',

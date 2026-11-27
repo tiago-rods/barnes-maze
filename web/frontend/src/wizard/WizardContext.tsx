@@ -1,40 +1,63 @@
 import { createContext, type ReactNode, useContext, useState } from 'react'
 
 interface WizardContextValue {
+  videoPath: string | null
+  setVideoPath: (value: string | null) => void
   experimentId: number | null
   setExperimentId: (value: number | null) => void
   mazeConfigId: number | null
   setMazeConfigId: (value: number | null) => void
   trialId: number | null
   setTrialId: (value: number | null) => void
-  inferenceDir: string | null
-  setInferenceDir: (value: string | null) => void
+  phase: string
+  setPhase: (value: string) => void
+  dayNumber: number
+  setDayNumber: (value: number) => void
+  trialNumberInDay: number
+  setTrialNumberInDay: (value: number) => void
+  rotationDeg: number
+  setRotationDeg: (value: number) => void
 }
 
 const WizardContext = createContext<WizardContextValue | null>(null)
 
 /**
- * IDs que um passo produz e o próximo reaproveita (experimento, montagem,
- * trial, diretório de inferência) — editáveis em qualquer passo, mas
- * compartilhados entre todos, para não exigir copiar e colar entre eles.
+ * Estado de um único trial percorrendo os 3 passos do wizard (vídeo →
+ * buracos+calibração → pose). Cada passo lê o que o anterior já produziu
+ * em vez de pedir de novo — o trial em si só é criado no fim do passo 2,
+ * quando a montagem (US-04) finalmente existe. Série, eventos, métricas e
+ * estratégia rodam automaticamente no backend a partir do passo 3 — não
+ * precisam de estado aqui.
  */
 export function WizardProvider({ children }: { children: ReactNode }) {
+  const [videoPath, setVideoPath] = useState<string | null>(null)
   const [experimentId, setExperimentId] = useState<number | null>(null)
   const [mazeConfigId, setMazeConfigId] = useState<number | null>(null)
   const [trialId, setTrialId] = useState<number | null>(null)
-  const [inferenceDir, setInferenceDir] = useState<string | null>(null)
+  const [phase, setPhase] = useState('acquisition')
+  const [dayNumber, setDayNumber] = useState(1)
+  const [trialNumberInDay, setTrialNumberInDay] = useState(1)
+  const [rotationDeg, setRotationDeg] = useState(0)
 
   return (
     <WizardContext.Provider
       value={{
+        videoPath,
+        setVideoPath,
         experimentId,
         setExperimentId,
         mazeConfigId,
         setMazeConfigId,
         trialId,
         setTrialId,
-        inferenceDir,
-        setInferenceDir,
+        phase,
+        setPhase,
+        dayNumber,
+        setDayNumber,
+        trialNumberInDay,
+        setTrialNumberInDay,
+        rotationDeg,
+        setRotationDeg,
       }}
     >
       {children}
