@@ -1,11 +1,35 @@
+import { useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { MazeCreateStep } from '@/wizard/steps/MazeCreateStep'
 import { VideoLoadStep } from '@/wizard/steps/VideoLoadStep'
 
+const STEPS = [
+  { id: 'video-load', label: 'Carregar vídeo', render: () => <VideoLoadStep /> },
+  { id: 'maze-create', label: 'Criar montagem', render: () => <MazeCreateStep /> },
+] as const
+
 export function SubmissionWizard() {
+  const [stepId, setStepId] = useState<(typeof STEPS)[number]['id']>('video-load')
+  const step = STEPS.find((s) => s.id === stepId) ?? STEPS[0]
+
   return (
     <div className="mx-auto max-w-2xl p-6">
       <h1 className="mb-4 text-xl font-semibold">Wizard de submissão</h1>
-      {/* Só o passo "carregar vídeo" por enquanto — os demais chegam nas próximas partes. */}
-      <VideoLoadStep />
+      {/* Stepper simples por enquanto — os demais passos do pipeline chegam nas próximas partes. */}
+      <div className="mb-4 flex gap-2">
+        {STEPS.map((s) => (
+          <Button
+            key={s.id}
+            variant={s.id === stepId ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStepId(s.id)}
+          >
+            {s.label}
+          </Button>
+        ))}
+      </div>
+      {step.render()}
     </div>
   )
 }
