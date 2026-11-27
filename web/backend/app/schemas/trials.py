@@ -31,6 +31,10 @@ class JobEnqueued(BaseModel):
     job_id: int
 
 
+class SetRotationRequest(BaseModel):
+    rotation_deg: float
+
+
 class Trial(BaseModel):
     id: int
     maze_config_id: int

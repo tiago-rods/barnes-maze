@@ -10,12 +10,12 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 
 from barnes.db.jobs import insert_job
-from barnes.db.trials import get_trial
+from barnes.db.trials import get_trial, set_trial_rotation
 
 from ..deps import get_db
 from ..jobs.video_jobs import run_load_trial
 from ..queue import queue
-from ..schemas.trials import JobEnqueued, LoadTrialRequest, Trial
+from ..schemas.trials import JobEnqueued, LoadTrialRequest, SetRotationRequest, Trial
 
 router = APIRouter(prefix="/api/trials", tags=["trials"])
 
@@ -37,3 +37,13 @@ def load_trial(
     rq_job = queue.enqueue(run_load_trial, **request.model_dump())
     job_id = insert_job(conn, rq_job_id=rq_job.id, kind="video_load", trial_id=None)
     return JobEnqueued(job_id=job_id)
+
+
+@router.post("/{trial_id}/rotation", status_code=204)
+def set_rotation(
+    trial_id: int, request: SetRotationRequest, conn: psycopg.Connection = Depends(get_db)
+) -> None:
+    try:
+        set_trial_rotation(conn, trial_id, request.rotation_deg)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
