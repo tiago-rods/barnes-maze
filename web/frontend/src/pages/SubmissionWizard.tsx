@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MazeCreateStep } from '@/wizard/steps/MazeCreateStep'
 import { PoseInferStep } from '@/wizard/steps/PoseInferStep'
+import { PoseReviewStep } from '@/wizard/steps/PoseReviewStep'
 import { PoseSeriesStep } from '@/wizard/steps/PoseSeriesStep'
 import { ScaleCalibrateStep } from '@/wizard/steps/ScaleCalibrateStep'
 import { VideoLoadStep } from '@/wizard/steps/VideoLoadStep'
@@ -13,6 +14,7 @@ const STEPS = [
   { id: 'scale-calibrate', label: 'Calibrar escala', render: () => <ScaleCalibrateStep /> },
   { id: 'pose-infer', label: 'Inferir pose', render: () => <PoseInferStep /> },
   { id: 'pose-series', label: 'Gerar série', render: () => <PoseSeriesStep /> },
+  { id: 'pose-review', label: 'Revisar pose', render: () => <PoseReviewStep /> },
 ] as const
 
 export function SubmissionWizard() {
