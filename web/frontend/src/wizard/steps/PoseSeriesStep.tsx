@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useWizardState } from '@/wizard/WizardContext'
 
 export function PoseSeriesStep() {
-  const [trialId, setTrialId] = useState<number | null>(null)
-  const [inferenceDir, setInferenceDir] = useState('')
+  const { trialId, setTrialId, inferenceDir, setInferenceDir } = useWizardState()
   const [outDir, setOutDir] = useState('data/interim')
 
   const [jobId, setJobId] = useState<number | null>(null)
@@ -58,7 +58,7 @@ export function PoseSeriesStep() {
             <Label htmlFor="inference-dir">Diretório da inferência</Label>
             <Input
               id="inference-dir"
-              value={inferenceDir}
+              value={inferenceDir ?? ''}
               onChange={(e) => setInferenceDir(e.target.value)}
             />
           </div>

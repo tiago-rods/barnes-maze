@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useWizardState } from '@/wizard/WizardContext'
 
 export function EventsEnterStep() {
-  const [trialId, setTrialId] = useState<number | null>(null)
+  const { trialId, setTrialId } = useWizardState()
   const [jobId, setJobId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 

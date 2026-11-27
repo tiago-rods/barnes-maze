@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useWizardState } from '@/wizard/WizardContext'
 
 const PHASES = ['habituation', 'acquisition', 'probe'] as const
 
@@ -22,9 +23,9 @@ export function VideoLoadStep() {
   const [frameIndex, setFrameIndex] = useState(0)
   const [inspectError, setInspectError] = useState<string | null>(null)
 
+  const { experimentId, setExperimentId, mazeConfigId, setMazeConfigId, trialId, setTrialId } =
+    useWizardState()
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([])
-  const [experimentId, setExperimentId] = useState<number | null>(null)
-  const [mazeConfigId, setMazeConfigId] = useState<number | null>(null)
   const [phase, setPhase] = useState<string>(PHASES[1])
   const [dayNumber, setDayNumber] = useState(1)
   const [trialNumberInDay, setTrialNumberInDay] = useState(1)
@@ -239,7 +240,16 @@ export function VideoLoadStep() {
             <div>
               <Button onClick={handleSubmit}>Carregar trial</Button>
             </div>
-            <JobProgress jobId={jobId} />
+            <JobProgress
+              jobId={jobId}
+              onFinished={(result) => {
+                const id = result?.trial_id
+                if (typeof id === 'number') setTrialId(id)
+              }}
+            />
+            {trialId !== null && (
+              <p className="text-sm text-green-700">Trial atual: #{trialId}</p>
+            )}
           </CardContent>
         </Card>
       )}

@@ -20,11 +20,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toImagePixel } from '@/lib/imageCoords'
+import { useWizardState } from '@/wizard/WizardContext'
 
 const POINTS = ['focinho', 'centro_corpo', 'base_cauda']
 
 export function PoseReviewStep() {
-  const [trialId, setTrialId] = useState<number | null>(null)
+  const { trialId, setTrialId } = useWizardState()
   const [includeReviewed, setIncludeReviewed] = useState(false)
   const [state, setState] = useState<ReviewState | null>(null)
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)

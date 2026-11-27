@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useWizardState } from '@/wizard/WizardContext'
 
 export function PoseInferStep() {
+  const { trialId, setTrialId, setInferenceDir } = useWizardState()
   const [modelDir, setModelDir] = useState('')
-  const [trialId, setTrialId] = useState<number | null>(null)
   const [videoPath, setVideoPath] = useState('')
   const [device, setDevice] = useState('cpu')
   const [batchSize, setBatchSize] = useState(4)
@@ -84,7 +85,13 @@ export function PoseInferStep() {
         <div>
           <Button onClick={handleSubmit}>Inferir</Button>
         </div>
-        <JobProgress jobId={jobId} />
+        <JobProgress
+          jobId={jobId}
+          onFinished={(result) => {
+            const dir = result?.run_dir
+            if (typeof dir === 'string') setInferenceDir(dir)
+          }}
+        />
       </CardContent>
     </Card>
   )

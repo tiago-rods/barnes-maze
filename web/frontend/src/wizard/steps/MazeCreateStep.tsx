@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toImagePixel } from '@/lib/imageCoords'
+import { useWizardState } from '@/wizard/WizardContext'
 
 const MAX_HOLE_COUNT = 30
 const MIN_HOLE_COUNT = 3
@@ -30,8 +31,8 @@ export function MazeCreateStep() {
   const [frameIndex, setFrameIndex] = useState(0)
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
 
+  const { experimentId, setExperimentId, mazeConfigId, setMazeConfigId } = useWizardState()
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([])
-  const [experimentId, setExperimentId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [arenaDiameterCm, setArenaDiameterCm] = useState(90)
   const [holeDiameterCm, setHoleDiameterCm] = useState(5)
@@ -46,7 +47,6 @@ export function MazeCreateStep() {
 
   const [geometry, setGeometry] = useState<MazeGeometry | null>(null)
   const [snappedCount, setSnappedCount] = useState<number | null>(null)
-  const [mazeConfigId, setMazeConfigId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const rafRef = useRef<number | null>(null)

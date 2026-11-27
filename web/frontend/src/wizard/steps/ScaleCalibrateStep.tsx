@@ -9,17 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toImagePixel } from '@/lib/imageCoords'
+import { useWizardState } from '@/wizard/WizardContext'
 
 type Phase = 'calibrate' | 'verify'
 
 export function ScaleCalibrateStep() {
+  const { mazeConfigId, setMazeConfigId } = useWizardState()
   const [dir, setDir] = useState('')
   const [videos, setVideos] = useState<VideoSummary[]>([])
   const [videoPath, setVideoPath] = useState<string | null>(null)
   const [frameIndex, setFrameIndex] = useState(0)
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
 
-  const [mazeConfigId, setMazeConfigId] = useState<number | null>(null)
   const [phase, setPhase] = useState<Phase>('calibrate')
   const [points, setPoints] = useState<{ x: number; y: number }[]>([])
 

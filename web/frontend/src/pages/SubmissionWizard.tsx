@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useWizardState, WizardProvider } from '@/wizard/WizardContext'
 import { EventsEnterStep } from '@/wizard/steps/EventsEnterStep'
 import { MazeCreateStep } from '@/wizard/steps/MazeCreateStep'
 import { MetricsDisplacementStep } from '@/wizard/steps/MetricsDisplacementStep'
@@ -23,15 +24,48 @@ const STEPS = [
   { id: 'strategy-classify', label: 'Estratégia', render: () => <StrategyClassifyStep /> },
 ] as const
 
-export function SubmissionWizard() {
+function WizardStatusBar() {
+  const { experimentId, mazeConfigId, trialId, inferenceDir, setTrialId, setMazeConfigId } =
+    useWizardState()
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+      <span>Experimento: {experimentId ?? '—'}</span>
+      <span>
+        Montagem: {mazeConfigId ?? '—'}
+        {mazeConfigId !== null && (
+          <button
+            type="button"
+            className="ml-1 text-xs text-zinc-400 underline"
+            onClick={() => setMazeConfigId(null)}
+          >
+            limpar
+          </button>
+        )}
+      </span>
+      <span>
+        Trial: {trialId ?? '—'}
+        {trialId !== null && (
+          <button
+            type="button"
+            className="ml-1 text-xs text-zinc-400 underline"
+            onClick={() => setTrialId(null)}
+          >
+            limpar
+          </button>
+        )}
+      </span>
+      <span>Inferência: {inferenceDir ?? '—'}</span>
+    </div>
+  )
+}
+
+function WizardSteps() {
   const [stepId, setStepId] = useState<(typeof STEPS)[number]['id']>('video-load')
   const step = STEPS.find((s) => s.id === stepId) ?? STEPS[0]
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-4 text-xl font-semibold">Wizard de submissão</h1>
-      {/* Stepper simples por enquanto — os demais passos do pipeline chegam nas próximas partes. */}
-      <div className="mb-4 flex gap-2">
+    <>
+      <div className="mb-4 flex flex-wrap gap-2">
         {STEPS.map((s) => (
           <Button
             key={s.id}
@@ -43,7 +77,19 @@ export function SubmissionWizard() {
           </Button>
         ))}
       </div>
+      <WizardStatusBar />
       {step.render()}
+    </>
+  )
+}
+
+export function SubmissionWizard() {
+  return (
+    <div className="mx-auto max-w-2xl p-6">
+      <h1 className="mb-4 text-xl font-semibold">Wizard de submissão</h1>
+      <WizardProvider>
+        <WizardSteps />
+      </WizardProvider>
     </div>
   )
 }
