@@ -144,6 +144,33 @@ uv run barnes video load "data/OF_Animal_22_240919.mp4" \
 
 Use `--no-preview` para rodar sem abrir janela (scripts, CI).
 
+## Interface web (wizard + dashboard)
+
+Ferramenta local de apresentação/operação (`web/backend` FastAPI + fila RQ/Redis,
+`web/frontend` React/Vite). Fora dos 30 cards; chama as mesmas funções da CLI.
+
+```powershell
+uv sync --extra web --extra anotacao     # junte aqui todos os extras desta máquina
+cd web/frontend; npm install; cd ../..
+docker compose up -d                     # Postgres 5433 + Redis 6380
+# três terminais, a partir de barnes-maze/:
+uv run --no-sync uvicorn web.backend.app.main:app --reload --port 8000   # aplica migrações
+uv run --no-sync python -m web.backend.worker      # reinicie após mudar código: não recarrega
+cd web/frontend; npm run dev                       # http://localhost:5173
+```
+
+Passos: vídeo e trial → buracos e escala → pose → resultados. A partir da pose, o
+pipeline roda sozinho: série → eventos → **métricas consolidadas** (latência com
+censura, erros, distância, eficiência, estratégia e entropia numa única execução,
+que é o que as curvas da US-22 leem). Cada experimento precisa de um animal
+cadastrado para entrar nas curvas.
+
+**Modo demonstração.** Sem modelo de pose treinado, o passo de pose oferece
+"Rodar demonstração": uma trajetória **sintética** (regra fixa, em
+`web/backend/app/demo_pose.py`) passa pela inferência e por todo o pipeline real.
+O `model_id` `DEMO-SINTETICO-m<montagem>` fica na proveniência e a tela mostra a
+faixa DEMO. Serve para mostrar o software; não é dado experimental nem aceite.
+
 ## Banco de dados
 
 O schema (Postgres puro, sem ORM) mora em `database/migrations/`, gerado a

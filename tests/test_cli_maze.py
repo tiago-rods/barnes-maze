@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from barnes import cli
+from barnes.geometry.builder import detect_holes_ring, snap_holes_to_detected_centers
 from barnes.geometry.holes import generate_holes
 
 FRAME = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -94,7 +95,7 @@ def test_detect_holes_ring_fits_circle_through_the_holes_not_the_platform_edge()
     frame = _draw_platform_with_holes(
         center=(250.0, 250.0), platform_radius=200.0, ring_radius=150.0, hole_radius=10.0, count=12
     )
-    detected = cli._detect_holes_ring(frame, expected_hole_area_fraction=(10.0 / 200.0) ** 2)
+    detected = detect_holes_ring(frame, expected_hole_area_fraction=(10.0 / 200.0) ** 2)
     assert detected is not None
     center_x, center_y, radius = detected
     assert center_x == pytest.approx(250.0, abs=2.0)
@@ -104,7 +105,7 @@ def test_detect_holes_ring_fits_circle_through_the_holes_not_the_platform_edge()
 
 def test_detect_holes_ring_requires_at_least_three_holes() -> None:
     frame = _draw_platform_with_holes(count=2)
-    detected = cli._detect_holes_ring(frame, expected_hole_area_fraction=(10.0 / 200.0) ** 2)
+    detected = detect_holes_ring(frame, expected_hole_area_fraction=(10.0 / 200.0) ** 2)
     assert detected is None
 
 
@@ -145,7 +146,7 @@ def test_snap_moves_holes_with_a_nearby_candidate_and_recomputes_angle(octagon) 
     offset_candidates = [
         (hole.x_px + 9.0, hole.y_px + 12.0) for hole in octagon.holes[:6]
     ]
-    snapped, count = cli._snap_holes_to_detected_centers(
+    snapped, count = snap_holes_to_detected_centers(
         octagon, offset_candidates, max_offset_px=20.0
     )
     assert count == 6
@@ -165,7 +166,7 @@ def test_snap_moves_holes_with_a_nearby_candidate_and_recomputes_angle(octagon) 
 
 def test_snap_ignores_candidates_beyond_max_offset(octagon) -> None:
     far_away = [(octagon.holes[0].x_px + 500.0, octagon.holes[0].y_px + 500.0)]
-    snapped, count = cli._snap_holes_to_detected_centers(octagon, far_away, max_offset_px=20.0)
+    snapped, count = snap_holes_to_detected_centers(octagon, far_away, max_offset_px=20.0)
     assert count == 0
     assert snapped.holes == octagon.holes
 
@@ -179,7 +180,7 @@ def test_snap_assigns_each_candidate_to_only_the_nearest_hole(octagon) -> None:
         hole0.y_px + 0.4 * (hole1.y_px - hole0.y_px),
     )
     tolerance = math.hypot(hole1.x_px - hole0.x_px, hole1.y_px - hole0.y_px)
-    snapped, count = cli._snap_holes_to_detected_centers(
+    snapped, count = snap_holes_to_detected_centers(
         octagon, [midpoint_closer_to_0], max_offset_px=tolerance
     )
     assert count == 1
