@@ -2,11 +2,13 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { MazeCreateStep } from '@/wizard/steps/MazeCreateStep'
+import { ScaleCalibrateStep } from '@/wizard/steps/ScaleCalibrateStep'
 import { VideoLoadStep } from '@/wizard/steps/VideoLoadStep'
 
 const STEPS = [
   { id: 'video-load', label: 'Carregar vídeo', render: () => <VideoLoadStep /> },
   { id: 'maze-create', label: 'Criar montagem', render: () => <MazeCreateStep /> },
+  { id: 'scale-calibrate', label: 'Calibrar escala', render: () => <ScaleCalibrateStep /> },
 ] as const
 
 export function SubmissionWizard() {
