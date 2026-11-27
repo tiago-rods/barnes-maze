@@ -1,11 +1,14 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { EventsEnterStep } from '@/wizard/steps/EventsEnterStep'
 import { MazeCreateStep } from '@/wizard/steps/MazeCreateStep'
+import { MetricsDisplacementStep } from '@/wizard/steps/MetricsDisplacementStep'
 import { PoseInferStep } from '@/wizard/steps/PoseInferStep'
 import { PoseReviewStep } from '@/wizard/steps/PoseReviewStep'
 import { PoseSeriesStep } from '@/wizard/steps/PoseSeriesStep'
 import { ScaleCalibrateStep } from '@/wizard/steps/ScaleCalibrateStep'
+import { StrategyClassifyStep } from '@/wizard/steps/StrategyClassifyStep'
 import { VideoLoadStep } from '@/wizard/steps/VideoLoadStep'
 
 const STEPS = [
@@ -15,6 +18,9 @@ const STEPS = [
   { id: 'pose-infer', label: 'Inferir pose', render: () => <PoseInferStep /> },
   { id: 'pose-series', label: 'Gerar série', render: () => <PoseSeriesStep /> },
   { id: 'pose-review', label: 'Revisar pose', render: () => <PoseReviewStep /> },
+  { id: 'events-enter', label: 'Detectar eventos', render: () => <EventsEnterStep /> },
+  { id: 'metrics-displacement', label: 'Métricas', render: () => <MetricsDisplacementStep /> },
+  { id: 'strategy-classify', label: 'Estratégia', render: () => <StrategyClassifyStep /> },
 ] as const
 
 export function SubmissionWizard() {
